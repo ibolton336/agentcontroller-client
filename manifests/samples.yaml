@@ -1,0 +1,53 @@
+# Sample resources for the agentrun-client demo against minikube.
+# Mirrors what Hub (per ADR 0003) or an admin would create.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openai-compatible-credentials
+  namespace: konveyor-agents
+type: Opaque
+stringData:
+  apiKey: "not-a-real-key-mock-harness-never-calls-an-llm"
+---
+apiVersion: konveyor.io/v1alpha1
+kind: LLMProvider
+metadata:
+  name: mock-provider
+  namespace: konveyor-agents
+spec:
+  endpoint: "https://api.openai.example/v1"
+  credentialRef:
+    secretName: openai-compatible-credentials
+    key: apiKey
+  models:
+    - name: mock-model-large
+      contextWindow: 200000
+      tier: primary
+    - name: mock-model-small
+      contextWindow: 32000
+      tier: efficient
+---
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: migration-analyzer
+  namespace: konveyor-agents
+spec:
+  # In the real system this is the harness image (goose + toolchains).
+  # The controller simulator substitutes the mock ACP harness image.
+  image: "acp-mock-harness:dev"
+  prompt: |
+    You are a migration analysis agent. Analyze the application source
+    in /workspace and produce findings under .konveyor/.
+  providers:
+    - ref: mock-provider
+  params:
+    - name: repository
+      type: string
+      description: Git URL of the application repository
+      required: true
+    - name: branch
+      type: string
+      description: Branch to analyze
+      default: main

@@ -1,0 +1,8 @@
+# upstream clone (separate git repo, used for CRDs/reference)
+agentic-controller/
+
+node_modules/
+dist/
+
+.claude/settings.local.json
+.DS_Store
