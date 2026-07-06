@@ -147,6 +147,7 @@ kubectl delete pod <run>-sandbox -n konveyor-agents  # reconnect demo
 |---|---|
 | `ECONNREFUSED 127.0.0.1:<port>` from anything | Docker/minikube down: `open -a Docker`, then `minikube start`. Cluster state (CRs) survives; old sandbox pods don't (`restartPolicy: Never`) and their runs flip to Failed — correct, delete them. |
 | Runs stuck with a blank PHASE (or `Pending`) | Simulator isn't running (Terminal 1). A brand-new run has no status at all until the simulator's first pass. |
+| Extension panel stuck on **"provisioning sandbox…"** forever | Same cause as above — the simulator (Terminal 1) isn't running, so nothing advances the AgentRun to `Running`. The extension's `waitForAcpEndpoint` blocks on `status.phase: Running` + `sandboxName` + `secretKeyRef`. Fix: `cd packages/agentrun-client && npm run simulator` — it picks up the already-pending run within one poll (~1s) and the panel flips to *connected*. Verify with `kubectl get agentrun <name> -n konveyor-agents -o jsonpath='{.status.phase}'`. |
 | Pod stuck `PodInitializing` → run Failed | The `repository` param must be a real, publicly clonable URL — the init container git-clones it. |
 | Commands missing in dev host | Stale build: `npm run build -w vscode/core`, relaunch F5. |
 | `agents.konveyor.io` CRD won't apply from upstream | Known upstream CEL bugs (PRs #2/#3). Use `manifests/crd/` here. |
