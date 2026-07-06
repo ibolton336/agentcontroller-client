@@ -1,0 +1,40 @@
+Subject: [PATCH] Mirror konveyor.io/agentrun and konveyor.io/agent labels onto the sandbox pod
+
+Target: konveyor/agentic-controller, PR #4 branch
+        (verified against commit 1766fcb "Address PR #4 review findings")
+File:   internal/controller/agentrun_controller.go (createSandbox)
+
+Why: the controller labels the Sandbox CR (and the ACP key Secret) with
+konveyor.io/agentrun, but Agent Sandbox v0.5.0 copies only
+Spec.PodTemplate.ObjectMeta labels/annotations onto the pod it creates.
+The pod therefore carries only agents.x-k8s.io/sandbox-name-hash, and
+label-based pod discovery by run name is impossible; clients must
+resolve the pod by name via AgentRun.status.sandboxName. Mirroring the
+labels into the PodTemplate closes that gap without changing any
+behavior clients already rely on (name-based resolution keeps working).
+
+Apply with: git apply 0001-add-agentrun-labels-to-pod-template.patch
+Verified:   git apply --check passes; gofmt clean.
+
+DO NOT send upstream without an explicit human decision (see README.md).
+
+diff --git a/internal/controller/agentrun_controller.go b/internal/controller/agentrun_controller.go
+index 2b8d4a3..599784d 100644
+--- a/internal/controller/agentrun_controller.go
++++ b/internal/controller/agentrun_controller.go
+@@ -338,6 +338,15 @@ func (r *AgentRunReconciler) createSandbox(
+ 		},
+ 		Spec: sandboxv1beta1.SandboxSpec{
+ 			PodTemplate: sandboxv1beta1.PodTemplate{
++				// Agent Sandbox v0.5.0 copies only PodTemplate metadata
++				// onto the pod, so mirror the identifying labels here to
++				// make the pod discoverable by AgentRun / Agent name.
++				ObjectMeta: sandboxv1beta1.PodMetadata{
++					Labels: map[string]string{
++						"konveyor.io/agentrun": run.Name,
++						"konveyor.io/agent":    agent.Name,
++					},
++				},
+ 				Spec: corev1.PodSpec{
+ 					Containers: []corev1.Container{
+ 						{

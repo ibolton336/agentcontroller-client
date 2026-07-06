@@ -96,3 +96,21 @@ ACP). What it adds:
 - The ACP secret data key is assumed `ACP_SECRET_KEY`; the client
   tolerates a single-entry secret under any key. Confirm with the real
   harness when it exists.
+
+## Where this repo is heading
+
+The real agentic-controller reconciler (upstream PR #4) is live on the
+cluster, so the **controller simulator is retired** — everything above that
+mentions it is historical. The verified client contract and the transport
+layering are captured in
+[ADR 0004](docs/adr/0004-client-contract-and-transports.md). The repo now
+hosts:
+
+- `harness-mock/`, `harness-goose/` — the agent-base images the sandboxes run.
+- `packages/agentic-client/` — browser-safe client core: contract types +
+  helpers, `AcpSession`, and the `ShimClient` transport.
+- `packages/hub-shim/` — localhost HTTP/WS proxy (SHIM HTTP API v1), the
+  reference shape for the future Konveyor Hub passthrough proxy.
+- `ui/` — browser UI prototype (Vite + PatternFly) driving runs through the shim.
+- `hack/upstream-patches/` — prepared (not submitted) upstream patches.
+- `packages/agentrun-client/` — the original node POC client, kept for reference.
