@@ -34,7 +34,13 @@ import {
 const PORT = Number(process.env.PORT ?? 4000);
 const SECRET_KEY = process.env.GOOSE_SERVER__SECRET_KEY ?? "";
 const GOOSE_MODE = process.env.GOOSE_MODE ?? "auto";
-const AGENT_PROMPT = process.env.AGENT_PROMPT ?? "(no standing prompt)";
+// The real agentic-controller injects KONVEYOR_PROMPT / KONVEYOR_INSTRUCTIONS
+// (from Agent.spec.prompt and AgentRun.spec.instructions). Fall back to the
+// AGENT_* names for older/standalone invocations.
+const AGENT_PROMPT =
+  process.env.KONVEYOR_PROMPT ?? process.env.AGENT_PROMPT ?? "(no standing prompt)";
+const AGENT_INSTRUCTIONS =
+  process.env.KONVEYOR_INSTRUCTIONS ?? process.env.AGENT_INSTRUCTIONS ?? "";
 
 const params = Object.entries(process.env)
   .filter(([k]) => k.startsWith("KONVEYOR_PARAM_"))
@@ -104,6 +110,10 @@ function buildAgent() {
 
       await say(`Mock harness online. Standing prompt: ${AGENT_PROMPT.trim().slice(0, 80)}\n`);
       await sleep(150);
+      if (AGENT_INSTRUCTIONS.trim()) {
+        await say(`Run instructions: ${AGENT_INSTRUCTIONS.trim().slice(0, 120)}\n`);
+        await sleep(150);
+      }
       await say(`Run params: ${params.length ? params.join(", ") : "(none)"}\n`);
       await sleep(150);
 

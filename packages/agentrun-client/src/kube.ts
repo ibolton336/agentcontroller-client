@@ -34,8 +34,11 @@ export interface WaitOptions {
   signal?: AbortSignal;
 }
 
-/** Secret data key the harness stores the ACP key under. */
-const SECRET_DATA_KEY = "ACP_SECRET_KEY";
+/**
+ * Secret data keys the ACP key may be stored under, newest-first: the real
+ * agentic-controller uses "secret-key"; the dev simulator used "ACP_SECRET_KEY".
+ */
+const SECRET_DATA_KEYS = ["secret-key", "ACP_SECRET_KEY"];
 const ACP_PORT = 4000;
 
 export class AgentRunClient {
@@ -159,28 +162,42 @@ export class AgentRunClient {
       namespace: this.namespace,
     });
     const data = secret.data ?? {};
-    // Prefer the documented key; tolerate a harness that picked another name
-    // as long as the secret holds exactly one entry.
+    // Prefer a known key; tolerate a harness that picked another name as long
+    // as the secret holds exactly one entry.
     const b64 =
-      data[SECRET_DATA_KEY] ??
+      SECRET_DATA_KEYS.map((k) => data[k]).find((v) => v !== undefined) ??
       (Object.keys(data).length === 1 ? Object.values(data)[0] : undefined);
     if (!b64) {
       throw new Error(
-        `Secret ${ready.secretName} has no ${SECRET_DATA_KEY} entry (keys: ${Object.keys(data).join(", ")})`,
+        `Secret ${ready.secretName} has no ACP key (looked for ${SECRET_DATA_KEYS.join(
+          ", ",
+        )}; keys present: ${Object.keys(data).join(", ")})`,
       );
     }
 
-    const pods = await this.core.listNamespacedPod({
-      namespace: this.namespace,
-      labelSelector: `konveyor.io/agentrun=${name}`,
-    });
-    const pod = pods.items.find((p) => p.status?.phase === "Running") ?? pods.items[0];
-    if (!pod?.metadata?.name) {
-      throw new Error(`No sandbox pod found for AgentRun ${name} (selector konveyor.io/agentrun=${name})`);
+    // Both the real Agent Sandbox controller and the dev simulator name the
+    // backing pod after the Sandbox, so resolve it by name first. Fall back to
+    // the run label — the real controller does NOT put konveyor.io/agentrun on
+    // the pod (only agents.x-k8s.io/sandbox-name-hash), so name-first is what
+    // makes this work against agentic-controller.
+    let podName = await this.core
+      .readNamespacedPod({ name: ready.sandboxName, namespace: this.namespace })
+      .then((p) => p.metadata?.name)
+      .catch(() => undefined);
+    if (!podName) {
+      const pods = await this.core.listNamespacedPod({
+        namespace: this.namespace,
+        labelSelector: `konveyor.io/agentrun=${name}`,
+      });
+      const pod = pods.items.find((p) => p.status?.phase === "Running") ?? pods.items[0];
+      podName = pod?.metadata?.name;
+    }
+    if (!podName) {
+      throw new Error(`No sandbox pod found for AgentRun ${name} (sandbox ${ready.sandboxName})`);
     }
 
     return {
-      podName: pod.metadata.name,
+      podName,
       serviceHost: `${ready.sandboxName}.${this.namespace}.svc`,
       port: ACP_PORT,
       secretKey: Buffer.from(b64, "base64").toString("utf8"),
