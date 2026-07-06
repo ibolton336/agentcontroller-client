@@ -152,6 +152,8 @@ kubectl delete pod <run>-sandbox -n konveyor-agents  # reconnect demo
 | `agents.konveyor.io` CRD won't apply from upstream | Known upstream CEL bugs (PRs #2/#3). Use `manifests/crd/` here. |
 | Edited `harness-mock/server.mjs` but behavior unchanged | Rebuild the image into minikube (step 4) — pods never pull. |
 | Bedrock auth errors in goose pod | Recreate the `aws-bedrock-creds` secret; check `aws sts get-caller-identity` locally. |
+| Dev host logs a `401 ... provide your API key` model health check at startup | Kai's *core* GenAI provider (provider-settings.yaml, defaults to OpenAI) — unrelated to the cluster agent, whose LLM runs in the sandbox pod. Safe to ignore for this flow. |
+| Hub Sign In fails: `fetch failed` to `localhost:9000/oidc` | Hub isn't needed for the cluster agent. That port is mock-konveyor-hub (launch-config env); `npm start` it if you want the Hub chrome + model health check green, otherwise ignore. |
 
 Reset everything created by runs (secret/pod/service GC via owner refs):
 
