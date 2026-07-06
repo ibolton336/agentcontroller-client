@@ -21,11 +21,14 @@ controller lands, delete the simulator — the client code is unchanged.
 | `harness-goose/` | Real harness image: goose v1.39.0 `serve --host 0.0.0.0 --port 4000` (plain HTTP at this tag; the self-signed-TLS default landed later — keep it pinned). Provider/model/credentials arrive via env from the LLMProvider resolution in the simulator. |
 | `agentic-controller/` | Upstream clone (with two local CEL-rule fixes in the Agent CRD, PR pending). |
 
+> **Full local dev-mode guide** (cluster + simulator + extension dev
+> host + smokes + troubleshooting): [docs/DEV_MODE.md](docs/DEV_MODE.md)
+
 ## Quickstart (minikube)
 
 ```sh
 # one-time setup
-kubectl apply -f agentic-controller/config/crd/bases/
+kubectl apply -f manifests/crd/  # vendored CRDs, incl. Agent CEL fixes (upstream PR 2)
 kubectl create namespace konveyor-agents
 kubectl apply -f manifests/samples.yaml
 (cd harness-mock && minikube image build -t acp-mock-harness:dev .)
