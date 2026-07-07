@@ -1,0 +1,2220 @@
+# Rendered install manifest for the agentic-controller (PR #4 snapshot).
+# Source: konveyor/agentic-controller pull/4/head @ 1766fcb9f8952e60477f1f9900d7f63e8977322c
+# Rendered: kubectl kustomize <pr4-worktree>/mk-overlay (config/default +
+#   image agentic-controller:dev, imagePullPolicy IfNotPresent).
+# Regenerate: git fetch origin pull/4/head:pr4 && git worktree add <dir> pr4,
+#   recreate mk-overlay per docs/DEMO.md, kubectl kustomize <dir>/mk-overlay.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: agentic-controller
+    control-plane: controller-manager
+  name: agentic-controller-system
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: agentplaybookruns.konveyor.io
+spec:
+  group: konveyor.io
+  names:
+    kind: AgentPlaybookRun
+    listKind: AgentPlaybookRunList
+    plural: agentplaybookruns
+    shortNames:
+    - apr
+    singular: agentplaybookrun
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.playbookRef
+      name: Playbook
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.currentStage
+      name: Current Stage
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          AgentPlaybookRun is a request to execute an AgentPlaybook. It references
+          an AgentPlaybook and carries generic parameters. The controller orchestrates
+          execution: creates an AgentRun per stage, manages cross-stage handoff via
+          committed files on a shared target branch.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              AgentPlaybookRunSpec defines the desired state of an AgentPlaybookRun.
+              The spec is immutable once created — delete and recreate to change values.
+            properties:
+              env:
+                description: |-
+                  Env is a list of additional environment variables to set across
+                  all stages. Passed through to each AgentRun's Sandbox unchanged.
+                items:
+                  description: EnvVar represents an environment variable present in
+                    a Container.
+                  properties:
+                    name:
+                      description: |-
+                        Name of the environment variable.
+                        May consist of any printable ASCII characters except '='.
+                      type: string
+                    value:
+                      description: |-
+                        Variable references $(VAR_NAME) are expanded
+                        using the previously defined environment variables in the container and
+                        any service environment variables. If a variable cannot be resolved,
+                        the reference in the input string will be unchanged. Double $$ are reduced
+                        to a single $, which allows for escaping the $(VAR_NAME) syntax: i.e.
+                        "$$(VAR_NAME)" will produce the string literal "$(VAR_NAME)".
+                        Escaped references will never be expanded, regardless of whether the variable
+                        exists or not.
+                        Defaults to "".
+                      type: string
+                    valueFrom:
+                      description: Source for the environment variable's value. Cannot
+                        be used if value is not empty.
+                      properties:
+                        configMapKeyRef:
+                          description: Selects a key of a ConfigMap.
+                          properties:
+                            key:
+                              description: The key to select.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the ConfigMap or its key
+                                must be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        fieldRef:
+                          description: |-
+                            Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
+                            spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                          properties:
+                            apiVersion:
+                              description: Version of the schema the FieldPath is
+                                written in terms of, defaults to "v1".
+                              type: string
+                            fieldPath:
+                              description: Path of the field to select in the specified
+                                API version.
+                              type: string
+                          required:
+                          - fieldPath
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        fileKeyRef:
+                          description: |-
+                            FileKeyRef selects a key of the env file.
+                            Requires the EnvFiles feature gate to be enabled.
+                          properties:
+                            key:
+                              description: |-
+                                The key within the env file. An invalid key will prevent the pod from starting.
+                                The keys defined within a source may consist of any printable ASCII characters except '='.
+                                During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                              type: string
+                            optional:
+                              default: false
+                              description: |-
+                                Specify whether the file or its key must be defined. If the file or key
+                                does not exist, then the env var is not published.
+                                If optional is set to true and the specified key does not exist,
+                                the environment variable will not be set in the Pod's containers.
+
+                                If optional is set to false and the specified key does not exist,
+                                an error will be returned during Pod creation.
+                              type: boolean
+                            path:
+                              description: |-
+                                The path within the volume from which to select the file.
+                                Must be relative and may not contain the '..' path or start with '..'.
+                              type: string
+                            volumeName:
+                              description: The name of the volume mount containing
+                                the env file.
+                              type: string
+                          required:
+                          - key
+                          - path
+                          - volumeName
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        resourceFieldRef:
+                          description: |-
+                            Selects a resource of the container: only resources limits and requests
+                            (limits.cpu, limits.memory, limits.ephemeral-storage, requests.cpu, requests.memory and requests.ephemeral-storage) are currently supported.
+                          properties:
+                            containerName:
+                              description: 'Container name: required for volumes,
+                                optional for env vars'
+                              type: string
+                            divisor:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: Specifies the output format of the exposed
+                                resources, defaults to "1"
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            resource:
+                              description: 'Required: resource to select'
+                              type: string
+                          required:
+                          - resource
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        secretKeyRef:
+                          description: Selects a key of a secret in the pod's namespace
+                          properties:
+                            key:
+                              description: The key of the secret to select from.  Must
+                                be a valid secret key.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the Secret or its key must
+                                be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      type: object
+                  required:
+                  - name
+                  type: object
+                type: array
+              envFrom:
+                description: |-
+                  EnvFrom is a list of sources to populate environment variables
+                  across all stages. Passed through to each AgentRun's Sandbox.
+                items:
+                  description: EnvFromSource represents the source of a set of ConfigMaps
+                    or Secrets
+                  properties:
+                    configMapRef:
+                      description: The ConfigMap to select from
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                        optional:
+                          description: Specify whether the ConfigMap must be defined
+                          type: boolean
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    prefix:
+                      description: |-
+                        Optional text to prepend to the name of each environment variable.
+                        May consist of any printable ASCII characters except '='.
+                      type: string
+                    secretRef:
+                      description: The Secret to select from
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                        optional:
+                          description: Specify whether the Secret must be defined
+                          type: boolean
+                      type: object
+                      x-kubernetes-map-type: atomic
+                  type: object
+                type: array
+              models:
+                description: |-
+                  Models selects specific provider/model combinations for all stages.
+                  Individual stages may override these selections in the future.
+                items:
+                  description: AgentRunModelSelection selects a specific provider
+                    and model for this run.
+                  properties:
+                    model:
+                      description: |-
+                        Model is the model identifier. Must be declared on the referenced
+                        LLMProvider.
+                      minLength: 1
+                      type: string
+                    provider:
+                      description: |-
+                        Provider is the name of an LLMProvider CR. Must be in the Agent's
+                        providers list.
+                      minLength: 1
+                      type: string
+                    role:
+                      description: |-
+                        Role is the purpose of this model in the run (e.g. "primary", "efficient").
+                        The harness maps roles to runtime-specific configuration.
+                        Must be a valid env var identifier (used in KONVEYOR_MODEL_{ROLE}_*).
+                      minLength: 1
+                      pattern: ^[a-zA-Z_][a-zA-Z0-9_]*$
+                      type: string
+                  required:
+                  - model
+                  - provider
+                  - role
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - role
+                x-kubernetes-list-type: map
+              params:
+                description: Params supplies values for Agent parameters across all
+                  stages.
+                items:
+                  description: AgentRunParam supplies a value for a declared Agent
+                    parameter.
+                  properties:
+                    name:
+                      description: Name is the parameter name, matching an Agent param
+                        declaration.
+                      minLength: 1
+                      type: string
+                    value:
+                      description: Value is the parameter value.
+                      type: string
+                  required:
+                  - name
+                  - value
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              playbookRef:
+                description: PlaybookRef is the name of the AgentPlaybook CR to execute.
+                minLength: 1
+                type: string
+            required:
+            - playbookRef
+            type: object
+            x-kubernetes-validations:
+            - message: spec is immutable
+              rule: self == oldSelf
+          status:
+            description: AgentPlaybookRunStatus defines the observed state of an AgentPlaybookRun.
+            properties:
+              completionTime:
+                description: CompletionTime is the time the playbook run finished.
+                format: date-time
+                type: string
+              conditions:
+                description: |-
+                  Conditions represent the latest available observations of the
+                  AgentPlaybookRun's state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              currentStage:
+                description: CurrentStage is the name of the currently executing stage.
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              phase:
+                default: Pending
+                description: Phase is the current phase of the overall playbook run.
+                enum:
+                - Pending
+                - Running
+                - Succeeded
+                - Failed
+                type: string
+              stages:
+                description: Stages tracks the status of each stage.
+                items:
+                  description: |-
+                    AgentPlaybookRunStageStatus tracks the status of a single stage within
+                    a playbook run.
+                  properties:
+                    agentRunName:
+                      description: AgentRunName is the name of the AgentRun CR created
+                        for this stage.
+                      type: string
+                    name:
+                      description: Name is the stage name, matching a stage in the
+                        AgentPlaybook.
+                      type: string
+                    phase:
+                      description: Phase is the current phase of this stage.
+                      enum:
+                      - Pending
+                      - Running
+                      - Succeeded
+                      - Failed
+                      type: string
+                  required:
+                  - name
+                  - phase
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              startTime:
+                description: StartTime is the time the playbook run started.
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: agentplaybooks.konveyor.io
+spec:
+  group: konveyor.io
+  names:
+    kind: AgentPlaybook
+    listKind: AgentPlaybookList
+    plural: agentplaybooks
+    shortNames:
+    - ap
+    singular: agentplaybook
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          AgentPlaybook is a reusable playbook combining a high-level guide with an
+          ordered sequence of stages. Each stage references an Agent and carries
+          instructions. An AgentPlaybook is a template — creating one does not
+          execute anything.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AgentPlaybookSpec defines the desired state of an AgentPlaybook.
+            properties:
+              guide:
+                description: |-
+                  Guide is a high-level guide providing ambient context for all stages.
+                  Written as a context file in the workspace so each agent understands
+                  where its work fits in the bigger picture.
+                type: string
+              stages:
+                description: |-
+                  Stages is the ordered sequence of stages. Each stage references an
+                  Agent and carries instructions. Stages execute sequentially, sharing
+                  the same target branch. Cross-stage continuity comes from committed
+                  handoff files.
+                items:
+                  description: |-
+                    AgentPlaybookStage defines one stage in a playbook.
+                    Each stage references an Agent and carries instructions.
+                  properties:
+                    agentRef:
+                      description: AgentRef is the name of the Agent CR to execute
+                        for this stage.
+                      minLength: 1
+                      type: string
+                    instructions:
+                      description: |-
+                        Instructions are task-specific instructions for this stage.
+                        Composed with the Agent's prompt at execution time.
+                      type: string
+                    name:
+                      description: Name is the stage name, unique within the playbook.
+                      minLength: 1
+                      type: string
+                  required:
+                  - agentRef
+                  - name
+                  type: object
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            required:
+            - stages
+            type: object
+          status:
+            description: AgentPlaybookStatus defines the observed state of an AgentPlaybook.
+            properties:
+              conditions:
+                description: |-
+                  Conditions represent the latest available observations of the
+                  AgentPlaybook's state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: agentruns.konveyor.io
+spec:
+  group: konveyor.io
+  names:
+    kind: AgentRun
+    listKind: AgentRunList
+    plural: agentruns
+    shortNames:
+    - ar
+    singular: agentrun
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.agentRef
+      name: Agent
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .status.duration
+      name: Duration
+      priority: 1
+      type: integer
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          AgentRun is a request to execute a single Agent with specific selections.
+          It references an Agent, selects providers and models, carries instructions
+          and key-value parameters (injected as env vars into the Sandbox). The
+          controller validates, resolves skills to ImageVolumes, creates a Sandbox,
+          and tracks status to completion.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              AgentRunSpec defines the desired state of an AgentRun.
+              The spec is immutable once created — delete and recreate to change values.
+            properties:
+              agentRef:
+                description: AgentRef is the name of the Agent CR to execute.
+                minLength: 1
+                type: string
+              env:
+                description: |-
+                  Env is a list of additional environment variables to set in the
+                  Sandbox container. Passed through to the Sandbox unchanged.
+                items:
+                  description: EnvVar represents an environment variable present in
+                    a Container.
+                  properties:
+                    name:
+                      description: |-
+                        Name of the environment variable.
+                        May consist of any printable ASCII characters except '='.
+                      type: string
+                    value:
+                      description: |-
+                        Variable references $(VAR_NAME) are expanded
+                        using the previously defined environment variables in the container and
+                        any service environment variables. If a variable cannot be resolved,
+                        the reference in the input string will be unchanged. Double $$ are reduced
+                        to a single $, which allows for escaping the $(VAR_NAME) syntax: i.e.
+                        "$$(VAR_NAME)" will produce the string literal "$(VAR_NAME)".
+                        Escaped references will never be expanded, regardless of whether the variable
+                        exists or not.
+                        Defaults to "".
+                      type: string
+                    valueFrom:
+                      description: Source for the environment variable's value. Cannot
+                        be used if value is not empty.
+                      properties:
+                        configMapKeyRef:
+                          description: Selects a key of a ConfigMap.
+                          properties:
+                            key:
+                              description: The key to select.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the ConfigMap or its key
+                                must be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        fieldRef:
+                          description: |-
+                            Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
+                            spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                          properties:
+                            apiVersion:
+                              description: Version of the schema the FieldPath is
+                                written in terms of, defaults to "v1".
+                              type: string
+                            fieldPath:
+                              description: Path of the field to select in the specified
+                                API version.
+                              type: string
+                          required:
+                          - fieldPath
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        fileKeyRef:
+                          description: |-
+                            FileKeyRef selects a key of the env file.
+                            Requires the EnvFiles feature gate to be enabled.
+                          properties:
+                            key:
+                              description: |-
+                                The key within the env file. An invalid key will prevent the pod from starting.
+                                The keys defined within a source may consist of any printable ASCII characters except '='.
+                                During Alpha stage of the EnvFiles feature gate, the key size is limited to 128 characters.
+                              type: string
+                            optional:
+                              default: false
+                              description: |-
+                                Specify whether the file or its key must be defined. If the file or key
+                                does not exist, then the env var is not published.
+                                If optional is set to true and the specified key does not exist,
+                                the environment variable will not be set in the Pod's containers.
+
+                                If optional is set to false and the specified key does not exist,
+                                an error will be returned during Pod creation.
+                              type: boolean
+                            path:
+                              description: |-
+                                The path within the volume from which to select the file.
+                                Must be relative and may not contain the '..' path or start with '..'.
+                              type: string
+                            volumeName:
+                              description: The name of the volume mount containing
+                                the env file.
+                              type: string
+                          required:
+                          - key
+                          - path
+                          - volumeName
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        resourceFieldRef:
+                          description: |-
+                            Selects a resource of the container: only resources limits and requests
+                            (limits.cpu, limits.memory, limits.ephemeral-storage, requests.cpu, requests.memory and requests.ephemeral-storage) are currently supported.
+                          properties:
+                            containerName:
+                              description: 'Container name: required for volumes,
+                                optional for env vars'
+                              type: string
+                            divisor:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              description: Specifies the output format of the exposed
+                                resources, defaults to "1"
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            resource:
+                              description: 'Required: resource to select'
+                              type: string
+                          required:
+                          - resource
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        secretKeyRef:
+                          description: Selects a key of a secret in the pod's namespace
+                          properties:
+                            key:
+                              description: The key of the secret to select from.  Must
+                                be a valid secret key.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the Secret or its key must
+                                be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      type: object
+                  required:
+                  - name
+                  type: object
+                type: array
+              envFrom:
+                description: |-
+                  EnvFrom is a list of sources to populate environment variables in
+                  the Sandbox container. Passed through to the Sandbox unchanged.
+                items:
+                  description: EnvFromSource represents the source of a set of ConfigMaps
+                    or Secrets
+                  properties:
+                    configMapRef:
+                      description: The ConfigMap to select from
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                        optional:
+                          description: Specify whether the ConfigMap must be defined
+                          type: boolean
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    prefix:
+                      description: |-
+                        Optional text to prepend to the name of each environment variable.
+                        May consist of any printable ASCII characters except '='.
+                      type: string
+                    secretRef:
+                      description: The Secret to select from
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                        optional:
+                          description: Specify whether the Secret must be defined
+                          type: boolean
+                      type: object
+                      x-kubernetes-map-type: atomic
+                  type: object
+                type: array
+              instructions:
+                description: |-
+                  Instructions are task-specific instructions for this run.
+                  Composed with the Agent's prompt at execution time.
+                type: string
+              models:
+                description: |-
+                  Models selects specific provider/model combinations for this run.
+                  Each entry maps a role to a provider and model from the Agent's
+                  available set.
+                items:
+                  description: AgentRunModelSelection selects a specific provider
+                    and model for this run.
+                  properties:
+                    model:
+                      description: |-
+                        Model is the model identifier. Must be declared on the referenced
+                        LLMProvider.
+                      minLength: 1
+                      type: string
+                    provider:
+                      description: |-
+                        Provider is the name of an LLMProvider CR. Must be in the Agent's
+                        providers list.
+                      minLength: 1
+                      type: string
+                    role:
+                      description: |-
+                        Role is the purpose of this model in the run (e.g. "primary", "efficient").
+                        The harness maps roles to runtime-specific configuration.
+                        Must be a valid env var identifier (used in KONVEYOR_MODEL_{ROLE}_*).
+                      minLength: 1
+                      pattern: ^[a-zA-Z_][a-zA-Z0-9_]*$
+                      type: string
+                  required:
+                  - model
+                  - provider
+                  - role
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - role
+                x-kubernetes-list-type: map
+              params:
+                description: |-
+                  Params supplies values for the Agent's declared parameters.
+                  Injected as KONVEYOR_PARAM_{NAME} env vars into the Sandbox.
+                items:
+                  description: AgentRunParam supplies a value for a declared Agent
+                    parameter.
+                  properties:
+                    name:
+                      description: Name is the parameter name, matching an Agent param
+                        declaration.
+                      minLength: 1
+                      type: string
+                    value:
+                      description: Value is the parameter value.
+                      type: string
+                  required:
+                  - name
+                  - value
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            required:
+            - agentRef
+            type: object
+            x-kubernetes-validations:
+            - message: spec is immutable
+              rule: self == oldSelf
+          status:
+            description: AgentRunStatus defines the observed state of an AgentRun.
+            properties:
+              completionTime:
+                description: CompletionTime is the time the Sandbox finished.
+                format: date-time
+                type: string
+              conditions:
+                description: |-
+                  Conditions represent the latest available observations of the
+                  AgentRun's state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              duration:
+                description: Duration is the wall-clock duration of the run in seconds.
+                format: int64
+                type: integer
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              phase:
+                default: Pending
+                description: Phase is the current phase of the AgentRun.
+                enum:
+                - Pending
+                - Running
+                - Succeeded
+                - Failed
+                type: string
+              sandboxName:
+                description: SandboxName is the name of the Sandbox CR created for
+                  this run.
+                type: string
+              secretKeyRef:
+                description: |-
+                  SecretKeyRef references a Secret containing the ACP authentication key
+                  for connecting to the agent's ACP endpoint. The harness generates
+                  a random key per run and stores it in this Secret.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              startTime:
+                description: StartTime is the time the Sandbox started running.
+                format: date-time
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: agents.konveyor.io
+spec:
+  group: konveyor.io
+  names:
+    kind: Agent
+    listKind: AgentList
+    plural: agents
+    shortNames:
+    - ag
+    singular: agent
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.image
+      name: Image
+      priority: 1
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Agent is a capability definition declaring what is available for execution.
+          It references SkillCards, SkillCollections, LLMProviders, a container image,
+          a prompt, and typed parameters. An Agent does not select a specific model —
+          model selection happens at execution time via AgentRun.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AgentSpec defines the desired state of an Agent.
+            properties:
+              image:
+                description: Image is the container image carrying the agent runtime
+                  and toolchains.
+                minLength: 1
+                type: string
+              params:
+                description: Params declares the typed parameters this Agent accepts.
+                items:
+                  description: |-
+                    AgentParam declares a typed parameter that an Agent accepts.
+                    AgentRun supplies values for these parameters, which are injected as
+                    KONVEYOR_PARAM_{NAME} env vars into the Sandbox.
+                  properties:
+                    default:
+                      description: Default is the default value if not specified in
+                        AgentRun.
+                      type: string
+                    description:
+                      description: Description explains the purpose of the parameter.
+                      type: string
+                    name:
+                      description: |-
+                        Name is the parameter name. Will be uppercased and prefixed with
+                        KONVEYOR_PARAM_ when injected as an env var.
+                      minLength: 1
+                      pattern: ^[a-zA-Z_][a-zA-Z0-9_]*$
+                      type: string
+                    required:
+                      description: |-
+                        Required indicates whether the parameter must be supplied.
+                        A parameter with a default is never required.
+                      type: boolean
+                    type:
+                      default: string
+                      description: Type is the parameter type.
+                      enum:
+                      - string
+                      - number
+                      - boolean
+                      type: string
+                  required:
+                  - name
+                  type: object
+                  x-kubernetes-validations:
+                  - message: a parameter with a default value cannot be required
+                    rule: '!(has(self.required) && self.required && has(self.default)
+                      && size(self.default) > 0)'
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              prompt:
+                description: |-
+                  Prompt is the standing instructions for how the agent operates.
+                  Composed with AgentRun instructions at execution time.
+                type: string
+              providers:
+                description: |-
+                  Providers is the set of LLM providers and models available for runs.
+                  At least one provider must be specified.
+                items:
+                  description: AgentProviderRef references an LLMProvider by name.
+                  properties:
+                    ref:
+                      description: Ref is the name of an LLMProvider CR in the same
+                        namespace.
+                      minLength: 1
+                      type: string
+                  required:
+                  - ref
+                  type: object
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - ref
+                x-kubernetes-list-type: map
+              skillCards:
+                description: SkillCards references individual SkillCard CRs.
+                items:
+                  description: AgentSkillCardRef references a SkillCard by name.
+                  properties:
+                    ref:
+                      description: Ref is the name of a SkillCard CR in the same namespace.
+                      minLength: 1
+                      type: string
+                  required:
+                  - ref
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - ref
+                x-kubernetes-list-type: map
+              skillCollections:
+                description: SkillCollections references SkillCollection CRs.
+                items:
+                  description: AgentSkillCollectionRef references a SkillCollection
+                    by name.
+                  properties:
+                    ref:
+                      description: Ref is the name of a SkillCollection CR in the
+                        same namespace.
+                      minLength: 1
+                      type: string
+                  required:
+                  - ref
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - ref
+                x-kubernetes-list-type: map
+            required:
+            - image
+            - providers
+            type: object
+          status:
+            description: AgentStatus defines the observed state of an Agent.
+            properties:
+              conditions:
+                description: |-
+                  Conditions represent the latest available observations of the
+                  Agent's state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: llmproviders.konveyor.io
+spec:
+  group: konveyor.io
+  names:
+    kind: LLMProvider
+    listKind: LLMProviderList
+    plural: llmproviders
+    shortNames:
+    - llm
+    singular: llmprovider
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.endpoint
+      name: Endpoint
+      type: string
+    - jsonPath: .status.connectionVerified
+      name: Verified
+      type: boolean
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          LLMProvider is an LLM service endpoint with credentials and the set of
+          models it serves. Each model declares its context window size and an
+          optional tier label. The controller verifies connectivity on create/update.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: LLMProviderSpec defines the desired state of an LLMProvider.
+            properties:
+              credentialRef:
+                description: CredentialRef references a Secret containing the API
+                  credential.
+                properties:
+                  key:
+                    description: Key is the key within the Secret that contains the
+                      credential value.
+                    minLength: 1
+                    type: string
+                  secretName:
+                    description: SecretName is the name of the Secret in the same
+                      namespace.
+                    minLength: 1
+                    type: string
+                required:
+                - key
+                - secretName
+                type: object
+              endpoint:
+                description: Endpoint is the base URL of the LLM service.
+                minLength: 1
+                type: string
+              models:
+                description: Models is the list of models available through this provider.
+                items:
+                  description: LLMProviderModel declares a model available through
+                    this provider.
+                  properties:
+                    contextWindow:
+                      description: |-
+                        ContextWindow is the maximum context window size in tokens.
+                        Used to validate that an Agent's always-loaded rules fit within budget.
+                      format: int64
+                      minimum: 1
+                      type: integer
+                    name:
+                      description: Name is the model identifier (e.g. "claude-sonnet-4-20250514",
+                        "gpt-4o").
+                      minLength: 1
+                      type: string
+                    tier:
+                      description: |-
+                        Tier is an optional label for the model's capability tier
+                        (e.g. "premium", "efficient").
+                      type: string
+                  required:
+                  - contextWindow
+                  - name
+                  type: object
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            required:
+            - credentialRef
+            - endpoint
+            - models
+            type: object
+          status:
+            description: LLMProviderStatus defines the observed state of an LLMProvider.
+            properties:
+              conditions:
+                description: |-
+                  Conditions represent the latest available observations of the
+                  LLMProvider's state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              connectionVerified:
+                description: |-
+                  ConnectionVerified indicates whether the controller has successfully
+                  verified connectivity to the provider endpoint.
+                type: boolean
+              discoveredModels:
+                description: DiscoveredModels lists the model names discovered from
+                  the provider.
+                items:
+                  type: string
+                type: array
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: skillcards.konveyor.io
+spec:
+  group: konveyor.io
+  names:
+    kind: SkillCard
+    listKind: SkillCardList
+    plural: skillcards
+    shortNames:
+    - skc
+    singular: skillcard
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          SkillCard is an individual agent capability or behavioral constraint.
+          It follows the skillimage.io/v1alpha1 SkillCard format and supports three
+          source types: OCI image ref, git source URL, or inline markdown. All three
+          converge to a resolved OCI image ref in status.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              SkillCardSpec defines the desired state of a SkillCard.
+              Exactly one of Image, Source, or Inline must be set.
+            properties:
+              description:
+                description: Description is a short description of what the skill
+                  does.
+                type: string
+              displayName:
+                description: DisplayName is a human-readable name for the skill.
+                type: string
+              image:
+                description: Image is an OCI image reference for a pre-built skill
+                  artifact.
+                type: string
+              inline:
+                description: |-
+                  Inline is raw markdown content for the skill.
+                  The controller builds and pushes an OCI artifact from this content.
+                type: string
+              source:
+                description: |-
+                  Source is a git URL pointing to a skill directory.
+                  The controller clones, builds, and pushes the OCI artifact.
+                type: string
+              tags:
+                description: Tags are labels for categorization and discovery.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
+              type:
+                default: skill
+                description: |-
+                  Type indicates whether this is an on-demand skill or an always-loaded rule.
+                  Defaults to "skill".
+                enum:
+                - skill
+                - rule
+                type: string
+              version:
+                description: Version is the semantic version of the skill.
+                type: string
+            type: object
+            x-kubernetes-validations:
+            - message: exactly one of image, source, or inline must be set
+              rule: '(has(self.image) ? 1 : 0) + (has(self.source) ? 1 : 0) + (has(self.inline)
+                ? 1 : 0) == 1'
+          status:
+            description: SkillCardStatus defines the observed state of a SkillCard.
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the SkillCard's state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              resolvedImage:
+                description: |-
+                  ResolvedImage is the OCI image reference for the resolved skill artifact.
+                  Set after successful resolution from any source type.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: skillcollections.konveyor.io
+spec:
+  group: konveyor.io
+  names:
+    kind: SkillCollection
+    listKind: SkillCollectionList
+    plural: skillcollections
+    shortNames:
+    - scol
+    singular: skillcollection
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          SkillCollection is a group of skills, following the skillimage.io/v1alpha1
+          SkillCollection format. Each entry references a skill by OCI image ref,
+          git source URL, or SkillCard CR name. The controller creates SkillCard CRs
+          for git-sourced entries and reports readiness when all children are resolved.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SkillCollectionSpec defines the desired state of a SkillCollection.
+            properties:
+              skills:
+                description: Skills is the list of skills in this collection.
+                items:
+                  description: |-
+                    SkillCollectionSkillRef references a skill by SkillCard CR name,
+                    OCI image ref, or git source URL. Exactly one of SkillCardRef,
+                    Image, or Source must be set.
+                  properties:
+                    image:
+                      description: Image is an OCI image reference for a pre-built
+                        skill artifact.
+                      type: string
+                    name:
+                      description: Name is the local name for this skill within the
+                        collection.
+                      minLength: 1
+                      type: string
+                    skillCardRef:
+                      description: SkillCardRef is the name of a SkillCard CR in the
+                        same namespace.
+                      type: string
+                    source:
+                      description: Source is a git URL pointing to a skill directory.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of skillCardRef, image, or source must be
+                      set
+                    rule: '(has(self.skillCardRef) ? 1 : 0) + (has(self.image) ? 1
+                      : 0) + (has(self.source) ? 1 : 0) == 1'
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              version:
+                description: Version is the semantic version of the collection.
+                type: string
+            required:
+            - skills
+            type: object
+          status:
+            description: SkillCollectionStatus defines the observed state of a SkillCollection.
+            properties:
+              conditions:
+                description: |-
+                  Conditions represent the latest available observations of the
+                  SkillCollection's state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: agentic-controller
+  name: agentic-controller-controller-manager
+  namespace: agentic-controller-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: agentic-controller
+  name: agentic-controller-leader-election-role
+  namespace: agentic-controller-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentic-controller-manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - agents.x-k8s.io
+  resources:
+  - sandboxes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - konveyor.io
+  resources:
+  - agentruns
+  - agents
+  - llmproviders
+  - skillcards
+  - skillcollections
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - konveyor.io
+  resources:
+  - agentruns/finalizers
+  - agents/finalizers
+  - llmproviders/finalizers
+  - skillcards/finalizers
+  - skillcollections/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - konveyor.io
+  resources:
+  - agentruns/status
+  - agents/status
+  - llmproviders/status
+  - skillcards/status
+  - skillcollections/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentic-controller-metrics-auth-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentic-controller-metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: agentic-controller
+  name: agentic-controller-leader-election-rolebinding
+  namespace: agentic-controller-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentic-controller-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: agentic-controller-controller-manager
+  namespace: agentic-controller-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: agentic-controller
+  name: agentic-controller-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentic-controller-manager-role
+subjects:
+- kind: ServiceAccount
+  name: agentic-controller-controller-manager
+  namespace: agentic-controller-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentic-controller-metrics-auth-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentic-controller-metrics-auth-role
+subjects:
+- kind: ServiceAccount
+  name: agentic-controller-controller-manager
+  namespace: agentic-controller-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: agentic-controller
+    control-plane: controller-manager
+  name: agentic-controller-controller-manager-metrics-service
+  namespace: agentic-controller-system
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    app.kubernetes.io/name: agentic-controller
+    control-plane: controller-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: agentic-controller
+    control-plane: controller-manager
+  name: agentic-controller-controller-manager
+  namespace: agentic-controller-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentic-controller
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        app.kubernetes.io/name: agentic-controller
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --metrics-bind-address=:8443
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        command:
+        - /manager
+        image: agentic-controller:dev
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports:
+        - containerPort: 8081
+          name: health
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts: []
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentic-controller-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes: []

@@ -16,7 +16,12 @@ metadata:
   name: mock-provider
   namespace: konveyor-agents
 spec:
-  endpoint: "https://api.openai.example/v1"
+  # The real controller's verification Job is a reachability probe (any
+  # HTTP 2xx-5xx passes, no auth). The in-cluster apiserver always answers
+  # 403, needs no egress, and the mock harness never calls an LLM anyway.
+  # A dead/unresolvable endpoint here leaves the provider NotReady and
+  # blocks every AgentRun with AgentNotReady.
+  endpoint: "https://kubernetes.default.svc"
   credentialRef:
     secretName: openai-compatible-credentials
     key: apiKey

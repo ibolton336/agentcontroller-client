@@ -12,15 +12,27 @@ is Agent Sandbox v0.5.0, the agent is goose 1.39 on AWS Bedrock.
 
 | Piece | What | Where |
 |---|---|---|
-| minikube | konveyor CRDs, Agent Sandbox v0.5.0, **agentic-controller (PR #4)** | deployed via `kubectl apply -k /tmp/pr4/mk-overlay` |
-| `packages/hub-shim` | stand-in for the future Hub passthrough proxy (REST + WS `/acp`) | `npm start` → :7080 |
-| `ui/` | browser SPA (PatternFly) | `npm run dev` → :5173 |
+| minikube | konveyor CRDs, Agent Sandbox v0.5.0, **agentic-controller (PR #4)** | `manifests/controller/install.yaml` (rendered snapshot, sha-pinned) |
+| `packages/hub-shim` | stand-in for the future Hub passthrough proxy (REST + WS `/acp`) | :7080 |
+| `ui/` | browser SPA (PatternFly) | :5199 |
 | extension | `editor-extensions-cluster-agent` branch `feature/cluster-agent` | F5 dev host |
-| `goose-harness:dev` | real agent base: entrypoint clones the repo, maps model env, runs `goose serve` | built into minikube |
-| `acp-mock-harness:dev` | deterministic mock agent (no LLM) — for the create-flow beat | built into minikube |
+| `goose-harness:dev` | real agent base: entrypoint clones the repo, maps model env, runs `goose serve` | built into minikube (auto-rebuilt if missing) |
+| `acp-mock-harness:dev` | deterministic mock agent (no LLM) — for the create-flow beat | built into minikube (auto-rebuilt if missing) |
 
-Pre-flight sanity: `kubectl get deploy -n agentic-controller-system` (1/1),
-`kubectl get agent -n konveyor-agents` (both Ready), shim `curl :7080/healthz`.
+**One command** (idempotent; safe after reboot / `minikube stop`):
+
+```sh
+hack/demo-up.sh     # preflight + converge cluster + start shim & UI, prints URLs
+hack/demo-down.sh   # stop the local processes; cluster untouched
+```
+
+It verifies the controller deployment, rebuilds missing harness images,
+applies `manifests/samples.yaml` (+ `goose-bedrock.yaml` when
+`aws-bedrock-creds` exists), and gates on the Agent going Ready. Only true
+prerequisites: minikube running, Agent Sandbox installed, and the
+`agentic-controller:dev` image present (rebuild instructions live in the
+`install.yaml` header). Runs do not survive a minikube restart
+(`restartPolicy: Never`) — create fresh ones, don't rely on old pods.
 
 ## Beat 1 — create a run in the browser (2 min)
 
