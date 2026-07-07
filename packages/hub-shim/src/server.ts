@@ -5,8 +5,9 @@
  * can drive the real agentic-controller today. Browsers cannot set the
  * X-Secret-Key upgrade header nor reach the sandbox pod; this shim owns
  * both: it resolves a run's ACP endpoint (pod by status.sandboxName, key
- * from status.secretKeyRef), opens a Kubernetes port-forward tunnel, and
- * pipes WebSocket frames between the browser and the pod's :4000/acp.
+ * from status.secretKeyRef), reaches the pod (port-forward tunnel on a
+ * laptop, direct service-DNS dial in-cluster), and pipes WebSocket frames
+ * between the browser and the pod's :4000/acp.
  *
  * Routes:
  *   GET    /healthz                     -> 200 "ok"
@@ -42,6 +43,20 @@ const PORT = Number(process.env.PORT ?? 7080);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const NAMESPACE = process.env.NAMESPACE ?? "konveyor-agents";
 const ACP_RESOLVE_TIMEOUT_MS = 60_000;
+
+/**
+ * How to reach a sandbox pod's :4000.
+ *  - "tunnel": Kubernetes port-forward (the laptop-dev substitute).
+ *  - "direct": dial the run's headless-Service DNS name — the in-cluster
+ *    path, and what the real Hub proxy will do.
+ * Auto-detect: in-cluster (serviceaccount env present) means direct.
+ */
+const ACP_DIAL =
+  process.env.ACP_DIAL === "direct" || process.env.ACP_DIAL === "tunnel"
+    ? process.env.ACP_DIAL
+    : process.env.KUBERNETES_SERVICE_HOST
+      ? "direct"
+      : "tunnel";
 
 const log = (msg: string) => console.log(`[hub-shim] ${msg}`);
 const warn = (msg: string) => console.warn(`[hub-shim] ${msg}`);
@@ -301,14 +316,21 @@ async function bridgeAcp(client: WsWebSocket, runName: string): Promise<void> {
     });
     if (clientClosed) return;
 
-    tunnel = await openTunnel(runClient.kc, NAMESPACE, endpoint.podName, endpoint.port);
-    if (clientClosed) {
-      tunnel.close();
-      return;
+    let target: string;
+    if (ACP_DIAL === "direct") {
+      // In-cluster: the headless Service's DNS name resolves straight to
+      // the pod IP; no port-forward machinery needed.
+      target = `ws://${endpoint.serviceHost}:${endpoint.port}/acp`;
+      log(`${tag} resolved pod ${endpoint.podName}, dialing ${endpoint.serviceHost}:${endpoint.port}`);
+    } else {
+      tunnel = await openTunnel(runClient.kc, NAMESPACE, endpoint.podName, endpoint.port);
+      if (clientClosed) {
+        tunnel.close();
+        return;
+      }
+      log(`${tag} resolved pod ${endpoint.podName}, tunnel 127.0.0.1:${tunnel.localPort}`);
+      target = `ws://127.0.0.1:${tunnel.localPort}/acp`;
     }
-    log(`${tag} resolved pod ${endpoint.podName}, tunnel 127.0.0.1:${tunnel.localPort}`);
-
-    const target = `ws://127.0.0.1:${tunnel.localPort}/acp`;
     // The shim injects the X-Secret-Key header the browser cannot set.
     upstream = new WsWebSocket(target, { headers: { "X-Secret-Key": endpoint.secretKey } });
 
@@ -367,7 +389,7 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 server.listen(PORT, HOST, () => {
-  log(`SHIM API v1 listening on http://${HOST}:${PORT} (namespace=${NAMESPACE})`);
+  log(`SHIM API v1 listening on http://${HOST}:${PORT} (namespace=${NAMESPACE}, acp-dial=${ACP_DIAL})`);
   log(`routes: GET /healthz | GET /api/agents | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`);
 });
 

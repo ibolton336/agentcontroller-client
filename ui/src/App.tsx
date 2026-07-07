@@ -14,7 +14,11 @@ import { errorMessage } from "./format";
 import { RunsPage } from "./components/RunsPage";
 import { RunDetailPage } from "./components/RunDetailPage";
 
-const SHIM_URL = import.meta.env.VITE_SHIM_URL ?? "http://127.0.0.1:7080";
+// Dev default: the local shim. Production (static build behind nginx):
+// same-origin — nginx proxies /api (HTTP + WebSocket) to the gateway.
+const SHIM_URL =
+  import.meta.env.VITE_SHIM_URL ??
+  (import.meta.env.DEV ? "http://127.0.0.1:7080" : window.location.origin);
 
 type View = { kind: "list" } | { kind: "detail"; runName: string };
 

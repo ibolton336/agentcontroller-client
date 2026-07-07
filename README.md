@@ -112,5 +112,8 @@ hosts:
 - `packages/hub-shim/` — localhost HTTP/WS proxy (SHIM HTTP API v1), the
   reference shape for the future Konveyor Hub passthrough proxy.
 - `ui/` — browser UI prototype (Vite + PatternFly) driving runs through the shim.
+- `deploy/` — in-cluster deployment of the UI + gateway (images, RBAC,
+  kustomize manifests): the whole stack cluster-hosted, zero laptop
+  processes; the gateway direct-dials sandbox pods via service DNS.
 - `hack/upstream-patches/` — prepared (not submitted) upstream patches.
 - `packages/agentrun-client/` — the original node POC client, kept for reference.
