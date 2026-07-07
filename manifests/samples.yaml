@@ -56,3 +56,51 @@ spec:
       type: string
       description: Branch to analyze
       default: main
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: analyze-java-ee
+  namespace: konveyor-agents
+spec:
+  displayName: Analyze Java EE application
+  description: Identify Java EE APIs in use and map each to its Jakarta/cloud-native replacement.
+  type: skill
+  version: 0.1.0
+  tags: [java, migration, analysis]
+  # Exactly one of image | source | inline (CEL-enforced). Image refs are
+  # accepted as-is today (Ready=True); the ref is not pulled or validated.
+  image: "quay.io/konveyor/skill-analyze-java-ee:v0.1.0"
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: cloud-readiness-rules
+  namespace: konveyor-agents
+spec:
+  displayName: Cloud readiness ground rules
+  description: Always-loaded constraints the agent must respect while analyzing.
+  type: rule
+  version: 0.1.0
+  tags: [migration, policy]
+  # Inline stays NotReady (InlineNotSupported) until upstream Phase 3 lands.
+  # Kept inline on purpose: sample data should exercise both Ready states.
+  inline: |
+    # Cloud readiness ground rules
+
+    - Never modify application source; analysis is read-only.
+    - Flag any local-filesystem or hardcoded-hostname dependency.
+    - Prefer configuration over code changes in every recommendation.
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCollection
+metadata:
+  name: migration-skills
+  namespace: konveyor-agents
+spec:
+  # Each entry references exactly one of skillCardRef | image | source.
+  skills:
+    - name: analyze-java-ee
+      skillCardRef: analyze-java-ee
+    - name: cloud-readiness-rules
+      skillCardRef: cloud-readiness-rules
