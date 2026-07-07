@@ -8,6 +8,7 @@
  * stream proxy, connect to the service host directly instead.
  */
 import * as net from "node:net";
+import { inspect } from "node:util";
 import * as k8s from "@kubernetes/client-node";
 
 export interface Tunnel {
@@ -23,10 +24,22 @@ export async function openTunnel(
 ): Promise<Tunnel> {
   const forward = new k8s.PortForward(kc);
   const server = net.createServer((socket) => {
+    // Without a listener, a socket 'error' (destroy(err) below, or a
+    // mid-stream failure surfaced by the port-forward piping) is an
+    // unhandled 'error' event and kills the whole process.
+    socket.on("error", (err) => {
+      console.error(`[portforward] ${podName}:${targetPort} socket error: ${err.message}`);
+    });
     forward
       .portForward(namespace, podName, [targetPort], socket, null, socket)
       .catch((err) => {
-        socket.destroy(err instanceof Error ? err : new Error(String(err)));
+        // Rejections are often ws ErrorEvents, not Errors — grab .message
+        // before falling back to a full inspect dump.
+        const reason =
+          typeof (err as { message?: unknown })?.message === "string"
+            ? (err as { message: string }).message
+            : inspect(err, { depth: 2 });
+        socket.destroy(new Error(`port-forward to ${podName}:${targetPort} failed: ${reason}`));
       });
   });
 

@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "ui", "--", "--port", "5175", "--strictPort"],
       "port": 5175
+    },
+    {
+      "name": "hub-shim",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start", "--prefix", "packages/hub-shim"],
+      "port": 7080
     }
   ]
 }
