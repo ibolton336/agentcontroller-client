@@ -87,6 +87,10 @@ passthrough proxy is expected to expose:
 |--------|-------|----------|
 | GET | `/healthz` | 200 `ok` |
 | GET | `/api/agents` | 200 `AgentResource[]` (full CRs, metadata+spec) |
+| GET | `/api/agents/:name` | 200 `AgentResource` \| 404 |
+| GET | `/api/llmproviders[/:name]` | 200 `LLMProvider[]` \| `LLMProvider` \| 404 |
+| GET | `/api/skillcards[/:name]` | 200 `SkillCard[]` \| `SkillCard` \| 404 |
+| GET | `/api/skillcollections[/:name]` | 200 `SkillCollection[]` \| `SkillCollection` \| 404 |
 | GET | `/api/agentruns` | 200 `AgentRun[]` (full CRs) |
 | POST | `/api/agentruns` (body `{agentRef, params?: Record<string,string>, instructions?}`) | 201 `AgentRun` (created with generateName `ui-`, params mapped to `[{name,value}]`) |
 | GET | `/api/agentruns/:name` | 200 `AgentRun` \| 404 |

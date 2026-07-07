@@ -11,7 +11,10 @@
  *
  * Routes:
  *   GET    /healthz                     -> 200 "ok"
- *   GET    /api/agents                  -> 200 Agent[]
+ *   GET    /api/agents[/:name]          -> 200 Agent[] | Agent | 404
+ *   GET    /api/llmproviders[/:name]    -> 200 LLMProvider[] | LLMProvider | 404
+ *   GET    /api/skillcards[/:name]      -> 200 SkillCard[] | SkillCard | 404
+ *   GET    /api/skillcollections[/:name]-> 200 SkillCollection[] | SkillCollection | 404
  *   GET    /api/agentruns               -> 200 AgentRun[]
  *   POST   /api/agentruns               -> 201 AgentRun (generateName "ui-")
  *   GET    /api/agentruns/:name         -> 200 AgentRun | 404
@@ -34,7 +37,6 @@ import {
   GROUP,
   VERSION,
   PLURALS,
-  type Agent,
   type AgentRun,
   type AgentRunSpec,
 } from "../../agentrun-client/src/types.js";
@@ -83,6 +85,25 @@ async function listCustom<T extends { apiVersion?: string; kind?: string }>(
   // List items omit apiVersion/kind; restore them so clients get full CRs.
   return (res.items ?? []).map((item) => ({ apiVersion: API_VERSION, kind, ...item }));
 }
+
+async function getCustom(plural: string, kind: string, name: string): Promise<object> {
+  const obj = (await custom.getNamespacedCustomObject({
+    group: GROUP,
+    version: VERSION,
+    namespace: NAMESPACE,
+    plural,
+    name,
+  })) as Record<string, unknown>;
+  return { apiVersion: API_VERSION, kind, ...obj };
+}
+
+/** Resources served read-only as full CRs: list + get by name. */
+const READ_ONLY: Record<string, string> = {
+  [PLURALS.Agent]: "Agent",
+  [PLURALS.LLMProvider]: "LLMProvider",
+  [PLURALS.SkillCard]: "SkillCard",
+  [PLURALS.SkillCollection]: "SkillCollection",
+};
 
 // ---------------------------------------------------------------- HTTP api
 
@@ -170,9 +191,19 @@ async function handleApi(
 ): Promise<void> {
   const method = req.method ?? "GET";
 
-  if (pathname === "/api/agents") {
+  const roMatch = /^\/api\/([a-z]+)(?:\/([^/]+))?$/.exec(pathname);
+  if (roMatch && READ_ONLY[roMatch[1]]) {
     if (method !== "GET") return sendError(res, 405, "method not allowed");
-    return sendJson(res, 200, await listCustom<Agent>(PLURALS.Agent, "Agent"));
+    const plural = roMatch[1];
+    const kind = READ_ONLY[plural];
+    if (!roMatch[2]) return sendJson(res, 200, await listCustom(plural, kind));
+    const name = decodeURIComponent(roMatch[2]);
+    try {
+      return sendJson(res, 200, await getCustom(plural, kind, name));
+    } catch (err) {
+      if (k8sStatusCode(err) === 404) return sendError(res, 404, `${kind} ${name} not found`);
+      throw err;
+    }
   }
 
   if (pathname === "/api/agentruns") {
@@ -390,7 +421,9 @@ server.on("upgrade", (req, socket, head) => {
 
 server.listen(PORT, HOST, () => {
   log(`SHIM API v1 listening on http://${HOST}:${PORT} (namespace=${NAMESPACE}, acp-dial=${ACP_DIAL})`);
-  log(`routes: GET /healthz | GET /api/agents | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`);
+  log(
+    `routes: GET /healthz | GET /api/{agents,llmproviders,skillcards,skillcollections}[/:name] | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
+  );
 });
 
 process.on("SIGINT", () => {

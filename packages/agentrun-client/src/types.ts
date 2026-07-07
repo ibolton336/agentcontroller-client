@@ -159,8 +159,59 @@ export interface LLMProvider {
   };
 }
 
+// --------------------------------------------------------------- SkillCard
+
+export interface SkillCardSpec {
+  displayName?: string;
+  description?: string;
+  /** Exactly one of image | inline | source provides the skill content. */
+  image?: string;
+  inline?: string;
+  source?: string;
+  tags?: string[];
+  type?: string;
+  version?: string;
+}
+
+export interface SkillCard {
+  apiVersion: typeof API_VERSION;
+  kind: "SkillCard";
+  metadata: ObjectMeta;
+  spec: SkillCardSpec;
+  status?: {
+    observedGeneration?: number;
+    resolvedImage?: string;
+    conditions?: Condition[];
+  };
+}
+
+// --------------------------------------------------------- SkillCollection
+
+export interface SkillCollectionSkillRef {
+  /** Local name for this skill within the collection. */
+  name: string;
+  /** Exactly one of skillCardRef | image | source must be set. */
+  skillCardRef?: string;
+  image?: string;
+  source?: string;
+}
+
+export interface SkillCollectionSpec {
+  skills?: SkillCollectionSkillRef[];
+}
+
+export interface SkillCollection {
+  apiVersion: typeof API_VERSION;
+  kind: "SkillCollection";
+  metadata: ObjectMeta;
+  spec: SkillCollectionSpec;
+  status?: { observedGeneration?: number; conditions?: Condition[] };
+}
+
 export const PLURALS = {
   AgentRun: "agentruns",
   Agent: "agents",
   LLMProvider: "llmproviders",
+  SkillCard: "skillcards",
+  SkillCollection: "skillcollections",
 } as const;
