@@ -58,7 +58,45 @@ Verified against the live controller; every client depends on these:
   affordances are delete + recreate. Intentional and fine — but say so, or
   every UI team rediscovers it via a 422.
 
-## 4. Minor operational notes
+## 4. Skills are broken on Docker-runtime clusters (ImageVolume support)
+
+**Where:** `resolveSkillVolumes()` — skills mount as `corev1.ImageVolumeSource`
+at `/opt/skills/{name}/`.
+
+**What:** verified live on minikube (k8s v1.35.1, runtime `docker://29.2.1`
+via cri-dockerd): the whole chain works — SkillCard Ready
+(`ImageResolved`), Agent Ready, ImageVolume present in the pod spec,
+kubelet accepts it ("can be accessed by the pod") — and then the pod
+sticks in `CreateContainerError`:
+
+> Error response from daemon: invalid mount config for type "bind":
+> field Source must not be empty
+
+cri-dockerd doesn't implement CRI image-volume mounts (containerd >= 2.0 /
+CRI-O do). Default minikube — the documented dev path — uses the docker
+runtime, so **any Agent that declares a skill produces runs that can never
+start** there. Repro: `docs/demo/skill-probe.yaml` in the client repo.
+
+**Compounding it:** the AgentRun reports `phase=Running` the whole time —
+the Sandbox-condition mapping doesn't surface container-level failure, so
+clients show "connecting…" forever with no hint.
+
+**Asks:** (a) document the minimum platform for skills (containerd >= 2.0 /
+CRI-O with image-volume support; feature gate); (b) consider an
+initContainer-copy fallback (skill image as initContainer, `cp` into a
+shared emptyDir) which works on every runtime; (c) map sandbox/pod
+container failures into AgentRun conditions (and ideally a Failed phase)
+so unstartable runs are visible.
+
+## 5. Per-run skill selection doesn't exist yet (worth stating)
+
+`AgentRunSpec` has no skills field — every run mounts all of its Agent's
+skills. Fine for MVP, but the enhancement's "Agent = capability menu,
+AgentRun = specific selections" is currently only true for models. Worth a
+doc note so client teams don't design per-run skill pickers against an API
+that isn't there.
+
+## 6. Minor operational notes
 
 - The LLMProvider verification image is hardcoded to
   `quay.io/konveyor/agentic-controller-agent:latest` with no flag/env

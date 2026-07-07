@@ -69,4 +69,22 @@ if [ -n "${KONVEYOR_PROMPT:-}${KONVEYOR_INSTRUCTIONS:-}" ]; then
     || log "WARNING: could not write /workspace/.goosehints"
 fi
 
+# 4. Skills: the controller mounts each resolved SkillCard as an ImageVolume
+#    at /opt/skills/<name>/. Fold every skill's SKILL.md into the hints so
+#    the agent actually knows its skills. (Requires a runtime with k8s
+#    ImageVolume support — containerd >= 2.0 / CRI-O; docker/cri-dockerd
+#    pods fail with CreateContainerError before we ever run.)
+if [ -d /opt/skills ]; then
+  for d in /opt/skills/*/; do
+    [ -f "${d}SKILL.md" ] || continue
+    name="$(basename "$d")"
+    {
+      printf '\n\n## Skill: %s (files under %s)\n\n' "$name" "$d"
+      cat "${d}SKILL.md"
+    } >> /workspace/.goosehints 2>/dev/null \
+      && log "folded skill '$name' into .goosehints" \
+      || log "WARNING: could not fold skill '$name'"
+  done
+fi
+
 exec goose serve --host 0.0.0.0 --port 4000
