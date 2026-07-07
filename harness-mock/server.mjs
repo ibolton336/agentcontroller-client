@@ -141,7 +141,39 @@ function buildAgent() {
       if (GOOSE_MODE !== "auto" || userText.includes("TEST_PERMISSION")) {
         const response = await cx.client.request(acp.methods.client.session.requestPermission, {
           sessionId,
-          toolCall: { toolCallId: "call_2", title: "Write findings to .konveyor/" },
+          toolCall: {
+            toolCallId: "call_2",
+            title: "Write findings to .konveyor/",
+            kind: "edit",
+            // Standard ACP ToolCallContent diff blocks — the diff-preview
+            // payload UIs render before approving.
+            content: [
+              {
+                type: "diff",
+                path: "src/main/java/com/example/InventoryService.java",
+                oldText: [
+                  "import javax.ejb.Stateless;",
+                  "import javax.persistence.EntityManager;",
+                  "",
+                  "@Stateless",
+                  "public class InventoryService {",
+                ].join("\n"),
+                newText: [
+                  "import jakarta.ejb.Stateless;",
+                  "import jakarta.persistence.EntityManager;",
+                  "",
+                  "@Stateless",
+                  "public class InventoryService {",
+                ].join("\n"),
+              },
+              {
+                type: "diff",
+                path: ".konveyor/java-ee-findings.md",
+                oldText: null, // new file
+                newText: "# Findings\n\n- javax.* imports: 2 (map to jakarta.*)\n",
+              },
+            ],
+          },
           options: [
             { optionId: "allow", name: "Allow", kind: "allow_once" },
             { optionId: "reject", name: "Reject", kind: "reject_once" },

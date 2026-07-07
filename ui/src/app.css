@@ -119,6 +119,47 @@ body,
   gap: 0.5rem;
 }
 
+.chat-diff {
+  border: 1px solid #d2d2d2;
+  border-radius: 4px;
+  background: #ffffff;
+  overflow: hidden;
+}
+.chat-diff-path {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  background: #f0f0f0;
+  border-bottom: 1px solid #d2d2d2;
+  font-size: 0.85rem;
+}
+.chat-diff-body {
+  margin: 0;
+  padding: 0.25rem 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  overflow-x: auto;
+}
+.chat-diff-line {
+  padding: 0 0.5rem;
+  white-space: pre;
+}
+.chat-diff-sign {
+  display: inline-block;
+  width: 1rem;
+  user-select: none;
+  opacity: 0.7;
+}
+.chat-diff-add {
+  background: #e6f6e6;
+  color: #1e4f18;
+}
+.chat-diff-del {
+  background: #fbe7e7;
+  color: #7d1007;
+}
+
 .chat-input-row {
   display: flex;
   gap: 0.5rem;

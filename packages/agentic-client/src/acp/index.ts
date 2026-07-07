@@ -33,10 +33,20 @@ const DEFAULT_CWD = "/workspace";
 /** Pass-through of an ACP session/update payload (params.update). */
 export type SessionUpdate = { sessionUpdate: string; [k: string]: unknown };
 
+/**
+ * A file modification from a ToolCallContent {type:"diff"} block
+ * (standard ACP shape: path + oldText/newText; oldText null = new file).
+ */
+export type ToolCallDiff = {
+  path: string;
+  oldText?: string | null;
+  newText: string;
+};
+
 /** An agent -> client session/request_permission ask. */
 export type PermissionRequest = {
   sessionId: string;
-  toolCall?: { toolCallId?: string; title?: string };
+  toolCall?: { toolCallId?: string; title?: string; diffs?: ToolCallDiff[] };
   options: { optionId: string; name: string; kind: string }[];
 };
 
@@ -116,6 +126,22 @@ interface PendingRequest {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+/** Extracts {type:"diff"} blocks from a ToolCallUpdate.content array. */
+function parseToolCallDiffs(content: unknown): ToolCallDiff[] | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const diffs: ToolCallDiff[] = [];
+  for (const block of content) {
+    if (!isRecord(block) || block.type !== "diff") continue;
+    if (typeof block.path !== "string" || typeof block.newText !== "string") continue;
+    diffs.push({
+      path: block.path,
+      oldText: typeof block.oldText === "string" ? block.oldText : null,
+      newText: block.newText,
+    });
+  }
+  return diffs.length > 0 ? diffs : undefined;
 }
 
 interface InitializeResult {
@@ -413,6 +439,7 @@ export class AcpSession {
       ? {
           toolCallId: typeof p.toolCall.toolCallId === "string" ? p.toolCall.toolCallId : undefined,
           title: typeof p.toolCall.title === "string" ? p.toolCall.title : undefined,
+          diffs: parseToolCallDiffs(p.toolCall.content),
         }
       : undefined;
     const options = Array.isArray(p.options)

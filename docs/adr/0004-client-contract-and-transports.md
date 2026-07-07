@@ -61,6 +61,13 @@ verified against the real controller (PR #4) on a live cluster:
 - **AgentRun spec is IMMUTABLE after create** (a whole-spec CEL rule).
   Clients MUST delete + recreate to change anything; PATCHing spec will be
   rejected by the apiserver.
+- **Permission diff preview needs no protocol extension.** ACP already
+  defines it: `session/request_permission`'s `toolCall` is a
+  `ToolCallUpdate` whose `content[]` accepts `{type:"diff", path,
+  oldText, newText}` (`oldText: null` = new file). Agents SHOULD attach
+  diff blocks to file-modifying permission asks; clients SHOULD render
+  them before the approve/reject choice. Verified end-to-end (mock
+  harness → hub-shim WS proxy → browser ChatPanel, 2026-07-07).
 
 ### (b) Layered client: isomorphic core, pluggable transports
 

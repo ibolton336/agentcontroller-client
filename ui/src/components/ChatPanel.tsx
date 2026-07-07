@@ -15,6 +15,7 @@ import type {
   PermissionOutcome,
   PermissionRequest,
   SessionUpdate,
+  ToolCallDiff,
 } from "@konveyor/agentic-client/acp";
 import { isTerminalPhase, waitForRunning } from "@konveyor/agentic-client/contract";
 import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
@@ -49,6 +50,8 @@ interface PermissionItem {
   kind: "permission";
   id: number;
   title?: string;
+  /** File modifications to preview before answering (ACP diff blocks). */
+  diffs?: ToolCallDiff[];
   options: PermissionRequest["options"];
   /** optionId chosen by the user, or "cancelled". Unset while pending. */
   chosen?: string;
@@ -197,7 +200,13 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
       permissionResolvers.current.set(id, resolve);
       setItems((prev) => [
         ...prev,
-        { kind: "permission", id, title: r.toolCall?.title, options: r.options },
+        {
+          kind: "permission",
+          id,
+          title: r.toolCall?.title,
+          diffs: r.toolCall?.diffs,
+          options: r.options,
+        },
       ]);
     });
   }, []);
@@ -422,6 +431,64 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
 
 // ------------------------------------------------------------- item views
 
+type DiffLine = { op: "add" | "del" | "ctx"; text: string };
+
+/** Classic LCS line diff — fine at permission-preview sizes. */
+function diffLines(oldText: string, newText: string): DiffLine[] {
+  const a = oldText.split("\n");
+  const b = newText.split("\n");
+  const m = a.length;
+  const n = b.length;
+  const lcs: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      out.push({ op: "ctx", text: a[i] });
+      i++;
+      j++;
+    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+      out.push({ op: "del", text: a[i++] });
+    } else {
+      out.push({ op: "add", text: b[j++] });
+    }
+  }
+  while (i < m) out.push({ op: "del", text: a[i++] });
+  while (j < n) out.push({ op: "add", text: b[j++] });
+  return out;
+}
+
+function DiffPreview({ diff }: { diff: ToolCallDiff }) {
+  const isNewFile = diff.oldText == null;
+  const lines: DiffLine[] = isNewFile
+    ? diff.newText.split("\n").map((text) => ({ op: "add" as const, text }))
+    : diffLines(diff.oldText ?? "", diff.newText);
+  return (
+    <div className="chat-diff">
+      <div className="chat-diff-path">
+        <code>{diff.path}</code>
+        {isNewFile ? <Label color="green">new file</Label> : null}
+      </div>
+      <pre className="chat-diff-body">
+        {lines.map((l, idx) => (
+          <div key={idx} className={`chat-diff-line chat-diff-${l.op}`}>
+            <span className="chat-diff-sign">
+              {l.op === "add" ? "+" : l.op === "del" ? "-" : " "}
+            </span>
+            {l.text}
+          </div>
+        ))}
+      </pre>
+    </div>
+  );
+}
+
 function ToolStatusIcon({ status }: { status: string }) {
   if (status === "completed") {
     return <CheckCircleIcon style={{ color: "#3e8635" }} aria-label="completed" />;
@@ -486,6 +553,7 @@ function ChatItemView({
           <div className="chat-permission-title">
             Permission requested{item.title ? `: ${item.title}` : ""}
           </div>
+          {item.diffs?.map((d) => <DiffPreview key={d.path} diff={d} />)}
           {chosenName ? (
             <Label color="blue">answered: {chosenName}</Label>
           ) : (
