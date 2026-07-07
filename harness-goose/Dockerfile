@@ -18,11 +18,16 @@ RUN curl -fsSL \
     && chmod +x /usr/local/bin/goose \
     && goose --version
 
-# Headless defaults; the controller/simulator overrides per run.
+# Headless defaults; the controller overrides per run.
 ENV GOOSE_DISABLE_KEYRING=1 \
     GOOSE_MODE=auto \
     HOME=/root
 
+# Agent-base entrypoint: clones the run's repository into /workspace and
+# maps the controller's KONVEYOR_* env contract onto goose before serving.
+COPY entrypoint.sh /usr/local/bin/agent-entrypoint.sh
+RUN chmod +x /usr/local/bin/agent-entrypoint.sh
+
 WORKDIR /workspace
 EXPOSE 4000
-CMD ["goose", "serve", "--host", "0.0.0.0", "--port", "4000"]
+CMD ["/usr/local/bin/agent-entrypoint.sh"]

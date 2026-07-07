@@ -18,7 +18,7 @@ controller lands, delete the simulator — the client code is unchanged.
 | `packages/agentrun-client/dev/` | `simulate-controller.ts` (stand-in reconciler), `demo.ts` (end-to-end flow), `local-smoke.ts` (no-cluster protocol test). |
 | `harness-mock/` | Mock of the sandbox harness ACP surface — real ACP via the SDK's server side, deterministic fake agent. Honors `GOOSE_SERVER__SECRET_KEY`, `GOOSE_MODE`, `KONVEYOR_PARAM_*`, `AGENT_PROMPT`. |
 | `manifests/` | Sample LLMProvider + Agent CRs (`samples.yaml` = mock, `goose-bedrock.yaml` = real goose on AWS Bedrock). |
-| `harness-goose/` | Real harness image: goose v1.39.0 `serve --host 0.0.0.0 --port 4000` (plain HTTP at this tag; the self-signed-TLS default landed later — keep it pinned). Provider/model/credentials arrive via env from the LLMProvider resolution in the simulator. |
+| `harness-goose/` | Real agent-base image: goose v1.39.0 `serve` on :4000 (plain HTTP at this tag; the self-signed-TLS default landed later — keep it pinned) behind `entrypoint.sh`, which adapts the real controller's KONVEYOR_* env contract — clones the run's `repository` param into `/workspace`, maps `KONVEYOR_MODEL_PRIMARY_*` onto `GOOSE_PROVIDER`/`GOOSE_MODEL`, and writes the prompt/instructions to `.goosehints`. SigV4 creds arrive via `run.spec.envFrom` (the controller's single-key injection fits OpenAI-style providers only). |
 | `agentic-controller/` | Upstream clone (with two local CEL-rule fixes in the Agent CRD, PR pending). |
 
 > **Full local dev-mode guide** (cluster + simulator + extension dev
