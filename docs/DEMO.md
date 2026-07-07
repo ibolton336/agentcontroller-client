@@ -23,8 +23,13 @@ is Agent Sandbox v0.5.0, the agent is goose 1.39 on AWS Bedrock.
 
 ```sh
 hack/demo-up.sh     # preflight + converge cluster + start shim & UI, prints URLs
+hack/demo-check.sh  # pre-demo smoke: full ACP round-trip on a throwaway mock run
 hack/demo-down.sh   # stop the local processes; cluster untouched
 ```
+
+Run `demo-check.sh` right before presenting — exit 0 means every beat's
+surface is live (it creates, chats with, replays, and deletes a mock run
+through the same shim/WS path the browser uses; costs nothing).
 
 It verifies the controller deployment, rebuilds missing harness images,
 applies `manifests/samples.yaml` (+ `goose-bedrock.yaml` when
