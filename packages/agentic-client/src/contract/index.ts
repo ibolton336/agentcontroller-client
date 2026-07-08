@@ -182,6 +182,75 @@ function decodeBase64Utf8(b64: string, keyName: string): string {
   return new TextDecoder().decode(bytes);
 }
 
+// ------------------------------------------------- platform-resolved params
+
+/**
+ * Label marking Agents the Konveyor platform (Hub/UI) knows how to drive.
+ * Platform agent lists filter on this; unlabeled Agents stay invisible to
+ * Konveyor UIs without affecting other consumers of the generic CRD.
+ */
+export const MANAGED_LABEL = "konveyor.io/managed";
+
+/**
+ * Agent annotation mapping param name -> source identifier, e.g.
+ * {"repository": "konveyor.io/application-repository-url"}. A param with a
+ * source is resolved by the platform (Hub / hub-shim) at run creation;
+ * params without one are supplied by the caller. Source identifiers are
+ * namespaced strings, NOT a CRD enum — consumers that do not recognize a
+ * value MUST fail open and treat the param as caller-supplied.
+ * (Annotation today; graduates to an AgentParam field once proven.)
+ */
+export const PARAM_SOURCES_ANNOTATION = "konveyor.io/param-sources";
+
+/**
+ * Agent annotation mapping credential name -> source identifier, e.g.
+ * {"git": "konveyor.io/application-identity"}. Same contract as param
+ * sources but resolves to a Secret the platform mounts via
+ * AgentRun.spec.envFrom instead of a string param value.
+ */
+export const CREDENTIAL_SOURCES_ANNOTATION = "konveyor.io/credential-sources";
+
+/** Well-known source identifiers the prototype platform resolves. */
+export const SOURCE_APPLICATION_REPOSITORY_URL = "konveyor.io/application-repository-url";
+export const SOURCE_APPLICATION_REPOSITORY_BRANCH = "konveyor.io/application-repository-branch";
+export const SOURCE_APPLICATION_IDENTITY = "konveyor.io/application-identity";
+
+/**
+ * Parses an Agent's param-sources (or credential-sources) annotation into a
+ * name -> source map. Returns {} for a missing, malformed, or non-object
+ * annotation — bad metadata must never break run creation (fail open).
+ */
+export function parseSourcesAnnotation(
+  agent: Pick<AgentResource, "metadata"> | undefined,
+  annotation: string = PARAM_SOURCES_ANNOTATION,
+): Record<string, string> {
+  const raw = agent?.metadata?.annotations?.[annotation];
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = {};
+    for (const [name, source] of Object.entries(parsed)) {
+      if (typeof source === "string" && source.trim() !== "") out[name] = source;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * A Konveyor application as the platform's application inventory exposes it
+ * (Hub in production; the hub-shim's mock inventory today).
+ */
+export interface Application {
+  id: string;
+  name: string;
+  repository?: { url: string; branch?: string };
+  /** Name of the Secret holding this application's repository credentials. */
+  identitySecret?: string;
+}
+
 // ----------------------------------------------------------------- RunApi
 
 /** Input for RunApi.createRun — params as a plain map, mapped by the transport. */
@@ -189,6 +258,11 @@ export interface CreateRunInput {
   agentRef: string;
   params?: Record<string, string>;
   instructions?: string;
+  /**
+   * Application whose data the platform uses to resolve sourced params and
+   * credentials. Caller-supplied param values always win over resolution.
+   */
+  applicationRef?: string;
 }
 
 /**
@@ -198,6 +272,8 @@ export interface CreateRunInput {
  */
 export interface RunApi {
   listAgents(): Promise<AgentResource[]>;
+  /** Platform application inventory (for resolving sourced params). */
+  listApplications(): Promise<Application[]>;
   listRuns(): Promise<AgentRun[]>;
   createRun(input: CreateRunInput): Promise<AgentRun>;
   getRun(name: string): Promise<AgentRun>;

@@ -11,7 +11,9 @@
  *
  * Routes:
  *   GET    /healthz                     -> 200 "ok"
+ *   GET    /api/applications            -> 200 Application[] (mock inventory)
  *   GET    /api/agents[/:name]          -> 200 Agent[] | Agent | 404
+ *                                          (list filtered: konveyor.io/managed=true)
  *   GET    /api/llmproviders[/:name]    -> 200 LLMProvider[] | LLMProvider | 404
  *   GET    /api/skillcards[/:name]      -> 200 SkillCard[] | SkillCard | 404
  *   GET    /api/skillcollections[/:name]-> 200 SkillCollection[] | SkillCollection | 404
@@ -37,9 +39,21 @@ import {
   GROUP,
   VERSION,
   PLURALS,
+  type Agent,
   type AgentRun,
   type AgentRunSpec,
+  type EnvFromSource,
 } from "../../agentrun-client/src/types.js";
+import {
+  CREDENTIAL_SOURCES_ANNOTATION,
+  MANAGED_LABEL,
+  PARAM_SOURCES_ANNOTATION,
+  SOURCE_APPLICATION_IDENTITY,
+  SOURCE_APPLICATION_REPOSITORY_BRANCH,
+  SOURCE_APPLICATION_REPOSITORY_URL,
+  parseSourcesAnnotation,
+  type Application,
+} from "../../agentic-client/src/contract/index.js";
 
 const PORT = Number(process.env.PORT ?? 7080);
 const HOST = process.env.HOST ?? "127.0.0.1";
@@ -75,12 +89,14 @@ const custom = kc.makeApiClient(k8s.CustomObjectsApi);
 async function listCustom<T extends { apiVersion?: string; kind?: string }>(
   plural: string,
   kind: string,
+  labelSelector?: string,
 ): Promise<T[]> {
   const res = (await custom.listNamespacedCustomObject({
     group: GROUP,
     version: VERSION,
     namespace: NAMESPACE,
     plural,
+    labelSelector,
   })) as { items?: T[] };
   // List items omit apiVersion/kind; restore them so clients get full CRs.
   return (res.items ?? []).map((item) => ({ apiVersion: API_VERSION, kind, ...item }));
@@ -104,6 +120,39 @@ const READ_ONLY: Record<string, string> = {
   [PLURALS.SkillCard]: "SkillCard",
   [PLURALS.SkillCollection]: "SkillCollection",
 };
+
+/**
+ * Konveyor UIs only see Agents that opt into platform management. Other
+ * resource lists are unfiltered; get-by-name is never filtered.
+ */
+const LIST_LABEL_SELECTORS: Record<string, string> = {
+  [PLURALS.Agent]: `${MANAGED_LABEL}=true`,
+};
+
+/**
+ * Mock application inventory — stands in for Hub's application list the
+ * same way the shim stands in for Hub's proxy. Source resolution below
+ * reads from these; the real Hub resolves from its Application records.
+ */
+const APPLICATIONS: Application[] = [
+  {
+    id: "coolstore",
+    name: "Coolstore",
+    repository: {
+      url: "https://github.com/konveyor-ecosystem/coolstore.git",
+      branch: "main",
+    },
+    identitySecret: "git-credentials-coolstore",
+  },
+  {
+    id: "ticket-monster",
+    name: "Ticket Monster",
+    repository: {
+      url: "https://github.com/jboss-developer/ticket-monster.git",
+      branch: "2.7",
+    },
+  },
+];
 
 // ---------------------------------------------------------------- HTTP api
 
@@ -154,6 +203,90 @@ interface CreateRunBody {
   agentRef: string;
   params?: Record<string, string>;
   instructions?: string;
+  applicationRef?: string;
+}
+
+/**
+ * What the platform contributes to a run beyond the caller's input:
+ * param values resolved from the selected application, and credential
+ * Secrets mounted via envFrom.
+ */
+interface ResolvedSources {
+  params: Record<string, string>;
+  envFrom: EnvFromSource[];
+}
+
+/**
+ * Resolves an Agent's declared param/credential sources from the selected
+ * application — the Hub-side half of the param-sources contract (ADR 0005).
+ *
+ * Fail-open takes precedence over every other rule: an unrecognized source
+ * identifier, or an annotation entry naming a param the Agent does not
+ * declare, is skipped and the param reverts to caller-supplied semantics.
+ * Throws (-> 400) only for an unknown applicationRef, or for a REQUIRED
+ * param with a RECOGNIZED source that the application cannot supply.
+ */
+async function resolveSources(input: CreateRunBody): Promise<ResolvedSources> {
+  const resolved: ResolvedSources = { params: {}, envFrom: [] };
+  if (!input.applicationRef) return resolved;
+
+  const app = APPLICATIONS.find((a) => a.id === input.applicationRef);
+  if (!app) {
+    throw new Error(
+      `unknown applicationRef "${input.applicationRef}" — GET /api/applications lists the inventory`,
+    );
+  }
+  let agent: Agent;
+  try {
+    agent = (await getCustom(PLURALS.Agent, "Agent", input.agentRef)) as Agent;
+  } catch (err) {
+    if (k8sStatusCode(err) === 404) throw new Error(`unknown agentRef "${input.agentRef}"`);
+    throw err;
+  }
+
+  const sourceValues: Record<string, string | undefined> = {
+    [SOURCE_APPLICATION_REPOSITORY_URL]: app.repository?.url,
+    [SOURCE_APPLICATION_REPOSITORY_BRANCH]: app.repository?.branch,
+  };
+  const paramSources = parseSourcesAnnotation(agent, PARAM_SOURCES_ANNOTATION);
+  for (const [name, source] of Object.entries(paramSources)) {
+    if (input.params?.[name] !== undefined) continue; // caller wins
+    if (!agent.spec.params?.some((p) => p.name === name)) {
+      // Stale annotation (e.g. the param was renamed). Injecting it would
+      // hand the sandbox a KONVEYOR_PARAM_* the agent never declared.
+      log(`param-sources: "${name}" is not declared in spec.params — ignoring`);
+      continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(sourceValues, source)) {
+      log(`param-sources: unrecognized source "${source}" for param "${name}" — fail open`);
+      continue;
+    }
+    const value = sourceValues[source];
+    if (value !== undefined) {
+      resolved.params[name] = value;
+    } else if (agent.spec.params?.some((p) => p.name === name && p.required && !p.default)) {
+      throw new Error(
+        `required param "${name}" resolves from ${source}, but application ` +
+          `"${app.id}" has no value for it — supply the param explicitly`,
+      );
+    }
+  }
+
+  const credentialSources = parseSourcesAnnotation(agent, CREDENTIAL_SOURCES_ANNOTATION);
+  for (const [name, source] of Object.entries(credentialSources)) {
+    if (source !== SOURCE_APPLICATION_IDENTITY) {
+      log(`credential-sources: unrecognized source "${source}" for "${name}" — fail open`);
+      continue;
+    }
+    if (app.identitySecret) {
+      resolved.envFrom.push({ secretRef: { name: app.identitySecret } });
+    } else {
+      // Credentials are best-effort: apps without an identity (public
+      // repos) still run. The agent sees no creds and acts accordingly.
+      log(`credential "${name}": application "${app.id}" has no identity secret — skipping`);
+    }
+  }
+  return resolved;
 }
 
 /** Validates the POST /api/agentruns body; throws with a client-facing message. */
@@ -181,7 +314,15 @@ function parseCreateRunBody(raw: unknown): CreateRunBody {
   if (body.instructions !== undefined && typeof body.instructions !== "string") {
     throw new Error("instructions must be a string");
   }
-  return { agentRef: body.agentRef, params, instructions: body.instructions as string | undefined };
+  if (body.applicationRef !== undefined && typeof body.applicationRef !== "string") {
+    throw new Error("applicationRef must be a string");
+  }
+  return {
+    agentRef: body.agentRef,
+    params,
+    instructions: body.instructions as string | undefined,
+    applicationRef: body.applicationRef as string | undefined,
+  };
 }
 
 async function handleApi(
@@ -191,12 +332,19 @@ async function handleApi(
 ): Promise<void> {
   const method = req.method ?? "GET";
 
+  if (pathname === "/api/applications") {
+    if (method !== "GET") return sendError(res, 405, "method not allowed");
+    return sendJson(res, 200, APPLICATIONS);
+  }
+
   const roMatch = /^\/api\/([a-z]+)(?:\/([^/]+))?$/.exec(pathname);
   if (roMatch && READ_ONLY[roMatch[1]]) {
     if (method !== "GET") return sendError(res, 405, "method not allowed");
     const plural = roMatch[1];
     const kind = READ_ONLY[plural];
-    if (!roMatch[2]) return sendJson(res, 200, await listCustom(plural, kind));
+    if (!roMatch[2]) {
+      return sendJson(res, 200, await listCustom(plural, kind, LIST_LABEL_SELECTORS[plural]));
+    }
     const name = decodeURIComponent(roMatch[2]);
     try {
       return sendJson(res, 200, await getCustom(plural, kind, name));
@@ -212,18 +360,24 @@ async function handleApi(
     }
     if (method === "POST") {
       let input: CreateRunBody;
+      let sources: ResolvedSources;
       try {
         input = parseCreateRunBody(await readJsonBody(req));
+        sources = await resolveSources(input);
       } catch (err) {
+        if (k8sStatusCode(err) !== undefined) throw err;
         return sendError(res, 400, errorMessage(err));
       }
       const spec: AgentRunSpec = { agentRef: input.agentRef };
-      if (input.params) {
-        spec.params = Object.entries(input.params).map(([name, value]) => ({ name, value }));
+      const params = { ...sources.params, ...(input.params ?? {}) };
+      if (Object.keys(params).length > 0) {
+        spec.params = Object.entries(params).map(([name, value]) => ({ name, value }));
       }
       if (input.instructions !== undefined) spec.instructions = input.instructions;
+      if (sources.envFrom.length > 0) spec.envFrom = sources.envFrom;
       const run = await runClient.createAgentRun(spec, { generateName: "ui-" });
-      log(`created AgentRun ${run.metadata.name} (agentRef=${input.agentRef})`);
+      const via = input.applicationRef ? ` via application=${input.applicationRef}` : "";
+      log(`created AgentRun ${run.metadata.name} (agentRef=${input.agentRef}${via})`);
       return sendJson(res, 201, run);
     }
     return sendError(res, 405, "method not allowed");
@@ -422,7 +576,7 @@ server.on("upgrade", (req, socket, head) => {
 server.listen(PORT, HOST, () => {
   log(`SHIM API v1 listening on http://${HOST}:${PORT} (namespace=${NAMESPACE}, acp-dial=${ACP_DIAL})`);
   log(
-    `routes: GET /healthz | GET /api/{agents,llmproviders,skillcards,skillcollections}[/:name] | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
+    `routes: GET /healthz | GET /api/applications | GET /api/{agents,llmproviders,skillcards,skillcollections}[/:name] | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
   );
 });
 

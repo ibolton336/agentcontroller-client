@@ -12,7 +12,13 @@
  *   WS     /api/agentruns/:name/acp  -> ACP tunnel to the sandbox pod
  *                                       (the shim injects X-Secret-Key)
  */
-import type { AgentResource, AgentRun, CreateRunInput, RunApi } from "../contract/index.js";
+import type {
+  AgentResource,
+  AgentRun,
+  Application,
+  CreateRunInput,
+  RunApi,
+} from "../contract/index.js";
 
 export class ShimClient implements RunApi {
   /** Normalized base URL, no trailing slash (e.g. http://127.0.0.1:7080). */
@@ -29,6 +35,10 @@ export class ShimClient implements RunApi {
 
   listAgents(): Promise<AgentResource[]> {
     return this.json<AgentResource[]>("GET", "/api/agents");
+  }
+
+  listApplications(): Promise<Application[]> {
+    return this.json<Application[]>("GET", "/api/applications");
   }
 
   listRuns(): Promise<AgentRun[]> {

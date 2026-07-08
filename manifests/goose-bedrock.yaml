@@ -29,6 +29,15 @@ kind: Agent
 metadata:
   name: migration-analyzer-goose
   namespace: konveyor-agents
+  labels:
+    konveyor.io/managed: "true"
+  annotations:
+    # Platform-resolved params (ADR 0005) — same contract as the mock agent.
+    konveyor.io/param-sources: |
+      {"repository": "konveyor.io/application-repository-url",
+       "branch": "konveyor.io/application-repository-branch"}
+    konveyor.io/credential-sources: |
+      {"git": "konveyor.io/application-identity"}
 spec:
   image: "goose-harness:dev"
   prompt: |

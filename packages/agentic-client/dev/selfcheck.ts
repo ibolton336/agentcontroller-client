@@ -150,6 +150,7 @@ async function main(): Promise<void> {
     let i = 0;
     return {
       listAgents: () => Promise.reject(new Error("unused")),
+      listApplications: () => Promise.reject(new Error("unused")),
       listRuns: () => Promise.reject(new Error("unused")),
       createRun: () => Promise.reject(new Error("unused")),
       deleteRun: () => Promise.reject(new Error("unused")),

@@ -33,11 +33,35 @@ spec:
       contextWindow: 32000
       tier: efficient
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: git-credentials-coolstore
+  namespace: konveyor-agents
+type: Opaque
+stringData:
+  # Mock application identity (see hub-shim's application inventory). The
+  # platform mounts this via envFrom when an agent declares a credential
+  # sourced from konveyor.io/application-identity.
+  GIT_USERNAME: "coolstore-bot"
+  GIT_TOKEN: "not-a-real-token"
+---
 apiVersion: konveyor.io/v1alpha1
 kind: Agent
 metadata:
   name: migration-analyzer
   namespace: konveyor-agents
+  labels:
+    # Konveyor UIs list only managed agents (hub-shim filters on this).
+    konveyor.io/managed: "true"
+  annotations:
+    # Platform-resolved params (ADR 0005): the platform fills these from
+    # the selected application; the UI hides them from the create form.
+    konveyor.io/param-sources: |
+      {"repository": "konveyor.io/application-repository-url",
+       "branch": "konveyor.io/application-repository-branch"}
+    konveyor.io/credential-sources: |
+      {"git": "konveyor.io/application-identity"}
 spec:
   # In the real system this is the harness image (goose + toolchains).
   # The controller simulator substitutes the mock ACP harness image.
