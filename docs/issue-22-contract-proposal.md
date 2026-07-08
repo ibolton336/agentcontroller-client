@@ -1,7 +1,12 @@
 # Draft comment for konveyor/agentic-controller#22 (3.1 API client layer)
 
-Paste-ready. Standing rule: upstream delivery is a human decision — post
-this manually after review.
+**Posted upstream 2026-07-07.** The table below has since been updated with
+`/api/applications`, `applicationRef`, and the managed-label filter (ADR
+0005) — the posted comment predates those. See
+`docs/issue-22-followup.md` for the paste-ready follow-up.
+
+Standing rule: upstream delivery is a human decision — post manually after
+review.
 
 ---
 
@@ -37,12 +42,13 @@ would be written against:
 | Method | Route | Behavior |
 |--------|-------|----------|
 | GET | `/healthz` | 200 `ok` |
-| GET | `/api/agents[/:name]` | 200 `Agent[]` \| `Agent` (full CRs) \| 404 |
+| GET | `/api/applications` | 200 `Application[]` — platform application inventory |
+| GET | `/api/agents[/:name]` | 200 `Agent[]` \| `Agent` (full CRs) \| 404; the list is filtered to `konveyor.io/managed=true` |
 | GET | `/api/llmproviders[/:name]` | 200 `LLMProvider[]` \| `LLMProvider` \| 404 |
 | GET | `/api/skillcards[/:name]` | 200 `SkillCard[]` \| `SkillCard` \| 404 |
 | GET | `/api/skillcollections[/:name]` | 200 `SkillCollection[]` \| `SkillCollection` \| 404 |
 | GET | `/api/agentruns` | 200 `AgentRun[]` |
-| POST | `/api/agentruns` | 201 `AgentRun` — body `{agentRef, params?, instructions?}` |
+| POST | `/api/agentruns` | 201 `AgentRun` — body `{agentRef, params?, instructions?, applicationRef?}`; `applicationRef` resolves the agent's declared param/credential sources (ADR 0005) |
 | GET | `/api/agentruns/:name` | 200 `AgentRun` \| 404 |
 | DELETE | `/api/agentruns/:name` | 204 |
 | WS | `/api/agentruns/:name/acp` | proxy to the sandbox pod's `:4000/acp` — the proxy resolves the pod (`status.sandboxName`), reads the key (`status.secretKeyRef` → `secret-key`), injects `X-Secret-Key`, and pipes frames |

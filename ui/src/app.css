@@ -135,6 +135,10 @@ body,
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+.resolved-param dt,
+.resolved-param dd {
+  margin: 0;
+}
 .resolved-param-source {
   color: #6a6e73;
 }
@@ -142,6 +146,11 @@ body,
   color: #1e4f18;
   font-family: monospace;
   font-size: 0.8rem;
+  margin-left: 0.5rem;
+}
+.resolved-param-missing {
+  color: #a12800;
+  font-style: italic;
 }
 
 .chat-diff {

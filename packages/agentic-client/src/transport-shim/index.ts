@@ -3,10 +3,12 @@
  * builtins; works in browsers and node >= 18).
  *
  * SHIM HTTP API v1 (the future Konveyor Hub proxy is expected to expose the
- * same shape):
- *   GET    /api/agents               -> AgentResource[]
+ * same shape). Full route table + semantics: docs/adr/0004.
+ *   GET    /api/applications         -> Application[] (platform inventory)
+ *   GET    /api/agents               -> AgentResource[] (konveyor.io/managed=true)
  *   GET    /api/agentruns            -> AgentRun[]
- *   POST   /api/agentruns            -> 201 AgentRun
+ *   POST   /api/agentruns            -> 201 AgentRun (applicationRef resolves
+ *                                       sourced params/credentials, ADR 0005)
  *   GET    /api/agentruns/:name      -> AgentRun | 404
  *   DELETE /api/agentruns/:name      -> 204
  *   WS     /api/agentruns/:name/acp  -> ACP tunnel to the sandbox pod

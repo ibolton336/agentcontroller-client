@@ -30,19 +30,31 @@ import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
 import { errorMessage, truncate } from "../format";
 
 /**
- * Human names for the source identifiers this UI recognizes. Membership in
- * this map IS the recognition test (ADR 0005 fail-open): a param whose
- * source is absent here is treated as caller-supplied and gets a form
- * field, so a newer agent stays usable from an older UI.
+ * Human names for the source identifiers this UI recognizes. Membership IS
+ * the recognition test (ADR 0005 fail-open): a param whose source is absent
+ * here is treated as caller-supplied and gets a form field, so a newer agent
+ * stays usable from an older UI.
+ *
+ * PARAM and CREDENTIAL vocabularies are separate on purpose. They resolve to
+ * different value types (string vs Secret), and the platform recognizes each
+ * identifier in only one of the two roles. Treating an identity source as a
+ * recognized *param* source would hide a param the platform then declines to
+ * resolve — a required param, silently empty.
  */
-const SOURCE_LABELS: Record<string, string> = {
+const PARAM_SOURCE_LABELS: Record<string, string> = {
   [SOURCE_APPLICATION_REPOSITORY_URL]: "application repository URL",
   [SOURCE_APPLICATION_REPOSITORY_BRANCH]: "application repository branch",
+};
+
+const CREDENTIAL_SOURCE_LABELS: Record<string, string> = {
   [SOURCE_APPLICATION_IDENTITY]: "application identity",
 };
 
-const isRecognized = (source: string | undefined): boolean =>
-  source !== undefined && source in SOURCE_LABELS;
+const isRecognizedParamSource = (source: string | undefined): boolean =>
+  source !== undefined && Object.prototype.hasOwnProperty.call(PARAM_SOURCE_LABELS, source);
+
+const isRecognizedCredentialSource = (source: string): boolean =>
+  Object.prototype.hasOwnProperty.call(CREDENTIAL_SOURCE_LABELS, source);
 
 /** Mirror of the platform's resolution, for previewing values in the form. */
 function previewValue(source: string, app: Application | undefined): string | undefined {
@@ -131,15 +143,30 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
   const paramSources = parseSourcesAnnotation(selected);
   const credentialSources = parseSourcesAnnotation(selected, CREDENTIAL_SOURCES_ANNOTATION);
   const allParams = selected?.spec.params ?? [];
-  const userParams = allParams.filter((p) => !isRecognized(paramSources[p.name]));
-  const platformParams = allParams.filter((p) => isRecognized(paramSources[p.name]));
-  const platformCredentials = Object.entries(credentialSources).filter(([, s]) => isRecognized(s));
+  const userParams = allParams.filter((p) => !isRecognizedParamSource(paramSources[p.name]));
+  const platformParams = allParams.filter((p) => isRecognizedParamSource(paramSources[p.name]));
+  const platformCredentials = Object.entries(credentialSources).filter(([, s]) =>
+    isRecognizedCredentialSource(s),
+  );
   const needsApplication = platformParams.length > 0 || platformCredentials.length > 0;
   const application = applications.find((a) => a.id === applicationId);
 
   const missingRequired = userParams.filter((p) => p.required && !(paramValues[p.name] ?? "").trim());
   const missingApplication = needsApplication && !application;
-  const canCreate = !!selected && missingRequired.length === 0 && !missingApplication && !submitting;
+  // A required sourced param the chosen application cannot supply would be a
+  // 400 from the platform. Catch it here so Create is disabled with a reason
+  // rather than failing on submit with an error the user cannot act on.
+  const unresolvable = application
+    ? platformParams.filter(
+        (p) => p.required && !p.default && !previewValue(paramSources[p.name], application),
+      )
+    : [];
+  const canCreate =
+    !!selected &&
+    missingRequired.length === 0 &&
+    !missingApplication &&
+    unresolvable.length === 0 &&
+    !submitting;
 
   const submit = async () => {
     if (!selected || !canCreate) return;
@@ -264,38 +291,65 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
               </FormGroup>
             )}
 
+            {needsApplication && unresolvable.length > 0 && (
+              <Alert
+                variant="warning"
+                isInline
+                title={`${application?.name ?? "This application"} cannot supply every required input`}
+              >
+                No value for {unresolvable.map((p) => p.name).join(", ")}. Choose an application that
+                has one, or ask an administrator to complete this application's record.
+              </Alert>
+            )}
+
             {needsApplication && (
-              <div className="resolved-params">
+              <dl
+                className="resolved-params"
+                role="group"
+                aria-label="Inputs the platform resolves from the selected application"
+              >
                 {platformParams.map((p) => {
                   const source = paramSources[p.name];
                   const value = previewValue(source, application);
                   return (
                     <div key={p.name} className="resolved-param">
-                      <code>{p.name}</code>
-                      <span className="resolved-param-source">
-                        ← {SOURCE_LABELS[source] ?? source}
-                      </span>
-                      {value && <span className="resolved-param-value">{truncate(value, 60)}</span>}
+                      <dt>
+                        <code>{p.name}</code>
+                      </dt>
+                      <dd className="resolved-param-source">
+                        <span aria-hidden="true">← </span>
+                        from {PARAM_SOURCE_LABELS[source]}
+                        {value ? (
+                          <span className="resolved-param-value">{truncate(value, 60)}</span>
+                        ) : application ? (
+                          <span className="resolved-param-value resolved-param-missing">
+                            no value on this application
+                          </span>
+                        ) : null}
+                      </dd>
                     </div>
                   );
                 })}
                 {platformCredentials.map(([name, source]) => (
                   <div key={`cred-${name}`} className="resolved-param">
-                    <code>{name} credentials</code>
-                    <span className="resolved-param-source">
-                      ← {SOURCE_LABELS[source] ?? source}
-                    </span>
-                    {application &&
-                      (application.identitySecret ? (
-                        <span className="resolved-param-value">
-                          secret: {application.identitySecret}
-                        </span>
-                      ) : (
-                        <span className="resolved-param-value">none on this application</span>
-                      ))}
+                    <dt>
+                      <code>{name} credentials</code>
+                    </dt>
+                    <dd className="resolved-param-source">
+                      <span aria-hidden="true">← </span>
+                      from {CREDENTIAL_SOURCE_LABELS[source]}
+                      {application &&
+                        (application.identitySecret ? (
+                          <span className="resolved-param-value">
+                            secret: {application.identitySecret}
+                          </span>
+                        ) : (
+                          <span className="resolved-param-value">none on this application</span>
+                        ))}
+                    </dd>
                   </div>
                 ))}
-              </div>
+              </dl>
             )}
 
             {userParams.map((p) => {

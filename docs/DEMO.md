@@ -41,9 +41,14 @@ prerequisites: minikube running, Agent Sandbox installed, and the
 
 ## Beat 1 — create a run in the browser (2 min)
 
-Open http://localhost:5173 → **Create run** → agent `migration-analyzer`
-(the mock — instant, free) → repository `https://github.com/konveyor-ecosystem/coolstore`
-→ Create.
+Open http://localhost:5199 → **Create run** → agent `migration-analyzer`
+(the mock — instant, free) → application **Coolstore** → Create.
+
+Note there is no repository field to type into: the agent declares that its
+`repository`, `branch`, and git credentials come from the application
+(ADR 0005), so the form shows what the platform will resolve and asks only
+for what a human should actually answer. Worth saying out loud — it is the
+whole point of the beat.
 
 Narrate what's happening live: the SPA POSTs to the shim, the shim creates
 the AgentRun CR, the **real controller** validates the Agent/provider chain

@@ -93,13 +93,14 @@ passthrough proxy is expected to expose:
 | Method | Route | Behavior |
 |--------|-------|----------|
 | GET | `/healthz` | 200 `ok` |
-| GET | `/api/agents` | 200 `AgentResource[]` (full CRs, metadata+spec) |
-| GET | `/api/agents/:name` | 200 `AgentResource` \| 404 |
+| GET | `/api/applications` | 200 `Application[]` — the platform's application inventory (mocked in the shim; Hub serves its real records). Source of truth for resolved params/credentials, see ADR 0005. |
+| GET | `/api/agents` | 200 `AgentResource[]` (full CRs, metadata+spec), **filtered to `konveyor.io/managed=true`** |
+| GET | `/api/agents/:name` | 200 `AgentResource` \| 404 (never label-filtered) |
 | GET | `/api/llmproviders[/:name]` | 200 `LLMProvider[]` \| `LLMProvider` \| 404 |
 | GET | `/api/skillcards[/:name]` | 200 `SkillCard[]` \| `SkillCard` \| 404 |
 | GET | `/api/skillcollections[/:name]` | 200 `SkillCollection[]` \| `SkillCollection` \| 404 |
 | GET | `/api/agentruns` | 200 `AgentRun[]` (full CRs) |
-| POST | `/api/agentruns` (body `{agentRef, params?: Record<string,string>, instructions?}`) | 201 `AgentRun` (created with generateName `ui-`, params mapped to `[{name,value}]`) |
+| POST | `/api/agentruns` (body `{agentRef, params?: Record<string,string>, instructions?, applicationRef?}`) | 201 `AgentRun` (generateName `ui-`, params mapped to `[{name,value}]`). When `applicationRef` is set, the platform resolves the Agent's declared param/credential sources from that application (ADR 0005): resolved params merge under caller-supplied ones, credentials become `spec.envFrom`. 400 on unknown `applicationRef`, or a required param with a recognized source the application cannot supply. |
 | GET | `/api/agentruns/:name` | 200 `AgentRun` \| 404 |
 | DELETE | `/api/agentruns/:name` | 204 |
 | WS | `/api/agentruns/:name/acp` | Resolves the run's ACP endpoint (waitForAcpEndpoint semantics, 60s), opens a port-forward tunnel to the pod, dials `ws://127.0.0.1:<tunnel>/acp` upstream WITH `X-Secret-Key` (key read from the run's Secret), then pipes frames bidirectionally. Client close → close upstream + tunnel; upstream close/error → close client 1011 with reason. |

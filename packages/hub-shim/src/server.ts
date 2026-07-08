@@ -152,9 +152,31 @@ const APPLICATIONS: Application[] = [
       branch: "2.7",
     },
   },
+  {
+    // Incomplete on purpose: Hub's real inventory holds applications with no
+    // repository record. Exercises the "cannot supply a required sourced
+    // param" path in both the UI (Create disabled + why) and the shim (400).
+    id: "legacy-monolith",
+    name: "Legacy Monolith (no repository)",
+  },
 ];
 
 // ---------------------------------------------------------------- HTTP api
+
+/**
+ * A fault attributable to the caller (-> 400). Everything else — including
+ * apiserver transport failures, which carry a STRING `code` like
+ * "ECONNREFUSED" and so are invisible to k8sStatusCode — must bubble to the
+ * top-level handler and become a 5xx. Never infer "client fault" from the
+ * absence of a numeric status code.
+ */
+class BadRequestError extends Error {}
+
+// Explicitly typed so TS control-flow analysis treats a call as unreachable
+// past this point (narrowing after `if (!x) badRequest(...)`).
+const badRequest: (message: string) => never = (message) => {
+  throw new BadRequestError(message);
+};
 
 function k8sStatusCode(err: unknown): number | undefined {
   if (err && typeof err === "object" && "code" in err) {
@@ -187,15 +209,15 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   for await (const chunk of req) {
     const buf = chunk as Buffer;
     size += buf.length;
-    if (size > 1_048_576) throw new Error("request body too large (max 1 MiB)");
+    if (size > 1_048_576) badRequest("request body too large (max 1 MiB)");
     chunks.push(buf);
   }
   const text = Buffer.concat(chunks).toString("utf8");
-  if (!text.trim()) throw new Error("request body is empty; expected JSON");
+  if (!text.trim()) badRequest("request body is empty; expected JSON");
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error("request body is not valid JSON");
+    badRequest("request body is not valid JSON");
   }
 }
 
@@ -232,7 +254,7 @@ async function resolveSources(input: CreateRunBody): Promise<ResolvedSources> {
 
   const app = APPLICATIONS.find((a) => a.id === input.applicationRef);
   if (!app) {
-    throw new Error(
+    badRequest(
       `unknown applicationRef "${input.applicationRef}" — GET /api/applications lists the inventory`,
     );
   }
@@ -240,7 +262,7 @@ async function resolveSources(input: CreateRunBody): Promise<ResolvedSources> {
   try {
     agent = (await getCustom(PLURALS.Agent, "Agent", input.agentRef)) as Agent;
   } catch (err) {
-    if (k8sStatusCode(err) === 404) throw new Error(`unknown agentRef "${input.agentRef}"`);
+    if (k8sStatusCode(err) === 404) badRequest(`unknown agentRef "${input.agentRef}"`);
     throw err;
   }
 
@@ -265,7 +287,7 @@ async function resolveSources(input: CreateRunBody): Promise<ResolvedSources> {
     if (value !== undefined) {
       resolved.params[name] = value;
     } else if (agent.spec.params?.some((p) => p.name === name && p.required && !p.default)) {
-      throw new Error(
+      badRequest(
         `required param "${name}" resolves from ${source}, but application ` +
           `"${app.id}" has no value for it — supply the param explicitly`,
       );
@@ -292,30 +314,30 @@ async function resolveSources(input: CreateRunBody): Promise<ResolvedSources> {
 /** Validates the POST /api/agentruns body; throws with a client-facing message. */
 function parseCreateRunBody(raw: unknown): CreateRunBody {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    throw new Error("body must be a JSON object: {agentRef, params?, instructions?}");
+    badRequest("body must be a JSON object: {agentRef, params?, instructions?}");
   }
   const body = raw as Record<string, unknown>;
   if (typeof body.agentRef !== "string" || body.agentRef.trim() === "") {
-    throw new Error("agentRef is required and must be a non-empty string");
+    badRequest("agentRef is required and must be a non-empty string");
   }
   let params: Record<string, string> | undefined;
   if (body.params !== undefined) {
     if (!body.params || typeof body.params !== "object" || Array.isArray(body.params)) {
-      throw new Error("params must be an object of string values");
+      badRequest("params must be an object of string values");
     }
     params = {};
     for (const [key, value] of Object.entries(body.params as Record<string, unknown>)) {
       if (typeof value !== "string") {
-        throw new Error(`params.${key} must be a string`);
+        badRequest(`params.${key} must be a string`);
       }
       params[key] = value;
     }
   }
   if (body.instructions !== undefined && typeof body.instructions !== "string") {
-    throw new Error("instructions must be a string");
+    badRequest("instructions must be a string");
   }
   if (body.applicationRef !== undefined && typeof body.applicationRef !== "string") {
-    throw new Error("applicationRef must be a string");
+    badRequest("applicationRef must be a string");
   }
   return {
     agentRef: body.agentRef,
@@ -365,7 +387,9 @@ async function handleApi(
         input = parseCreateRunBody(await readJsonBody(req));
         sources = await resolveSources(input);
       } catch (err) {
-        if (k8sStatusCode(err) !== undefined) throw err;
+        // Only caller faults are 400. resolveSources talks to the apiserver
+        // inside this try, and a transport failure there is a 5xx.
+        if (!(err instanceof BadRequestError)) throw err;
         return sendError(res, 400, errorMessage(err));
       }
       const spec: AgentRunSpec = { agentRef: input.agentRef };
