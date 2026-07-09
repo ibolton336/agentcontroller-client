@@ -119,6 +119,36 @@ body,
   gap: 0.5rem;
 }
 
+.inventory-source {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  border: 1px solid #d2d2d2;
+  background: #f8f8f8;
+}
+.inventory-source-hub {
+  border-color: #a2d9a2;
+  background: #f3faf3;
+}
+.inventory-source-stub {
+  border-color: #f0ab00;
+  background: #fdf7e7;
+}
+.inventory-source-label {
+  font-weight: 500;
+}
+.inventory-source-endpoint {
+  color: #6a6e73;
+  font-size: 0.78rem;
+}
+.inventory-source .pf-v6-c-button {
+  margin-left: auto;
+}
+
 .resolved-params {
   display: flex;
   flex-direction: column;

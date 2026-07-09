@@ -43,6 +43,25 @@ export class ShimClient implements RunApi {
     return this.json<Application[]>("GET", "/api/applications");
   }
 
+  /**
+   * Like listApplications, but also returns where the inventory came from
+   * (from the X-Inventory-* response headers): "hub" with the endpoint, or
+   * "stub" when Hub was unreachable. Lets a UI show the data is live, not
+   * hardcoded. Falls back to source "unknown" if headers are absent (e.g. a
+   * Hub proxy that doesn't set them).
+   */
+  async listApplicationsWithSource(): Promise<{
+    source: "hub" | "stub" | "unknown";
+    endpoint: string;
+    applications: Application[];
+  }> {
+    const res = await this.send("GET", "/api/applications");
+    const applications = (await res.json()) as Application[];
+    const header = res.headers.get("X-Inventory-Source");
+    const source = header === "hub" || header === "stub" ? header : "unknown";
+    return { source, endpoint: res.headers.get("X-Inventory-Endpoint") ?? "", applications };
+  }
+
   listRuns(): Promise<AgentRun[]> {
     return this.json<AgentRun[]>("GET", "/api/agentruns");
   }

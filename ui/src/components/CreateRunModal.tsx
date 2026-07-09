@@ -92,6 +92,9 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
   const [agentName, setAgentName] = useState("");
   const [applications, setApplications] = useState<Application[]>([]);
   const [applicationsError, setApplicationsError] = useState<string | null>(null);
+  const [inventorySource, setInventorySource] = useState<"hub" | "stub" | "unknown" | null>(null);
+  const [inventoryEndpoint, setInventoryEndpoint] = useState("");
+  const [reloadingApps, setReloadingApps] = useState(false);
   const [applicationId, setApplicationId] = useState("");
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [instructions, setInstructions] = useState("");
@@ -118,9 +121,12 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
     // agents that need one, the error is surfaced (see the alert below)
     // rather than leaving a dead form with a disabled Create button.
     api
-      .listApplications()
-      .then((list) => {
-        if (!disposed) setApplications(list);
+      .listApplicationsWithSource()
+      .then(({ source, endpoint, applications: list }) => {
+        if (disposed) return;
+        setApplications(list);
+        setInventorySource(source);
+        setInventoryEndpoint(endpoint);
       })
       .catch((err) => {
         if (!disposed) setApplicationsError(errorMessage(err));
@@ -129,6 +135,23 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
       disposed = true;
     };
   }, [api]);
+
+  // Re-fetch the inventory on demand — register an application in Hub and
+  // click Refresh to watch it appear, proving the list is live, not baked in.
+  const reloadApplications = async () => {
+    setReloadingApps(true);
+    setApplicationsError(null);
+    try {
+      const { source, endpoint, applications: list } = await api.listApplicationsWithSource();
+      setApplications(list);
+      setInventorySource(source);
+      setInventoryEndpoint(endpoint);
+    } catch (err) {
+      setApplicationsError(errorMessage(err));
+    } finally {
+      setReloadingApps(false);
+    }
+  };
 
   const selected = agents?.find((a) => a.metadata.name === agentName);
 
@@ -268,6 +291,28 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
               </Alert>
             )}
 
+            {needsApplication && inventorySource && (
+              <div className={`inventory-source inventory-source-${inventorySource}`}>
+                <span className="inventory-source-label">
+                  {inventorySource === "hub"
+                    ? `${applications.length} application${applications.length === 1 ? "" : "s"} from Konveyor Hub`
+                    : inventorySource === "stub"
+                      ? "Konveyor Hub unavailable — showing offline stub"
+                      : "Application inventory"}
+                </span>
+                <code className="inventory-source-endpoint">{inventoryEndpoint}</code>
+                <Button
+                  variant="link"
+                  isInline
+                  isLoading={reloadingApps}
+                  isDisabled={reloadingApps}
+                  onClick={() => void reloadApplications()}
+                >
+                  Refresh
+                </Button>
+              </div>
+            )}
+
             {needsApplication && (
               <FormGroup label="Application" isRequired fieldId="create-application">
                 <FormSelect
@@ -277,7 +322,7 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
                 >
                   <FormSelectOption value="" label="Select an application…" isDisabled />
                   {applications.map((a) => (
-                    <FormSelectOption key={a.id} value={a.id} label={a.name} />
+                    <FormSelectOption key={a.id} value={a.id} label={`${a.name}  ·  Hub #${a.id}`} />
                   ))}
                 </FormSelect>
                 <FormHelperText>

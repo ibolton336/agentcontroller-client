@@ -182,15 +182,24 @@ async function hubGet<T>(path: string): Promise<T> {
  * source-control Identity carried as a reference (identity.name) plus its
  * bridged Secret when one exists. Falls back to STUB_APPLICATIONS offline.
  */
-async function getApplications(): Promise<Application[]> {
-  if (!HUB_URL) return STUB_APPLICATIONS;
+/** Where the inventory came from — surfaced to the UI so "real vs stub" is visible. */
+interface Inventory {
+  source: "hub" | "stub";
+  endpoint: string;
+  applications: Application[];
+}
+
+async function getApplications(): Promise<Inventory> {
+  if (!HUB_URL) {
+    return { source: "stub", endpoint: "offline stub (HUB_URL unset)", applications: STUB_APPLICATIONS };
+  }
   try {
     const [apps, identities] = await Promise.all([
       hubGet<HubApp[]>("applications"),
       hubGet<HubIdentity[]>("identities"),
     ]);
     const sourceKind = new Map(identities.map((i) => [i.id, i.kind]));
-    return apps.map((a): Application => {
+    const applications = apps.map((a): Application => {
       const srcRef = (a.identities ?? []).find((r) => sourceKind.get(r.id) === "source");
       const idName = srcRef?.name;
       return {
@@ -203,9 +212,10 @@ async function getApplications(): Promise<Application[]> {
         identitySecret: idName ? IDENTITY_SECRET_BRIDGE[idName] : undefined,
       };
     });
+    return { source: "hub", endpoint: HUB_URL, applications };
   } catch (err) {
     warn(`Hub inventory unavailable (${errorMessage(err)}); using offline stub`);
-    return STUB_APPLICATIONS;
+    return { source: "stub", endpoint: "offline stub (Hub unreachable)", applications: STUB_APPLICATIONS };
   }
 }
 
@@ -238,11 +248,17 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+function sendJson(
+  res: http.ServerResponse,
+  status: number,
+  body: unknown,
+  extraHeaders?: Record<string, string>,
+): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(payload),
+    ...extraHeaders,
   });
   res.end(payload);
 }
@@ -300,7 +316,7 @@ async function resolveSources(input: CreateRunBody): Promise<ResolvedSources> {
   const resolved: ResolvedSources = { params: {}, envFrom: [] };
   if (!input.applicationRef) return resolved;
 
-  const app = (await getApplications()).find((a) => a.id === input.applicationRef);
+  const app = (await getApplications()).applications.find((a) => a.id === input.applicationRef);
   if (!app) {
     badRequest(
       `unknown applicationRef "${input.applicationRef}" — GET /api/applications lists the inventory`,
@@ -404,7 +420,13 @@ async function handleApi(
 
   if (pathname === "/api/applications") {
     if (method !== "GET") return sendError(res, 405, "method not allowed");
-    return sendJson(res, 200, await getApplications());
+    const inv = await getApplications();
+    // Body stays a bare Application[] (unchanged contract). Provenance rides
+    // in headers so the UI can show real-vs-stub without a shape change.
+    return sendJson(res, 200, inv.applications, {
+      "X-Inventory-Source": inv.source,
+      "X-Inventory-Endpoint": inv.endpoint,
+    });
   }
 
   const roMatch = /^\/api\/([a-z]+)(?:\/([^/]+))?$/.exec(pathname);
@@ -498,6 +520,7 @@ const server = http.createServer((req, res) => {
   }
 
   res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Expose-Headers", "X-Inventory-Source, X-Inventory-Endpoint");
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
