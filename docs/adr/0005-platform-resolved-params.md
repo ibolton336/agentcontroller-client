@@ -80,7 +80,7 @@ Graduation path: an optional free-form `source` field on `AgentParam`
 (no enum, no controller interpretation) once the pattern is agreed
 upstream. Annotation → field is a mechanical migration.
 
-### (c) Credentials: same pattern, Secret-valued
+### (c) Credentials: same pattern, but the hard part is materialization
 
 Credentials must not be an `envFrom` punt (that couples every caller to
 per-agent Secret knowledge — same flaw the SigV4 feedback flagged).
@@ -92,16 +92,35 @@ konveyor.io/credential-sources: |
 ```
 
 The platform resolves `konveyor.io/application-identity` to the selected
-application's identity Secret and mounts it via `AgentRun.spec.envFrom`.
+application's credential and mounts it via `AgentRun.spec.envFrom`.
 Applications without an identity (public repos) resolve to nothing and the
 run proceeds without credentials.
+
+**Open question surfaced by wiring this to real Hub.** Repo URL and branch
+are plain fields on a Hub `Application` — read them and you're done. A
+credential is *not*: Hub stores it as an `Identity` in its own encrypted
+vault, and the REST API exposes the identity's *name*, never the secret.
+So `application-identity` resolves cleanly to "this app uses Hub identity
+`coolstore-git`", but turning that into something the sandbox can use
+requires the platform to **decrypt the vault identity and materialize it
+into the pod** (as a mounted Secret or injected env). Production Hub, which
+owns the vault, does this itself. The shim can't — it only sees the name —
+so it *bridges* known identity names to a pre-created k8s Secret
+(`IDENTITY_SECRET_BRIDGE`) and the UI shows both: `Hub identity:
+coolstore-git → git-credentials-coolstore`. That bridge is the one honest
+stub left in the flow, and materialization is the concrete thing Hub must
+own.
 
 ### (d) API surface
 
 SHIM API v1 (and therefore the future Hub proxy) gains:
 
-- `GET /api/applications` → the platform's application inventory
-  (mocked in the shim; Hub serves its real records).
+- `GET /api/applications` → the platform's application inventory. The shim
+  reads **real Konveyor Hub** over `HUB_URL` (`/applications` + `/identities`,
+  mapped to `{id, name, repository, identity, identitySecret}`) and falls
+  back to a built-in stub only when Hub is unreachable. Repo URL/branch and
+  the identity name are genuine Hub data; only the identity→Secret bridge is
+  stubbed (see (c)). Production is Hub reading its own Application table.
 - `POST /api/agentruns` accepts `applicationRef`; the platform resolves
   sourced params/credentials from that application per the semantics
   above.

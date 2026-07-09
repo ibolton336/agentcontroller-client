@@ -240,14 +240,27 @@ export function parseSourcesAnnotation(
 }
 
 /**
- * A Konveyor application as the platform's application inventory exposes it
- * (Hub in production; the hub-shim's mock inventory today).
+ * A Konveyor application as the platform's application inventory exposes it.
+ * Backed by real Konveyor Hub Application records (repository + linked
+ * identities); the hub-shim reads Hub over HUB_URL and maps them here.
  */
 export interface Application {
   id: string;
   name: string;
   repository?: { url: string; branch?: string };
-  /** Name of the Secret holding this application's repository credentials. */
+  /**
+   * The application's source-control credential as Hub holds it — a named
+   * Identity in Hub's vault. Present when the app has a `source` identity.
+   * NOTE: this is a reference, not a usable secret: materializing a Hub
+   * identity into the sandbox is the open design question (see ADR 0005).
+   */
+  identity?: { name: string };
+  /**
+   * The materialized form of `identity`: a k8s Secret the platform mounts
+   * via envFrom. Today the shim bridges known Hub identities to a
+   * pre-created Secret; production Hub would decrypt its vault identity into
+   * the sandbox itself. Unset when no bridge exists yet.
+   */
   identitySecret?: string;
 }
 

@@ -4,7 +4,7 @@
 # konveyor-agents <name>` for runs you created.
 set -uo pipefail
 
-for name in hub-shim ui; do
+for name in hub-shim ui hub-pf; do
   pidfile="/tmp/demo-$name.pid"
   if [ -f "$pidfile" ]; then
     pid=$(cat "$pidfile")

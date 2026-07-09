@@ -130,36 +130,84 @@ const LIST_LABEL_SELECTORS: Record<string, string> = {
 };
 
 /**
- * Mock application inventory — stands in for Hub's application list the
- * same way the shim stands in for Hub's proxy. Source resolution below
- * reads from these; the real Hub resolves from its Application records.
+ * Real Konveyor Hub REST base. In-cluster this is the Hub service DNS
+ * (http://tackle2-hub.<ns>.svc:8080); on a laptop, a port-forward or
+ * NodePort. When unset/unreachable the shim falls back to STUB_APPLICATIONS
+ * so it still runs offline. This is the production-shaped knob: the real
+ * Hub-proxy reads its own Application table; the shim reads it over HTTP.
  */
-const APPLICATIONS: Application[] = [
+const HUB_URL = process.env.HUB_URL?.replace(/\/+$/, "");
+
+/**
+ * Bridges a Hub source-control Identity to a pre-created k8s Secret — the
+ * STUB for the one thing Hub doesn't expose over REST: the decrypted
+ * credential. Production Hub would materialize its vault identity into the
+ * sandbox itself; until then, known identities map to a Secret here.
+ */
+const IDENTITY_SECRET_BRIDGE: Record<string, string> = {
+  "coolstore-git": "git-credentials-coolstore",
+};
+
+/** Offline fallback when HUB_URL is unset or the Hub is unreachable. */
+const STUB_APPLICATIONS: Application[] = [
   {
     id: "coolstore",
-    name: "Coolstore",
-    repository: {
-      url: "https://github.com/konveyor-ecosystem/coolstore.git",
-      branch: "main",
-    },
+    name: "Coolstore (stub — Hub unavailable)",
+    repository: { url: "https://github.com/konveyor-ecosystem/coolstore.git", branch: "main" },
     identitySecret: "git-credentials-coolstore",
   },
-  {
-    id: "ticket-monster",
-    name: "Ticket Monster",
-    repository: {
-      url: "https://github.com/jboss-developer/ticket-monster.git",
-      branch: "2.7",
-    },
-  },
-  {
-    // Incomplete on purpose: Hub's real inventory holds applications with no
-    // repository record. Exercises the "cannot supply a required sourced
-    // param" path in both the UI (Create disabled + why) and the shim (400).
-    id: "legacy-monolith",
-    name: "Legacy Monolith (no repository)",
-  },
 ];
+
+interface HubApp {
+  id: number;
+  name: string;
+  repository?: { url?: string; branch?: string };
+  identities?: { id: number; name?: string }[];
+}
+interface HubIdentity {
+  id: number;
+  name: string;
+  kind: string;
+}
+
+async function hubGet<T>(path: string): Promise<T> {
+  const res = await fetch(`${HUB_URL}/${path}`, { headers: { accept: "application/json" } });
+  if (!res.ok) throw new Error(`Hub GET /${path} -> HTTP ${res.status}`);
+  return (await res.json()) as T;
+}
+
+/**
+ * The platform's application inventory. Reads real Hub Applications and maps
+ * them to the client Application shape: repository straight from Hub; the
+ * source-control Identity carried as a reference (identity.name) plus its
+ * bridged Secret when one exists. Falls back to STUB_APPLICATIONS offline.
+ */
+async function getApplications(): Promise<Application[]> {
+  if (!HUB_URL) return STUB_APPLICATIONS;
+  try {
+    const [apps, identities] = await Promise.all([
+      hubGet<HubApp[]>("applications"),
+      hubGet<HubIdentity[]>("identities"),
+    ]);
+    const sourceKind = new Map(identities.map((i) => [i.id, i.kind]));
+    return apps.map((a): Application => {
+      const srcRef = (a.identities ?? []).find((r) => sourceKind.get(r.id) === "source");
+      const idName = srcRef?.name;
+      return {
+        id: String(a.id),
+        name: a.name,
+        repository: a.repository?.url
+          ? { url: a.repository.url, branch: a.repository.branch }
+          : undefined,
+        identity: idName ? { name: idName } : undefined,
+        identitySecret: idName ? IDENTITY_SECRET_BRIDGE[idName] : undefined,
+      };
+    });
+  } catch (err) {
+    warn(`Hub inventory unavailable (${errorMessage(err)}); using offline stub`);
+    return STUB_APPLICATIONS;
+  }
+}
 
 // ---------------------------------------------------------------- HTTP api
 
@@ -252,7 +300,7 @@ async function resolveSources(input: CreateRunBody): Promise<ResolvedSources> {
   const resolved: ResolvedSources = { params: {}, envFrom: [] };
   if (!input.applicationRef) return resolved;
 
-  const app = APPLICATIONS.find((a) => a.id === input.applicationRef);
+  const app = (await getApplications()).find((a) => a.id === input.applicationRef);
   if (!app) {
     badRequest(
       `unknown applicationRef "${input.applicationRef}" — GET /api/applications lists the inventory`,
@@ -356,7 +404,7 @@ async function handleApi(
 
   if (pathname === "/api/applications") {
     if (method !== "GET") return sendError(res, 405, "method not allowed");
-    return sendJson(res, 200, APPLICATIONS);
+    return sendJson(res, 200, await getApplications());
   }
 
   const roMatch = /^\/api\/([a-z]+)(?:\/([^/]+))?$/.exec(pathname);

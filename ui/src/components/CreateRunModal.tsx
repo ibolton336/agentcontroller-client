@@ -339,9 +339,14 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
                       <span aria-hidden="true">← </span>
                       from {CREDENTIAL_SOURCE_LABELS[source]}
                       {application &&
-                        (application.identitySecret ? (
+                        (application.identity ? (
                           <span className="resolved-param-value">
-                            secret: {application.identitySecret}
+                            Hub identity: {application.identity.name}
+                            {application.identitySecret ? (
+                              <> → {application.identitySecret}</>
+                            ) : (
+                              <span className="resolved-param-missing"> (materialization pending)</span>
+                            )}
                           </span>
                         ) : (
                           <span className="resolved-param-value">none on this application</span>

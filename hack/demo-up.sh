@@ -12,6 +12,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SHIM_PORT="${SHIM_PORT:-7080}"
 UI_PORT="${UI_PORT:-5199}"
 NS=konveyor-agents
+# Real Konveyor Hub the shim reads the application inventory from. A
+# port-forward gives the laptop a stable HUB_URL; in-cluster this would be
+# the Hub service DNS. If Hub is unreachable the shim falls back to a stub.
+HUB_NS="${HUB_NS:-konveyor}"
+HUB_SVC="${HUB_SVC:-tackle2-hub}"
+HUB_LOCAL_PORT="${HUB_LOCAL_PORT:-18090}"
 
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
@@ -65,6 +71,29 @@ else
   warn "migration-analyzer not Ready yet — check: kubectl get llmproviders,agents -n $NS"
 fi
 
+echo "── konveyor hub (application inventory) ────────────"
+HUB_URL="http://127.0.0.1:$HUB_LOCAL_PORT"
+if curl -sf --max-time 2 "$HUB_URL/applications" >/dev/null 2>&1; then
+  ok "Hub reachable on :$HUB_LOCAL_PORT — reusing"
+elif kubectl get svc "$HUB_SVC" -n "$HUB_NS" >/dev/null 2>&1; then
+  nohup kubectl port-forward -n "$HUB_NS" "svc/$HUB_SVC" "$HUB_LOCAL_PORT:8080" \
+    </dev/null >/tmp/demo-hub-pf.log 2>&1 &
+  echo $! > /tmp/demo-hub-pf.pid
+  for _ in $(seq 1 20); do
+    curl -sf --max-time 1 "$HUB_URL/applications" >/dev/null 2>&1 && break
+    sleep 0.5
+  done
+  if curl -sf --max-time 2 "$HUB_URL/applications" >/dev/null 2>&1; then
+    ok "port-forward $HUB_NS/$HUB_SVC -> :$HUB_LOCAL_PORT (pid $(cat /tmp/demo-hub-pf.pid))"
+  else
+    warn "Hub port-forward not ready — shim will use its offline stub"
+    HUB_URL=""
+  fi
+else
+  warn "no $HUB_SVC in ns $HUB_NS — shim will use its offline stub"
+  HUB_URL=""
+fi
+
 echo "── hub-shim (:$SHIM_PORT) ──────────────────────────"
 if curl -sf --max-time 2 "http://127.0.0.1:$SHIM_PORT/healthz" >/dev/null 2>&1; then
   ok "already serving — reusing"
@@ -75,7 +104,7 @@ else
   # poisons the pidfile).
   (
     cd "$ROOT/packages/hub-shim"
-    PORT=$SHIM_PORT nohup npm start </dev/null > /tmp/demo-hub-shim.log 2>&1 &
+    PORT=$SHIM_PORT HUB_URL=$HUB_URL nohup npm start </dev/null > /tmp/demo-hub-shim.log 2>&1 &
     echo $! > /tmp/demo-hub-shim.pid
   )
   for _ in $(seq 1 20); do
