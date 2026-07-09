@@ -21,3 +21,7 @@ for name in hub-shim ui hub-pf; do
     echo "$name: no pidfile — nothing to stop"
   fi
 done
+
+# The Hub port-forward runs in a restart loop; killing the wrapper can leave
+# an orphaned kubectl that would keep the local port bound. Sweep it.
+pkill -f 'kubectl port-forward.*tackle2-hub' >/dev/null 2>&1 && echo "swept hub port-forward" || true

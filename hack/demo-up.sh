@@ -76,7 +76,10 @@ HUB_URL="http://127.0.0.1:$HUB_LOCAL_PORT"
 if curl -sf --max-time 2 "$HUB_URL/applications" >/dev/null 2>&1; then
   ok "Hub reachable on :$HUB_LOCAL_PORT — reusing"
 elif kubectl get svc "$HUB_SVC" -n "$HUB_NS" >/dev/null 2>&1; then
-  nohup kubectl port-forward -n "$HUB_NS" "svc/$HUB_SVC" "$HUB_LOCAL_PORT:8080" \
+  # kubectl port-forward drops on "lost connection to pod" — wrap it in a
+  # restart loop so a mid-demo drop self-heals (the shim re-fetches per
+  # request, so it recovers as soon as the forward is back).
+  nohup bash -c "while true; do kubectl port-forward -n '$HUB_NS' 'svc/$HUB_SVC' '$HUB_LOCAL_PORT:8080'; sleep 1; done" \
     </dev/null >/tmp/demo-hub-pf.log 2>&1 &
   echo $! > /tmp/demo-hub-pf.pid
   for _ in $(seq 1 20); do
