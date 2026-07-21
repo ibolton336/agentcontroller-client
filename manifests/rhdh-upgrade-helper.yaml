@@ -57,3 +57,7 @@ spec:
       type: string
       description: RHDH release upgrading FROM (e.g. "1.8")
       default: "1.8"
+    - name: mode
+      type: string
+      description: '"serve" for interactive chat (default), "batch" to run the task headlessly and exit (playbook stages)'
+      default: "serve"

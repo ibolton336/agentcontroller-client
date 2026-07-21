@@ -1,0 +1,129 @@
+# Three-stage RHDH upgrade playbook: assess -> remediate -> validate.
+# Runs behind the AgentPlaybook/AgentPlaybookRun controllers (upstream #36).
+#
+# Stage handoff is the #36 convention: every stage receives the same
+# `branch` param, clones it, and pushes its output back to it. The testbed
+# git daemon must run with push enabled (testbed/rhdh-upgrade-testbed/
+# serve.sh) and the branch must exist before the run starts.
+#
+# Stages run the goose harness in batch mode (mode=batch param): the
+# entrypoint runs `goose run` with the stage instructions and exits, so
+# the pod completes and the stage AgentRun can Succeed. Every param on the
+# AgentPlaybookRun is forwarded to every stage, and the AgentRun controller
+# rejects params an Agent doesn't declare — so both agents declare the
+# full shared param set.
+---
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: rhdh-remediator-goose
+  namespace: konveyor-agents
+  labels:
+    konveyor.io/managed: "true"
+spec:
+  image: "goose-harness:rhdh-dev"
+  prompt: |
+    You are a configuration remediation agent for RHDH (Red Hat Developer
+    Hub) upgrades. The customer's RHDH configuration repo is checked out
+    at /workspace on the branch you must push back to.
+
+    Make precise, minimal edits: apply exactly the changes your stage
+    instructions and the assessment report call for, nothing else. The
+    rhdh-upgrade-helper skill's reference files are available under
+    /opt/skills/rhdh-upgrade-helper/ if you need conventions (OCI ref
+    syntax, dynamic-plugins schema). git, python3 with PyYAML are
+    installed. Work autonomously; never wait for input.
+  providers:
+    - ref: bedrock
+  params:
+    - name: repository
+      type: string
+      description: Git URL of the RHDH configuration repository
+      default: "git://192.168.65.254:9418/rhdh-upgrade-testbed"
+    - name: branch
+      type: string
+      description: Shared playbook branch to read from and push to
+      default: main
+    - name: target_version
+      type: string
+      description: RHDH release to upgrade TO
+      default: "1.10"
+    - name: from_version
+      type: string
+      description: RHDH release upgrading FROM
+      default: "1.8"
+    - name: mode
+      type: string
+      description: '"serve" or "batch"'
+      default: "batch"
+---
+apiVersion: konveyor.io/v1alpha1
+kind: AgentPlaybook
+metadata:
+  name: rhdh-upgrade
+  namespace: konveyor-agents
+spec:
+  guide: |
+    You are one stage of an automated three-stage RHDH upgrade pipeline
+    (assess -> remediate -> validate) for the configuration repo checked
+    out at /workspace. All stages share the same git branch: read what
+    earlier stages committed, and commit and push your own output to
+    origin HEAD before finishing. Use a git identity of
+    playbook@konveyor.local / "rhdh-upgrade playbook" when committing.
+    Work autonomously; there is no human to ask.
+  stages:
+    - name: assess
+      agentRef: rhdh-upgrade-helper-goose
+      instructions: |
+        Stage 1 of 3 (assess). Run the config-driven upgrade assessment
+        exactly per your rhdh-upgrade-helper skill for the config files
+        in /workspace, upgrading from $KONVEYOR_PARAM_FROM_VERSION to
+        $KONVEYOR_PARAM_TARGET_VERSION. Instead of a chat response,
+        write the complete customer-facing report to UPGRADE-REPORT.md
+        in the repo root, then commit it with message "assess: upgrade
+        report" and push to origin HEAD. Environment: no Jira MCP (skip
+        silently), no gh CLI (note the gap in the report), github.com
+        reachable, bundled release notes cover the target.
+    - name: remediate
+      agentRef: rhdh-remediator-goose
+      instructions: |
+        Stage 2 of 3 (remediate). Read UPGRADE-REPORT.md in the repo
+        root. Apply every Critical and Important configuration change it
+        prescribes to the config files (OCI tag bumps, local-path plugin
+        migrations) — exactly as prescribed, nothing more. Do not edit
+        UPGRADE-REPORT.md. Commit with message "remediate: apply
+        upgrade-report fixes" and push to origin HEAD.
+    - name: validate
+      agentRef: rhdh-upgrade-helper-goose
+      instructions: |
+        Stage 3 of 3 (validate). Re-run the upgrade assessment per your
+        skill against the CURRENT state of /workspace (which stage 2 has
+        remediated), same release range. Write VALIDATION-REPORT.md in
+        the repo root containing: any remaining Critical or Important
+        findings (expected: none), the new readiness score with
+        breakdown, and a one-line verdict comparing it to the previous
+        UPGRADE-REPORT.md score. Commit with message "validate:
+        post-remediation assessment" and push to origin HEAD.
+---
+apiVersion: konveyor.io/v1alpha1
+kind: AgentPlaybookRun
+metadata:
+  name: upgrade-run-1
+  namespace: konveyor-agents
+spec:
+  playbookRef: rhdh-upgrade
+  models:
+    - role: primary
+      provider: bedrock
+      model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  params:
+    - name: repository
+      value: "git://192.168.65.254:9418/rhdh-upgrade-testbed"
+    - name: branch
+      value: "upgrade/rhdh-1.10"
+    - name: target_version
+      value: "1.10"
+    - name: from_version
+      value: "1.8"
+    - name: mode
+      value: "batch"
