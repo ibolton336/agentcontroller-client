@@ -1,0 +1,38 @@
+app:
+  title: Konveyor Dev Hub
+  baseUrl: https://rhdh.example.internal
+
+backend:
+  baseUrl: https://rhdh.example.internal
+  cors:
+    origin: https://rhdh.example.internal
+  database:
+    client: pg
+    connection:
+      host: ${POSTGRES_HOST}
+      port: ${POSTGRES_PORT}
+      user: ${POSTGRES_USER}
+      password: ${POSTGRES_PASSWORD}
+
+auth:
+  environment: production
+  providers:
+    github:
+      production:
+        clientId: ${GITHUB_CLIENT_ID}
+        clientSecret: ${GITHUB_CLIENT_SECRET}
+
+signInPage: github
+
+catalog:
+  rules:
+    - allow: [Component, System, API, Resource, Location]
+  locations:
+    - type: url
+      target: https://github.com/ibolton336/mta-backstage-app/blob/main/catalog-info.yaml
+
+proxy:
+  endpoints:
+    /mta:
+      target: ${MTA_URL}
+      changeOrigin: true

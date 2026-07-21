@@ -1,0 +1,5 @@
+from: "1.8"
+to: "1.10"
+configs:
+  - ./dynamic-plugins.yaml
+  - ./app-config.yaml

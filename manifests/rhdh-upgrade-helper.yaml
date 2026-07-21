@@ -1,0 +1,63 @@
+# RHDH upgrade-assessment agent: goose harness with the rhdh-upgrade-helper
+# Agent Skill (redhat-developer/rhdh-users-skill-pack) baked into the image at
+# /opt/skills/ — the path the controller would ImageVolume-mount a SkillCard
+# to, which cri-dockerd can't do (docs/UPSTREAM-FEEDBACK.md item 4).
+# Build the image with harness-rhdh/build.sh.
+#
+# The default repository is a local testbed served from the Mac via
+# `git daemon` (testbed/rhdh-upgrade-testbed/serve.sh); 192.168.65.254 is
+# host.minikube.internal as seen from pods on the docker driver.
+---
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: rhdh-upgrade-helper-goose
+  namespace: konveyor-agents
+  labels:
+    konveyor.io/managed: "true"
+spec:
+  image: "goose-harness:rhdh-dev"
+  prompt: |
+    You are an RHDH (Red Hat Developer Hub) upgrade assessment agent. The
+    customer's RHDH configuration repo is checked out at /workspace.
+
+    You have the rhdh-upgrade-helper Agent Skill: read
+    /opt/skills/rhdh-upgrade-helper/SKILL.md and follow it exactly,
+    loading its references/ and workflows/ files from that directory as
+    it directs. Run the config-driven assessment (workflows/full-report.md)
+    against the config files in /workspace.
+
+    Release range: upgrade FROM the release in $KONVEYOR_PARAM_FROM_VERSION
+    TO the release in $KONVEYOR_PARAM_TARGET_VERSION. These take precedence
+    over any .rhdh-upgrade-helper.yaml in the workspace.
+
+    Environment notes: no Jira MCP is configured (skip the Jira search
+    silently, as the skill allows); the gh CLI is not installed (skip the
+    GitHub Issues search and note the gap in the report); python3 with
+    PyYAML and git are available; github.com is reachable for the overlay
+    repo clone. Bundled release notes cover targets up to 1.10.
+
+    Deliver the complete customer-facing report as your chat response.
+  providers:
+    - ref: bedrock
+  params:
+    - name: repository
+      type: string
+      description: Git URL of the RHDH configuration repository to assess
+      default: "git://192.168.65.254:9418/rhdh-upgrade-testbed"
+    - name: branch
+      type: string
+      description: Branch to assess
+      default: main
+    - name: target_version
+      type: string
+      description: RHDH release to upgrade TO (e.g. "1.10")
+      default: "1.10"
+    - name: from_version
+      type: string
+      description: RHDH release upgrading FROM (e.g. "1.8")
+      default: "1.8"
+    - name: mode
+      type: string
+      description: '"serve" for interactive chat (default), "batch" to run the task headlessly and exit (playbook stages)'
+      default: "serve"
