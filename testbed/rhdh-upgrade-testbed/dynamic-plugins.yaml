@@ -1,0 +1,46 @@
+includes:
+  - dynamic-plugins.default.yaml
+
+plugins:
+  # MTA (Migration Toolkit for Applications) — pinned at RHDH 1.8-era tags
+  - package: oci://ghcr.io/redhat-developer/rhdh-plugin-export-overlays/backstage-community-backstage-plugin-mta-backend:bs_1.42.5__0.5.1!backstage-community-backstage-plugin-mta-backend
+    disabled: false
+    pluginConfig:
+      mta:
+        url: ${MTA_URL}
+        providerAuth:
+          realm: ${MTA_AUTH_REALM}
+          clientID: ${MTA_AUTH_CLIENT_ID}
+          secret: ${MTA_AUTH_CLIENT_SECRET}
+
+  - package: oci://ghcr.io/redhat-developer/rhdh-plugin-export-overlays/backstage-community-backstage-plugin-mta-frontend:bs_1.42.5__0.4.0!backstage-community-backstage-plugin-mta-frontend
+    disabled: false
+    pluginConfig:
+      dynamicPlugins:
+        frontend:
+          backstage-community.backstage-plugin-mta-frontend:
+            dynamicRoutes:
+              - path: /mta
+                importName: EntityMTAContent
+                menuItem:
+                  text: MTA
+            mountPoints:
+              - mountPoint: entity.page.overview/cards
+                importName: EntityMTAContent
+                config:
+                  layout:
+                    gridColumnEnd:
+                      lg: "span 4"
+                      md: "span 6"
+                      xs: "span 12"
+                  if:
+                    allOf:
+                      - isKind: component
+                      - isType: service
+
+  # Tech Radar, loaded from the container-local dist path
+  - package: ./dynamic-plugins/dist/backstage-community-plugin-tech-radar
+    disabled: false
+
+  - package: ./dynamic-plugins/dist/backstage-community-plugin-github-actions-dynamic
+    disabled: true
