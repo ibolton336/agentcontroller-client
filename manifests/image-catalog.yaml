@@ -1,0 +1,55 @@
+# Image catalog: the PR #53 agent-base image hierarchy as a managed ConfigMap.
+# A CRD (ImageCatalog) replaces this only if querying/versioning needs arise.
+# Each key is the short image name; the value is a JSON object with metadata.
+# The hub-shim serves this via GET /api/images, falling back to a compiled-in
+# copy when the ConfigMap is absent (offline dev).
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-image-catalog
+  namespace: konveyor-agents
+  labels:
+    konveyor.io/managed: "true"
+    konveyor.io/catalog: images
+data:
+  agent-base: |
+    {
+      "image": "quay.io/konveyor/agent-base:dev",
+      "displayName": "Agent base",
+      "description": "Harness entrypoint, git, goose runtime. No language toolchain.",
+      "languages": [],
+      "parent": null
+    }
+  agent-java: |
+    {
+      "image": "quay.io/konveyor/agent-java:dev",
+      "displayName": "Java agent",
+      "description": "JDK 21, Maven 3.9, Gradle 8. For Java EE / Jakarta / Quarkus migrations.",
+      "languages": ["java"],
+      "parent": "agent-base"
+    }
+  agent-go: |
+    {
+      "image": "quay.io/konveyor/agent-go:dev",
+      "displayName": "Go agent",
+      "description": "Go 1.22 toolchain. For Go module migrations and refactoring.",
+      "languages": ["go"],
+      "parent": "agent-base"
+    }
+  agent-csharp: |
+    {
+      "image": "quay.io/konveyor/agent-csharp:dev",
+      "displayName": "C# agent",
+      "description": ".NET 8 SDK. For .NET Framework to .NET migrations.",
+      "languages": ["csharp"],
+      "parent": "agent-base"
+    }
+  agent-nodejs: |
+    {
+      "image": "quay.io/konveyor/agent-nodejs:dev",
+      "displayName": "Node.js agent",
+      "description": "Node.js 20 LTS and npm. For frontend framework migrations (PatternFly, React).",
+      "languages": ["javascript", "typescript"],
+      "parent": "agent-base"
+    }

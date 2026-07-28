@@ -53,6 +53,10 @@ if ! minikube image ls 2>/dev/null | grep -q 'goose-harness:dev'; then
 fi
 ok "goose-harness:dev"
 
+echo "── image catalog ───────────────────────────────────"
+kubectl apply -f "$ROOT/manifests/image-catalog.yaml" >/dev/null
+ok "image catalog applied (agent-image-catalog ConfigMap)"
+
 echo "── sample resources ────────────────────────────────"
 kubectl apply -f "$ROOT/manifests/samples.yaml" >/dev/null
 ok "samples applied (mock agent + provider)"

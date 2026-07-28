@@ -1,0 +1,17 @@
+apiVersion: skillimage.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: patternfly-migration
+  namespace: konveyor
+  version: "1.0.0"
+  description: >
+    Migrates React applications from PatternFly 5 to PatternFly 6:
+    design tokens, Text-to-Content, removed components, pf-v6 class
+    renames, and codemod-driven API updates.
+  tags:
+    - patternfly
+    - react
+    - nodejs
+    - migration
+spec:
+  prompt: SKILL.md

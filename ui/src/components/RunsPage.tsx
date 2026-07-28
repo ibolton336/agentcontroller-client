@@ -24,6 +24,7 @@ import CubesIcon from "@patternfly/react-icons/dist/esm/icons/cubes-icon";
 import type { AgentRun } from "@konveyor/agentic-client/contract";
 import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
 import { errorMessage, formatAge, formatDuration } from "../format";
+import { useLoadDefaults } from "../hooks/useLoadDefaults";
 import { PhaseLabel } from "./PhaseLabel";
 import { CreateRunModal } from "./CreateRunModal";
 
@@ -38,6 +39,7 @@ export function RunsPage({ api, onOpenRun }: RunsPageProps) {
   const [runs, setRuns] = useState<AgentRun[] | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isCreateOpen, setCreateOpen] = useState(false);
+  const { loading: defaultsLoading, seed, result: defaultsResult } = useLoadDefaults(api);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -94,8 +96,26 @@ export function RunsPage({ api, onOpenRun }: RunsPageProps) {
                 Create run
               </Button>
             </ToolbarItem>
+            <ToolbarItem>
+              <Button
+                variant="secondary"
+                isLoading={defaultsLoading}
+                isDisabled={defaultsLoading}
+                onClick={() => void seed().then(() => void refresh())}
+              >
+                Load defaults
+              </Button>
+            </ToolbarItem>
           </ToolbarContent>
         </Toolbar>
+        {defaultsResult && (
+          <Alert
+            variant="info"
+            isInline
+            title={`Defaults: ${defaultsResult.seeded} created, ${defaultsResult.existed} already existed`}
+            style={{ marginBottom: "1rem" }}
+          />
+        )}
         {fetchError && (
           <Alert
             variant="danger"

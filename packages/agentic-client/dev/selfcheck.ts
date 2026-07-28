@@ -148,13 +148,21 @@ async function main(): Promise<void> {
   console.log("waitForRunning (fake RunApi, no network)");
   const makeApi = (sequence: AgentRun[]): RunApi => {
     let i = 0;
+    const unused = () => Promise.reject(new Error("unused"));
     return {
-      listAgents: () => Promise.reject(new Error("unused")),
-      listApplications: () => Promise.reject(new Error("unused")),
-      listRuns: () => Promise.reject(new Error("unused")),
-      createRun: () => Promise.reject(new Error("unused")),
-      deleteRun: () => Promise.reject(new Error("unused")),
+      listAgents: unused,
+      getAgent: unused,
+      listApplications: unused,
+      listImages: unused,
+      listRuns: unused,
+      createRun: unused,
+      deleteRun: unused,
       getRun: () => Promise.resolve(sequence[Math.min(i++, sequence.length - 1)] as AgentRun),
+      listPlaybooks: unused,
+      listPlaybookRuns: unused,
+      getPlaybookRun: unused,
+      createPlaybookRun: unused,
+      deletePlaybookRun: unused,
     };
   };
   const run = (status: AgentRun["status"]): AgentRun => ({

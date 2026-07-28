@@ -19,6 +19,19 @@ is Agent Sandbox v0.5.0, the agent is goose 1.39 on AWS Bedrock.
 | `goose-harness:dev` | real agent base: entrypoint clones the repo, maps model env, runs `goose serve` | built into minikube (auto-rebuilt if missing) |
 | `acp-mock-harness:dev` | deterministic mock agent (no LLM) — for the create-flow beat | built into minikube (auto-rebuilt if missing) |
 
+### API-seeded defaults
+
+The UI's **Load defaults** button (toolbar) calls `POST /api/defaults`,
+which seeds 14 domain resources + the image catalog ConfigMap into the
+cluster (create-only — re-seeding never clobbers edits):
+
+- **Provider**: `gcp-vertex-ai` (shared)
+- **Java EE → Quarkus set**: 4 SkillCards, 3 Agents on `agent-java`, 1 AgentPlaybook
+- **PatternFly 5→6 set**: 1 SkillCard, 3 Agents on `agent-nodejs`, 1 AgentPlaybook
+- **Image catalog**: `agent-image-catalog` ConfigMap (PR #53 hierarchy)
+
+The PatternFly-migration domain skill lives in `skills/patternfly-migration/`.
+
 **One command** (idempotent; safe after reboot / `minikube stop`):
 
 ```sh
@@ -96,6 +109,71 @@ next to the actual code. Same run, same session, two shells.
 
 Also worth showing: `Konveyor: Attach to Cluster Agent for This Workspace`
 in the palette (on-demand version of the toast).
+
+## Beat 4 — the mock harness as a conformance surface (4 min)
+
+Optional but the strongest beat for a protocol/platform audience. Everything
+here is **deterministic, instant, and free** — no LLM, no Bedrock. The mock
+(`acp-mock-harness:dev`, agent `migration-analyzer`) is a *real* ACP server
+built on the same `@agentclientprotocol/sdk` the client uses; it just fakes
+the agent. That's what lets us demo the hard protocol edges on cue — the ones
+a live LLM can never be trusted to hit in front of a room.
+
+Say the framing out loud: **this is how we prove the contract without burning
+tokens or gambling on model behavior.** Same CR, same shim, same WS path as
+every other beat — only the image differs.
+
+Create (or reuse) a mock run against **Coolstore**, open its chat, and walk
+the four capabilities. Each is triggered by a token in the prompt (see the
+header of `harness-mock/server.mjs`):
+
+1. **Diff-preview permission — the money shot.** Prompt with `TEST_PERMISSION`.
+   The harness sends a `session/request_permission` carrying **standard ACP
+   diff content blocks**, and the UI renders the actual code diff *before* you
+   approve: a `javax.*→jakarta.*` rewrite of `InventoryService.java` plus a new
+   `.konveyor/java-ee-findings.md`. This is literally the Konveyor migration
+   story as a reviewable diff. Click **Reject**, watch the outcome echo back;
+   re-run and **Allow**. Human-in-the-loop, end to end. (Forcing it even under
+   `GOOSE_MODE=auto` is the whole point — the real agent only asks when *it*
+   decides to.)
+
+2. **Cancel mid-turn.** Prompt with `TEST_CANCEL`. It streams "still
+   working (N)..." on a slow drip; hit **Stop**. `session/cancel` propagates
+   and the turn ends with `stopReason: cancelled` — proving the client can
+   interrupt a running turn, not just wait it out.
+
+3. **Connection death — a live caveat.** Prompt with `TEST_DROP`. The harness
+   destroys every TCP socket mid-turn (`kubectl logs` shows the destroy) —
+   but through the shim's port-forward dial the drop is currently **absorbed
+   by the tunnel**: the browser never sees a close and the pending prompt
+   hangs (verified live; shim keepalive fix filed). Until that lands, demo
+   the disconnect UX by severing the browser-side socket instead — the UI
+   shows *Disconnected from the agent* with a **Reconnect** action.
+   `TEST_DROP` remains the right conformance trigger for direct/in-cluster
+   dials.
+
+4. **`session/load` replay — same session, two shells.** The headline. Do a
+   short Q&A in the browser chat, then **reconnect a second client** to the
+   same run. On `session/load` the harness replays its entire recorded history
+   (it keeps a per-session update log — the stand-in for goose's SQLite), so
+   the second client materializes the full prior conversation before the next
+   prompt. This is the exact mechanism behind the Beat 3 architect→developer
+   handoff, shown in isolation so the audience sees *what* replays and *why*
+   the IDE could resume a browser-started run. Two ways to show it:
+
+   - **In the browser:** the run's `sessionId` lives in memory, so a hard
+     refresh starts a *new* session — no replay. Instead, sever the
+     connection mid-session (see item 3) and click **Reconnect**: the
+     transcript clears and `session/load` replays it from the agent, not
+     local state. (Note: the mock records only agent-side updates, so
+     replayed history omits your own bubbles; goose replays both.)
+   - **Scripted:** `hack/demo-check.sh` already drives
+     create → Running → WS prompt → **`session/load` replay** → delete through
+     the shim on a throwaway mock run (see `packages/hub-shim/dev/browser-smoke.ts`).
+     Run it live and narrate the replay step — exit 0 means every surface,
+     including replay, is green. Costs nothing.
+
+Delete the run from the kebab when done (cascade GC as in Beat 1).
 
 ## Talking points
 
