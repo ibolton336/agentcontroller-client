@@ -23,11 +23,15 @@ import {
   SOURCE_APPLICATION_IDENTITY,
   SOURCE_APPLICATION_REPOSITORY_BRANCH,
   SOURCE_APPLICATION_REPOSITORY_URL,
+  defaultTargetBranch,
+  invalidTargetBranchReason,
   parseSourcesAnnotation,
 } from "@konveyor/agentic-client/contract";
-import type { AgentParam, AgentResource, Application } from "@konveyor/agentic-client/contract";
+import type { AgentImage, AgentParam, AgentResource, AgentRunModelSelection, Application } from "@konveyor/agentic-client/contract";
 import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
 import { errorMessage, truncate } from "../format";
+import { useImageCatalog } from "../hooks/useImageCatalog";
+import { ModelPicker, ParamValueField, defaultModelFor, paramHelperText as paramHelper, useProviders } from "./sources";
 
 /**
  * Human names for the source identifiers this UI recognizes. Membership IS
@@ -78,17 +82,27 @@ function defaultsFor(agent: AgentResource | undefined): Record<string, string> {
   return values;
 }
 
-function paramHelperText(p: AgentParam): string {
-  const parts: string[] = [];
-  if (p.description) parts.push(p.description);
-  if (p.type && p.type !== "string") parts.push(`type: ${p.type}`);
-  if (p.default) parts.push(`default: ${p.default}`);
-  return parts.join(" — ");
+function AgentImageLine({ image, catalogEntry }: { image: string; catalogEntry?: AgentImage }) {
+  return (
+    <HelperTextItem>
+      <span style={{ fontFamily: "var(--pf-t--global--font--family--mono)" }}>
+        image: {image}
+      </span>
+      {catalogEntry && (
+        <span style={{ opacity: 0.7 }}>
+          {" "}
+          &mdash; {catalogEntry.displayName} &middot; {catalogEntry.description.split(".")[0]}
+        </span>
+      )}
+    </HelperTextItem>
+  );
 }
 
 export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps) {
   const [agents, setAgents] = useState<AgentResource[] | null>(null);
   const [agentsError, setAgentsError] = useState<string | null>(null);
+  const { findByImage } = useImageCatalog(api);
+  const { providers } = useProviders(api);
   const [agentName, setAgentName] = useState("");
   const [applications, setApplications] = useState<Application[]>([]);
   const [applicationsError, setApplicationsError] = useState<string | null>(null);
@@ -98,6 +112,8 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
   const [applicationId, setApplicationId] = useState("");
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [instructions, setInstructions] = useState("");
+  const [targetBranch, setTargetBranch] = useState(defaultTargetBranch());
+  const [model, setModel] = useState<AgentRunModelSelection | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -157,7 +173,9 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
 
   const selectAgent = (name: string) => {
     setAgentName(name);
-    setParamValues(defaultsFor(agents?.find((a) => a.metadata.name === name)));
+    const agent = agents?.find((a) => a.metadata.name === name);
+    setParamValues(defaultsFor(agent));
+    setModel(defaultModelFor(providers, agent?.spec.providers ?? []));
   };
 
   // Partition params: those with a RECOGNIZED source are the platform's job
@@ -184,11 +202,13 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
         (p) => p.required && !p.default && !previewValue(paramSources[p.name], application),
       )
     : [];
+  const branchError = applicationId ? invalidTargetBranchReason(targetBranch) : undefined;
   const canCreate =
     !!selected &&
     missingRequired.length === 0 &&
     !missingApplication &&
     unresolvable.length === 0 &&
+    !branchError &&
     !submitting;
 
   const submit = async () => {
@@ -206,6 +226,8 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
         params: Object.keys(params).length > 0 ? params : undefined,
         instructions: instructions.trim() || undefined,
         applicationRef: needsApplication ? application?.id : undefined,
+        targetBranch: applicationId ? targetBranch : undefined,
+        model: model ? { provider: model.provider, model: model.model } : undefined,
       });
       const name = created.metadata.name;
       if (!name) throw new Error("shim returned a created run without metadata.name");
@@ -269,10 +291,16 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
                   />
                 ))}
               </FormSelect>
-              {selected?.spec.prompt && (
+              {selected && (
                 <FormHelperText>
                   <HelperText>
-                    <HelperTextItem>{truncate(selected.spec.prompt, 160)}</HelperTextItem>
+                    {selected.spec.prompt && (
+                      <HelperTextItem>{truncate(selected.spec.prompt, 160)}</HelperTextItem>
+                    )}
+                    <AgentImageLine
+                      image={selected.spec.image}
+                      catalogEntry={findByImage(selected.spec.image)}
+                    />
                   </HelperText>
                 </FormHelperText>
               )}
@@ -402,16 +430,32 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
               </dl>
             )}
 
+            {applicationId && (
+              <FormGroup label="Target branch" isRequired fieldId="create-branch">
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <TextInput id="create-branch" isRequired value={targetBranch}
+                    onChange={(_e, v) => setTargetBranch(v)}
+                    validated={branchError ? "error" : "default"} style={{ flex: 1 }} />
+                  <Button variant="link" isInline size="sm"
+                    onClick={() => setTargetBranch(defaultTargetBranch())}>Generate new</Button>
+                </div>
+                {branchError && (
+                  <FormHelperText><HelperText><HelperTextItem variant="error">{branchError}</HelperTextItem></HelperText></FormHelperText>
+                )}
+              </FormGroup>
+            )}
+
+            {selected && (selected.spec.providers ?? []).length > 0 && providers.length > 0 && (
+              <ModelPicker providers={providers} agentProviderRefs={selected.spec.providers ?? []}
+                value={model} onChange={setModel} />
+            )}
+
             {userParams.map((p) => {
-              const helper = paramHelperText(p);
+              const helper = paramHelper(p);
               return (
                 <FormGroup key={p.name} label={p.name} isRequired={p.required} fieldId={`param-${p.name}`}>
-                  <TextInput
-                    id={`param-${p.name}`}
-                    isRequired={p.required}
-                    value={paramValues[p.name] ?? ""}
-                    onChange={(_e, v) => setParamValues((prev) => ({ ...prev, [p.name]: v }))}
-                  />
+                  <ParamValueField param={p} value={paramValues[p.name] ?? ""}
+                    onChange={(v) => setParamValues((prev) => ({ ...prev, [p.name]: v }))} />
                   {helper && (
                     <FormHelperText>
                       <HelperText>

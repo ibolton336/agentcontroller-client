@@ -17,6 +17,9 @@
  *   GET    /api/llmproviders[/:name]    -> 200 LLMProvider[] | LLMProvider | 404
  *   GET    /api/skillcards[/:name]      -> 200 SkillCard[] | SkillCard | 404
  *   GET    /api/skillcollections[/:name]-> 200 SkillCollection[] | SkillCollection | 404
+ *   GET    /api/agentplaybooks[/:name]  -> 200 AgentPlaybook[] | AgentPlaybook | 404
+ *   GET    /api/images                  -> 200 AgentImage[] (image catalog)
+ *   POST   /api/defaults               -> 200 seed result (create-only)
  *   GET    /api/agentruns               -> 200 AgentRun[]
  *   POST   /api/agentruns               -> 201 AgentRun (generateName "ui-")
  *   GET    /api/agentruns/:name         -> 200 AgentRun | 404
@@ -52,8 +55,10 @@ import {
   SOURCE_APPLICATION_REPOSITORY_BRANCH,
   SOURCE_APPLICATION_REPOSITORY_URL,
   parseSourcesAnnotation,
+  type AgentImage,
   type Application,
 } from "../../agentic-client/src/contract/index.js";
+import { SEED_RESOURCES, KIND_TO_PLURAL } from "./defaults.js";
 
 const PORT = Number(process.env.PORT ?? 7080);
 const HOST = process.env.HOST ?? "127.0.0.1";
@@ -113,20 +118,26 @@ async function getCustom(plural: string, kind: string, name: string): Promise<ob
   return { apiVersion: API_VERSION, kind, ...obj };
 }
 
-/** Resources served read-only as full CRs: list + get by name. */
-const READ_ONLY: Record<string, string> = {
+/** Resources that support POST/PUT/DELETE through the shim. */
+const WRITABLE: Record<string, string> = {
   [PLURALS.Agent]: "Agent",
-  [PLURALS.LLMProvider]: "LLMProvider",
   [PLURALS.SkillCard]: "SkillCard",
   [PLURALS.SkillCollection]: "SkillCollection",
+  [PLURALS.AgentPlaybook]: "AgentPlaybook",
 };
 
-/**
- * Konveyor UIs only see Agents that opt into platform management. Other
- * resource lists are unfiltered; get-by-name is never filtered.
- */
+/** Resources served read-only as full CRs: list + get by name. */
+const READ_ONLY: Record<string, string> = {
+  ...WRITABLE,
+  [PLURALS.LLMProvider]: "LLMProvider",
+  [PLURALS.AgentPlaybookRun]: "AgentPlaybookRun",
+};
+
 const LIST_LABEL_SELECTORS: Record<string, string> = {
   [PLURALS.Agent]: `${MANAGED_LABEL}=true`,
+  [PLURALS.SkillCard]: `${MANAGED_LABEL}=true`,
+  [PLURALS.SkillCollection]: `${MANAGED_LABEL}=true`,
+  [PLURALS.AgentPlaybook]: `${MANAGED_LABEL}=true`,
 };
 
 /**
@@ -157,6 +168,33 @@ const STUB_APPLICATIONS: Application[] = [
     identitySecret: "git-credentials-coolstore",
   },
 ];
+
+// ------------------------------------------------------- image catalog
+
+const BUILTIN_IMAGES: AgentImage[] = [
+  { name: "agent-base", image: "quay.io/konveyor/agent-base:dev", displayName: "Agent base", description: "Harness entrypoint, git, goose runtime. No language toolchain.", languages: [], parent: null },
+  { name: "agent-java", image: "quay.io/konveyor/agent-java:dev", displayName: "Java agent", description: "JDK 21, Maven 3.9, Gradle 8. For Java EE / Jakarta / Quarkus migrations.", languages: ["java"], parent: "agent-base" },
+  { name: "agent-go", image: "quay.io/konveyor/agent-go:dev", displayName: "Go agent", description: "Go 1.22 toolchain. For Go module migrations and refactoring.", languages: ["go"], parent: "agent-base" },
+  { name: "agent-csharp", image: "quay.io/konveyor/agent-csharp:dev", displayName: "C# agent", description: ".NET 8 SDK. For .NET Framework to .NET migrations.", languages: ["csharp"], parent: "agent-base" },
+  { name: "agent-nodejs", image: "quay.io/konveyor/agent-nodejs:dev", displayName: "Node.js agent", description: "Node.js 20 LTS and npm. For frontend framework migrations (PatternFly, React).", languages: ["javascript", "typescript"], parent: "agent-base" },
+];
+
+const IMAGE_CATALOG_CM = "agent-image-catalog";
+
+async function getImageCatalog(): Promise<{ source: "configmap" | "builtin"; images: AgentImage[] }> {
+  try {
+    const core = kc.makeApiClient(k8s.CoreV1Api);
+    const cm = await core.readNamespacedConfigMap({ name: IMAGE_CATALOG_CM, namespace: NAMESPACE });
+    const data = cm.data ?? {};
+    const images: AgentImage[] = Object.entries(data).map(([key, json]) => {
+      const parsed = JSON.parse(json) as Omit<AgentImage, "name">;
+      return { name: key, ...parsed };
+    });
+    return { source: "configmap", images };
+  } catch {
+    return { source: "builtin", images: BUILTIN_IMAGES };
+  }
+}
 
 interface HubApp {
   id: number;
@@ -283,6 +321,52 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   } catch {
     badRequest("request body is not valid JSON");
   }
+}
+
+const RESOURCE_NAME_RE = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
+
+function k8sMessage(err: unknown): string {
+  if (err && typeof err === "object") {
+    const body = (err as Record<string, unknown>).body;
+    if (body && typeof body === "object" && "message" in (body as Record<string, unknown>)) {
+      return String((body as Record<string, unknown>).message);
+    }
+    if ("message" in err) return String((err as Record<string, unknown>).message);
+  }
+  return errorMessage(err);
+}
+
+interface SaveBody {
+  name: string;
+  spec: Record<string, unknown>;
+}
+
+function parseSaveBody(raw: unknown, requireName: boolean): SaveBody {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    badRequest("body must be a JSON object");
+  }
+  const body = raw as Record<string, unknown>;
+  if (requireName) {
+    if (typeof body.name !== "string" || !body.name.trim()) {
+      badRequest("name is required and must be a non-empty string");
+    }
+    if (body.name.length > 253) badRequest("name exceeds 253 characters");
+    if (!RESOURCE_NAME_RE.test(body.name)) {
+      badRequest(`name "${body.name}" is not a valid DNS-1123 subdomain`);
+    }
+  }
+  if (!body.spec || typeof body.spec !== "object" || Array.isArray(body.spec)) {
+    badRequest("spec is required and must be a JSON object");
+  }
+  return { name: body.name as string, spec: body.spec as Record<string, unknown> };
+}
+
+function managedMetadata(name: string) {
+  return {
+    name,
+    namespace: NAMESPACE,
+    labels: { [MANAGED_LABEL]: "true" },
+  };
 }
 
 interface CreateRunBody {
@@ -418,6 +502,79 @@ async function handleApi(
 ): Promise<void> {
   const method = req.method ?? "GET";
 
+  if (pathname === "/api/images") {
+    if (method !== "GET") return sendError(res, 405, "method not allowed");
+    const catalog = await getImageCatalog();
+    return sendJson(res, 200, catalog.images, {
+      "X-Catalog-Source": catalog.source,
+    });
+  }
+
+  if (pathname === "/api/defaults") {
+    if (method !== "POST") return sendError(res, 405, "method not allowed");
+    const results: { kind: string; name: string; status: "created" | "exists" }[] = [];
+    for (const resource of SEED_RESOURCES) {
+      const plural = KIND_TO_PLURAL[resource.kind];
+      if (!plural) {
+        warn(`defaults: unknown kind "${resource.kind}" — skipping ${resource.metadata.name}`);
+        continue;
+      }
+      try {
+        await custom.getNamespacedCustomObject({
+          group: GROUP,
+          version: VERSION,
+          namespace: NAMESPACE,
+          plural,
+          name: resource.metadata.name,
+        });
+        results.push({ kind: resource.kind, name: resource.metadata.name, status: "exists" });
+      } catch (err) {
+        if (k8sStatusCode(err) !== 404) throw err;
+        await custom.createNamespacedCustomObject({
+          group: GROUP,
+          version: VERSION,
+          namespace: NAMESPACE,
+          plural,
+          body: resource,
+        });
+        results.push({ kind: resource.kind, name: resource.metadata.name, status: "created" });
+      }
+    }
+    // Also apply the image catalog ConfigMap
+    try {
+      const core = kc.makeApiClient(k8s.CoreV1Api);
+      try {
+        await core.readNamespacedConfigMap({ name: IMAGE_CATALOG_CM, namespace: NAMESPACE });
+        results.push({ kind: "ConfigMap", name: IMAGE_CATALOG_CM, status: "exists" });
+      } catch (cmErr) {
+        if (k8sStatusCode(cmErr) !== 404) throw cmErr;
+        await core.createNamespacedConfigMap({
+          namespace: NAMESPACE,
+          body: {
+            metadata: {
+              name: IMAGE_CATALOG_CM,
+              namespace: NAMESPACE,
+              labels: { "konveyor.io/managed": "true", "konveyor.io/catalog": "images" },
+            },
+            data: Object.fromEntries(
+              BUILTIN_IMAGES.map((img) => [
+                img.name,
+                JSON.stringify({ image: img.image, displayName: img.displayName, description: img.description, languages: img.languages, parent: img.parent }),
+              ]),
+            ),
+          },
+        });
+        results.push({ kind: "ConfigMap", name: IMAGE_CATALOG_CM, status: "created" });
+      }
+    } catch (err) {
+      warn(`defaults: failed to seed image catalog ConfigMap: ${errorMessage(err)}`);
+    }
+    const seeded = results.filter((r) => r.status === "created").length;
+    const existed = results.filter((r) => r.status === "exists").length;
+    log(`defaults: ${seeded} created, ${existed} existed`);
+    return sendJson(res, 200, { seeded, existed, results });
+  }
+
   if (pathname === "/api/applications") {
     if (method !== "GET") return sendError(res, 405, "method not allowed");
     const inv = await getApplications();
@@ -429,15 +586,105 @@ async function handleApi(
     });
   }
 
-  const roMatch = /^\/api\/([a-z]+)(?:\/([^/]+))?$/.exec(pathname);
-  if (roMatch && READ_ONLY[roMatch[1]]) {
+  const apiMatch = /^\/api\/([a-z]+)(?:\/([^/]+))?$/.exec(pathname);
+
+  // ---- catalog write routes (POST/PUT/DELETE) for writable resources
+  if (apiMatch && WRITABLE[apiMatch[1]] && method !== "GET") {
+    const plural = apiMatch[1];
+    const kind = WRITABLE[plural]!;
+
+    if (method === "POST" && !apiMatch[2]) {
+      let body: SaveBody;
+      try {
+        body = parseSaveBody(await readJsonBody(req), true);
+      } catch (err) {
+        if (!(err instanceof BadRequestError)) throw err;
+        return sendError(res, 400, errorMessage(err));
+      }
+      try {
+        const created = await custom.createNamespacedCustomObject({
+          group: GROUP,
+          version: VERSION,
+          namespace: NAMESPACE,
+          plural,
+          body: {
+            apiVersion: API_VERSION,
+            kind,
+            metadata: managedMetadata(body.name),
+            spec: body.spec,
+          },
+        });
+        log(`created ${kind} ${body.name}`);
+        return sendJson(res, 201, { apiVersion: API_VERSION, kind, ...created as object });
+      } catch (err) {
+        const code = k8sStatusCode(err);
+        if (code === 409) return sendError(res, 409, `${kind} "${body.name}" already exists`);
+        if (code === 422) return sendError(res, 422, k8sMessage(err));
+        throw err;
+      }
+    }
+
+    if (method === "PUT" && apiMatch[2]) {
+      const name = decodeURIComponent(apiMatch[2]);
+      let body: SaveBody;
+      try {
+        body = parseSaveBody(await readJsonBody(req), false);
+      } catch (err) {
+        if (!(err instanceof BadRequestError)) throw err;
+        return sendError(res, 400, errorMessage(err));
+      }
+      try {
+        const existing = (await custom.getNamespacedCustomObject({
+          group: GROUP, version: VERSION, namespace: NAMESPACE, plural, name,
+        })) as { metadata?: { resourceVersion?: string; labels?: Record<string, string> } };
+        const labels = { ...existing.metadata?.labels, [MANAGED_LABEL]: "true" };
+        const replaced = await custom.replaceNamespacedCustomObject({
+          group: GROUP, version: VERSION, namespace: NAMESPACE, plural, name,
+          body: {
+            apiVersion: API_VERSION,
+            kind,
+            metadata: { name, namespace: NAMESPACE, resourceVersion: existing.metadata?.resourceVersion, labels },
+            spec: body.spec,
+          },
+        });
+        log(`updated ${kind} ${name}`);
+        return sendJson(res, 200, { apiVersion: API_VERSION, kind, ...replaced as object });
+      } catch (err) {
+        const code = k8sStatusCode(err);
+        if (code === 404) return sendError(res, 404, `${kind} "${name}" not found`);
+        if (code === 409) return sendError(res, 409, `${kind} "${name}" was modified — retry`);
+        if (code === 422) return sendError(res, 422, k8sMessage(err));
+        throw err;
+      }
+    }
+
+    if (method === "DELETE" && apiMatch[2]) {
+      const name = decodeURIComponent(apiMatch[2]);
+      try {
+        await custom.deleteNamespacedCustomObject({
+          group: GROUP, version: VERSION, namespace: NAMESPACE, plural, name,
+        });
+        log(`deleted ${kind} ${name}`);
+        res.writeHead(204).end();
+        return;
+      } catch (err) {
+        if (k8sStatusCode(err) === 404) return sendError(res, 404, `${kind} "${name}" not found`);
+        throw err;
+      }
+    }
+
+    return sendError(res, 405, "method not allowed");
+  }
+
+  // ---- read-only list + get-by-name for all catalog resources
+  if (apiMatch && READ_ONLY[apiMatch[1]]) {
     if (method !== "GET") return sendError(res, 405, "method not allowed");
-    const plural = roMatch[1];
-    const kind = READ_ONLY[plural];
-    if (!roMatch[2]) {
+    const plural = apiMatch[1];
+    const kind = READ_ONLY[plural]!;
+    if (!apiMatch[2]) {
       return sendJson(res, 200, await listCustom(plural, kind, LIST_LABEL_SELECTORS[plural]));
     }
-    const name = decodeURIComponent(roMatch[2]);
+    const name = decodeURIComponent(apiMatch[2]);
     try {
       return sendJson(res, 200, await getCustom(plural, kind, name));
     } catch (err) {
@@ -520,10 +767,10 @@ const server = http.createServer((req, res) => {
   }
 
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Expose-Headers", "X-Inventory-Source, X-Inventory-Endpoint");
+  res.setHeader("Access-Control-Expose-Headers", "X-Inventory-Source, X-Inventory-Endpoint, X-Catalog-Source");
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
-      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
       "Access-Control-Max-Age": "86400",
     });
@@ -671,7 +918,7 @@ server.on("upgrade", (req, socket, head) => {
 server.listen(PORT, HOST, () => {
   log(`SHIM API v1 listening on http://${HOST}:${PORT} (namespace=${NAMESPACE}, acp-dial=${ACP_DIAL})`);
   log(
-    `routes: GET /healthz | GET /api/applications | GET /api/{agents,llmproviders,skillcards,skillcollections}[/:name] | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
+    `routes: GET /healthz | GET /api/{applications,images} | POST /api/defaults | CRUD /api/{agents,skillcards,skillcollections,agentplaybooks}[/:name] | GET /api/{llmproviders,agentplaybookruns}[/:name] | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
   );
 });
 

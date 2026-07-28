@@ -15,14 +15,26 @@
  *                                       (the shim injects X-Secret-Key)
  */
 import type {
+  AgentImage,
+  AgentPlaybook,
+  AgentPlaybookRun,
+  AgentPlaybookSpec,
   AgentResource,
+  AgentResourceSpec,
   AgentRun,
   Application,
+  CatalogApi,
+  CreatePlaybookRunInput,
   CreateRunInput,
+  LLMProvider,
   RunApi,
+  SkillCard,
+  SkillCardSpec,
+  SkillCollection,
+  SkillCollectionSpec,
 } from "../contract/index.js";
 
-export class ShimClient implements RunApi {
+export class ShimClient implements RunApi, CatalogApi {
   /** Normalized base URL, no trailing slash (e.g. http://127.0.0.1:7080). */
   readonly baseUrl: string;
 
@@ -35,21 +47,22 @@ export class ShimClient implements RunApi {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
   }
 
+  // ---------------------------------------------------------- RunApi: agents
+
   listAgents(): Promise<AgentResource[]> {
     return this.json<AgentResource[]>("GET", "/api/agents");
   }
+
+  getAgent(name: string): Promise<AgentResource> {
+    return this.json<AgentResource>("GET", `/api/agents/${encodeURIComponent(name)}`);
+  }
+
+  // --------------------------------------------------- RunApi: applications
 
   listApplications(): Promise<Application[]> {
     return this.json<Application[]>("GET", "/api/applications");
   }
 
-  /**
-   * Like listApplications, but also returns where the inventory came from
-   * (from the X-Inventory-* response headers): "hub" with the endpoint, or
-   * "stub" when Hub was unreachable. Lets a UI show the data is live, not
-   * hardcoded. Falls back to source "unknown" if headers are absent (e.g. a
-   * Hub proxy that doesn't set them).
-   */
   async listApplicationsWithSource(): Promise<{
     source: "hub" | "stub" | "unknown";
     endpoint: string;
@@ -61,6 +74,29 @@ export class ShimClient implements RunApi {
     const source = header === "hub" || header === "stub" ? header : "unknown";
     return { source, endpoint: res.headers.get("X-Inventory-Endpoint") ?? "", applications };
   }
+
+  // -------------------------------------------------------- RunApi: images
+
+  listImages(): Promise<AgentImage[]> {
+    return this.json<AgentImage[]>("GET", "/api/images");
+  }
+
+  async listImagesWithSource(): Promise<{
+    source: "configmap" | "builtin";
+    images: AgentImage[];
+  }> {
+    const res = await this.send("GET", "/api/images");
+    const images = (await res.json()) as AgentImage[];
+    const header = res.headers.get("X-Catalog-Source");
+    const source = header === "configmap" ? "configmap" : "builtin";
+    return { source, images };
+  }
+
+  async seedDefaults(): Promise<{ seeded: number; existed: number; results: unknown[] }> {
+    return this.json("POST", "/api/defaults");
+  }
+
+  // ---------------------------------------------------------- RunApi: runs
 
   listRuns(): Promise<AgentRun[]> {
     return this.json<AgentRun[]>("GET", "/api/agentruns");
@@ -78,11 +114,116 @@ export class ShimClient implements RunApi {
     await this.send("DELETE", `/api/agentruns/${encodeURIComponent(name)}`);
   }
 
-  /**
-   * ws(s):// URL of the shim's ACP tunnel for a run, derived from baseUrl
-   * (http -> ws, https -> wss; any base path prefix is preserved). Pass to
-   * AcpSession.connect — no secretKey needed, the shim injects it upstream.
-   */
+  // ----------------------------------------------------- RunApi: playbooks
+
+  listPlaybooks(): Promise<AgentPlaybook[]> {
+    return this.json<AgentPlaybook[]>("GET", "/api/agentplaybooks");
+  }
+
+  listPlaybookRuns(): Promise<AgentPlaybookRun[]> {
+    return this.json<AgentPlaybookRun[]>("GET", "/api/agentplaybookruns");
+  }
+
+  getPlaybookRun(name: string): Promise<AgentPlaybookRun> {
+    return this.json<AgentPlaybookRun>("GET", `/api/agentplaybookruns/${encodeURIComponent(name)}`);
+  }
+
+  createPlaybookRun(input: CreatePlaybookRunInput): Promise<AgentPlaybookRun> {
+    return this.json<AgentPlaybookRun>("POST", "/api/agentplaybookruns", input);
+  }
+
+  async deletePlaybookRun(name: string): Promise<void> {
+    await this.send("DELETE", `/api/agentplaybookruns/${encodeURIComponent(name)}`);
+  }
+
+  // --------------------------------------------------- CatalogApi: providers
+
+  listProviders(): Promise<LLMProvider[]> {
+    return this.json<LLMProvider[]>("GET", "/api/llmproviders");
+  }
+
+  getProvider(name: string): Promise<LLMProvider> {
+    return this.json<LLMProvider>("GET", `/api/llmproviders/${encodeURIComponent(name)}`);
+  }
+
+  // ------------------------------------------------- CatalogApi: skillcards
+
+  listSkillCards(): Promise<SkillCard[]> {
+    return this.json<SkillCard[]>("GET", "/api/skillcards");
+  }
+
+  getSkillCard(name: string): Promise<SkillCard> {
+    return this.json<SkillCard>("GET", `/api/skillcards/${encodeURIComponent(name)}`);
+  }
+
+  createSkillCard(name: string, spec: SkillCardSpec): Promise<SkillCard> {
+    return this.json<SkillCard>("POST", "/api/skillcards", { name, spec });
+  }
+
+  updateSkillCard(name: string, spec: SkillCardSpec): Promise<SkillCard> {
+    return this.json<SkillCard>("PUT", `/api/skillcards/${encodeURIComponent(name)}`, { spec });
+  }
+
+  async deleteSkillCard(name: string): Promise<void> {
+    await this.send("DELETE", `/api/skillcards/${encodeURIComponent(name)}`);
+  }
+
+  // -------------------------------------------- CatalogApi: skillcollections
+
+  listSkillCollections(): Promise<SkillCollection[]> {
+    return this.json<SkillCollection[]>("GET", "/api/skillcollections");
+  }
+
+  getSkillCollection(name: string): Promise<SkillCollection> {
+    return this.json<SkillCollection>("GET", `/api/skillcollections/${encodeURIComponent(name)}`);
+  }
+
+  createSkillCollection(name: string, spec: SkillCollectionSpec): Promise<SkillCollection> {
+    return this.json<SkillCollection>("POST", "/api/skillcollections", { name, spec });
+  }
+
+  updateSkillCollection(name: string, spec: SkillCollectionSpec): Promise<SkillCollection> {
+    return this.json<SkillCollection>("PUT", `/api/skillcollections/${encodeURIComponent(name)}`, { spec });
+  }
+
+  async deleteSkillCollection(name: string): Promise<void> {
+    await this.send("DELETE", `/api/skillcollections/${encodeURIComponent(name)}`);
+  }
+
+  // -------------------------------------------------- CatalogApi: agents
+
+  createAgent(name: string, spec: AgentResourceSpec): Promise<AgentResource> {
+    return this.json<AgentResource>("POST", "/api/agents", { name, spec });
+  }
+
+  updateAgent(name: string, spec: AgentResourceSpec): Promise<AgentResource> {
+    return this.json<AgentResource>("PUT", `/api/agents/${encodeURIComponent(name)}`, { spec });
+  }
+
+  async deleteAgent(name: string): Promise<void> {
+    await this.send("DELETE", `/api/agents/${encodeURIComponent(name)}`);
+  }
+
+  // ------------------------------------------------ CatalogApi: playbooks
+
+  getPlaybook(name: string): Promise<AgentPlaybook> {
+    return this.json<AgentPlaybook>("GET", `/api/agentplaybooks/${encodeURIComponent(name)}`);
+  }
+
+  createPlaybook(name: string, spec: AgentPlaybookSpec): Promise<AgentPlaybook> {
+    return this.json<AgentPlaybook>("POST", "/api/agentplaybooks", { name, spec });
+  }
+
+  updatePlaybook(name: string, spec: AgentPlaybookSpec): Promise<AgentPlaybook> {
+    return this.json<AgentPlaybook>("PUT", `/api/agentplaybooks/${encodeURIComponent(name)}`, { spec });
+  }
+
+  async deletePlaybook(name: string): Promise<void> {
+    await this.send("DELETE", `/api/agentplaybooks/${encodeURIComponent(name)}`);
+  }
+
+  // --------------------------------------------------------------- ACP URL
+
   acpUrl(runName: string): string {
     const u = new URL(this.baseUrl);
     u.protocol = u.protocol === "https:" ? "wss:" : "ws:";

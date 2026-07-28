@@ -37,6 +37,20 @@ export interface Condition {
   observedGeneration?: number;
 }
 
+// ---------------------------------------------------------------- env types
+
+export interface EnvVar {
+  name: string;
+  value?: string;
+  valueFrom?: unknown;
+}
+
+export interface EnvFromSource {
+  configMapRef?: { name: string; optional?: boolean };
+  secretRef?: { name: string; optional?: boolean };
+  prefix?: string;
+}
+
 // ---------------------------------------------------------------- AgentRun
 
 export type AgentRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
@@ -60,10 +74,8 @@ export interface AgentRunSpec {
   /** Task-specific instructions, composed with the Agent's standing prompt. */
   instructions?: string;
   models?: AgentRunModelSelection[];
-  /** Pod env passthrough — opaque to this client. */
-  env?: unknown;
-  /** Pod envFrom passthrough — opaque to this client. */
-  envFrom?: unknown;
+  env?: EnvVar[];
+  envFrom?: EnvFromSource[];
 }
 
 export interface AgentRunStatus {
@@ -105,12 +117,12 @@ export interface AgentParam {
 }
 
 export interface AgentResourceSpec {
-  /** Container image carrying the agent runtime (ACP server on :4000/acp). */
   image: string;
-  /** Standing instructions, composed with AgentRun.spec.instructions. */
   prompt?: string;
   params?: AgentParam[];
   providers?: { ref: string }[];
+  skillCards?: { ref: string }[];
+  skillCollections?: { ref: string }[];
 }
 
 /** An Agent CR ("AgentResource" to avoid clashing with UI "agent" concepts). */
@@ -264,33 +276,238 @@ export interface Application {
   identitySecret?: string;
 }
 
+// -------------------------------------------------------------- AgentImage
+
+export interface AgentImage {
+  name: string;
+  image: string;
+  displayName: string;
+  description: string;
+  languages: string[];
+  parent: string | null;
+}
+
+// --------------------------------------------------------------- SkillCard
+
+export type SkillCardType = "skill" | "rule";
+
+export interface SkillCardSpec {
+  displayName?: string;
+  description?: string;
+  image?: string;
+  inline?: string;
+  source?: string;
+  tags?: string[];
+  type?: SkillCardType;
+  version?: string;
+}
+
+export interface SkillCard {
+  apiVersion?: string;
+  kind?: string;
+  metadata: ObjectMeta;
+  spec: SkillCardSpec;
+  status?: {
+    observedGeneration?: number;
+    resolvedImage?: string;
+    conditions?: Condition[];
+  };
+}
+
+// --------------------------------------------------------- SkillCollection
+
+export interface SkillCollectionSkillRef {
+  name: string;
+  skillCardRef?: string;
+  image?: string;
+  source?: string;
+}
+
+export interface SkillCollectionSpec {
+  skills?: SkillCollectionSkillRef[];
+}
+
+export interface SkillCollection {
+  apiVersion?: string;
+  kind?: string;
+  metadata: ObjectMeta;
+  spec: SkillCollectionSpec;
+  status?: { observedGeneration?: number; conditions?: Condition[] };
+}
+
+// ------------------------------------------------------------- LLMProvider
+
+export interface LLMProviderModel {
+  name: string;
+  contextWindow: number;
+  tier?: string;
+}
+
+export interface LLMProvider {
+  apiVersion?: string;
+  kind?: string;
+  metadata: ObjectMeta;
+  spec: {
+    endpoint: string;
+    credentialRef: { secretName: string; key: string };
+    models: LLMProviderModel[];
+  };
+  status?: {
+    observedGeneration?: number;
+    connectionVerified?: boolean;
+    discoveredModels?: string[];
+    conditions?: Condition[];
+  };
+}
+
+// ---------------------------------------------------------- AgentPlaybook
+
+export const STAGE_NAME_PATTERN = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
+
+export interface AgentPlaybookStage {
+  name: string;
+  agentRef: string;
+  instructions?: string;
+}
+
+export interface AgentPlaybookSpec {
+  guide?: string;
+  stages: AgentPlaybookStage[];
+}
+
+export interface AgentPlaybook {
+  apiVersion?: string;
+  kind?: string;
+  metadata: ObjectMeta;
+  spec: AgentPlaybookSpec;
+  status?: { observedGeneration?: number; conditions?: Condition[] };
+}
+
+// ------------------------------------------------------- AgentPlaybookRun
+
+export type AgentPlaybookRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
+
+export interface AgentPlaybookRunStageStatus {
+  name: string;
+  phase?: AgentRunPhase;
+  agentRunName?: string;
+}
+
+export interface AgentPlaybookRunStatus {
+  phase?: AgentPlaybookRunPhase;
+  observedGeneration?: number;
+  currentStage?: string;
+  stages?: AgentPlaybookRunStageStatus[];
+  startTime?: string;
+  completionTime?: string;
+  conditions?: Condition[];
+}
+
+export interface AgentPlaybookRun {
+  apiVersion?: string;
+  kind?: string;
+  metadata: ObjectMeta;
+  spec: {
+    playbookRef: string;
+    models?: AgentRunModelSelection[];
+    params?: AgentRunParam[];
+    instructions?: string;
+    env?: EnvVar[];
+    envFrom?: EnvFromSource[];
+  };
+  status?: AgentPlaybookRunStatus;
+}
+
+// -------------------------------------------------------- naming / helpers
+
+export const RESOURCE_NAME_PATTERN = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
+export const RESOURCE_NAME_MAX = 253;
+
+export const TARGET_BRANCH_PREFIX = "konveyor/migration-";
+
+export function defaultTargetBranch(): string {
+  return `${TARGET_BRANCH_PREFIX}${Math.floor(Date.now() / 1000)}`;
+}
+
+export function invalidTargetBranchReason(branch: string): string | undefined {
+  if (!branch.trim()) return "Target branch is required";
+  if (branch.includes("..")) return 'Branch name cannot contain ".."';
+  if (branch.includes("~") || branch.includes("^") || branch.includes(":"))
+    return "Branch name cannot contain ~, ^, or :";
+  if (branch.startsWith("/") || branch.endsWith("/") || branch.endsWith(".lock"))
+    return "Invalid branch name";
+  return undefined;
+}
+
+export const RUN_ENV = {
+  HUB_BASE_URL: "HUB_BASE_URL",
+  HUB_TOKEN: "HUB_TOKEN",
+  APP_ID: "APP_ID",
+  TARGET_BRANCH: "TARGET_BRANCH",
+} as const;
+
+export function runEnvValue(run: AgentRun, key: string): string | undefined {
+  return (run.spec.env as EnvVar[] | undefined)?.find((e) => e.name === key)?.value;
+}
+
 // ----------------------------------------------------------------- RunApi
 
-/** Input for RunApi.createRun — params as a plain map, mapped by the transport. */
 export interface CreateRunInput {
   agentRef: string;
   params?: Record<string, string>;
   instructions?: string;
-  /**
-   * Application whose data the platform uses to resolve sourced params and
-   * credentials. Caller-supplied param values always win over resolution.
-   */
   applicationRef?: string;
+  targetBranch?: string;
+  model?: { provider: string; model: string };
 }
 
-/**
- * Transport-agnostic API over Agents + AgentRuns. Implemented today by
- * ShimClient (hub-shim HTTP); a future Konveyor Hub proxy exposes the same
- * shape. NOTE: AgentRun spec is immutable — there is deliberately no update.
- */
+export interface CreatePlaybookRunInput {
+  playbookRef: string;
+  params?: Record<string, string>;
+  instructions?: string;
+  applicationRef?: string;
+  targetBranch?: string;
+  model?: { provider: string; model: string };
+}
+
 export interface RunApi {
   listAgents(): Promise<AgentResource[]>;
-  /** Platform application inventory (for resolving sourced params). */
+  getAgent(name: string): Promise<AgentResource>;
   listApplications(): Promise<Application[]>;
+  listImages(): Promise<AgentImage[]>;
   listRuns(): Promise<AgentRun[]>;
   createRun(input: CreateRunInput): Promise<AgentRun>;
   getRun(name: string): Promise<AgentRun>;
   deleteRun(name: string): Promise<void>;
+  listPlaybooks(): Promise<AgentPlaybook[]>;
+  listPlaybookRuns(): Promise<AgentPlaybookRun[]>;
+  getPlaybookRun(name: string): Promise<AgentPlaybookRun>;
+  createPlaybookRun(input: CreatePlaybookRunInput): Promise<AgentPlaybookRun>;
+  deletePlaybookRun(name: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------- CatalogApi
+
+export interface CatalogApi {
+  listProviders(): Promise<LLMProvider[]>;
+  getProvider(name: string): Promise<LLMProvider>;
+  listSkillCards(): Promise<SkillCard[]>;
+  getSkillCard(name: string): Promise<SkillCard>;
+  createSkillCard(name: string, spec: SkillCardSpec): Promise<SkillCard>;
+  updateSkillCard(name: string, spec: SkillCardSpec): Promise<SkillCard>;
+  deleteSkillCard(name: string): Promise<void>;
+  listSkillCollections(): Promise<SkillCollection[]>;
+  getSkillCollection(name: string): Promise<SkillCollection>;
+  createSkillCollection(name: string, spec: SkillCollectionSpec): Promise<SkillCollection>;
+  updateSkillCollection(name: string, spec: SkillCollectionSpec): Promise<SkillCollection>;
+  deleteSkillCollection(name: string): Promise<void>;
+  createAgent(name: string, spec: AgentResourceSpec): Promise<AgentResource>;
+  updateAgent(name: string, spec: AgentResourceSpec): Promise<AgentResource>;
+  deleteAgent(name: string): Promise<void>;
+  getPlaybook(name: string): Promise<AgentPlaybook>;
+  createPlaybook(name: string, spec: AgentPlaybookSpec): Promise<AgentPlaybook>;
+  updatePlaybook(name: string, spec: AgentPlaybookSpec): Promise<AgentPlaybook>;
+  deletePlaybook(name: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------- waiting

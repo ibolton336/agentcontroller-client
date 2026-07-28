@@ -208,10 +208,70 @@ export interface SkillCollection {
   status?: { observedGeneration?: number; conditions?: Condition[] };
 }
 
+// ---------------------------------------------------------- AgentPlaybook
+
+export interface AgentPlaybookStage {
+  name: string;
+  agentRef: string;
+  instructions?: string;
+}
+
+export interface AgentPlaybookSpec {
+  guide?: string;
+  stages: AgentPlaybookStage[];
+}
+
+export interface AgentPlaybook {
+  apiVersion: typeof API_VERSION;
+  kind: "AgentPlaybook";
+  metadata: ObjectMeta;
+  spec: AgentPlaybookSpec;
+  status?: { observedGeneration?: number; conditions?: Condition[] };
+}
+
+// ------------------------------------------------------- AgentPlaybookRun
+
+export type AgentPlaybookRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
+
+export interface AgentPlaybookRunStageStatus {
+  name: string;
+  phase?: AgentRunPhase;
+  agentRunName?: string;
+}
+
+export interface AgentPlaybookRunSpec {
+  playbookRef: string;
+  models?: AgentRunModelSelection[];
+  params?: AgentRunParam[];
+  instructions?: string;
+  env?: EnvVar[];
+  envFrom?: EnvFromSource[];
+}
+
+export interface AgentPlaybookRunStatus {
+  phase?: AgentPlaybookRunPhase;
+  observedGeneration?: number;
+  currentStage?: string;
+  stages?: AgentPlaybookRunStageStatus[];
+  startTime?: string;
+  completionTime?: string;
+  conditions?: Condition[];
+}
+
+export interface AgentPlaybookRun {
+  apiVersion: typeof API_VERSION;
+  kind: "AgentPlaybookRun";
+  metadata: ObjectMeta;
+  spec: AgentPlaybookRunSpec;
+  status?: AgentPlaybookRunStatus;
+}
+
 export const PLURALS = {
   AgentRun: "agentruns",
   Agent: "agents",
   LLMProvider: "llmproviders",
   SkillCard: "skillcards",
   SkillCollection: "skillcollections",
+  AgentPlaybook: "agentplaybooks",
+  AgentPlaybookRun: "agentplaybookruns",
 } as const;
