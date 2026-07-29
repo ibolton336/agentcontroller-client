@@ -4,6 +4,8 @@ Path shorthand:
 - `PR53` = `/private/tmp/claude-501/-Users-ibolton-agentcontroller-client/94969a53-3f25-4173-ad05-1b4727bbb3f7/scratchpad/pr53`
 - `ACMAIN` = `/private/tmp/claude-501/-Users-ibolton-agentcontroller-client/a772e825-5117-4f35-861a-a9b7bedb57d1/scratchpad/acmain`
 
+See also: [harness-mental-model.md](harness-mental-model.md) — diagram-first summary of how the #53 harness operates across a playbook run.
+
 ---
 
 ## DELIVERABLE 1 — How it flows (Hub → controller → harness → goose → git push)
