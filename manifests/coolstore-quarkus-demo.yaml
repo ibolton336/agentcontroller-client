@@ -1,0 +1,87 @@
+# 1. Agent — one agent drives all three stages; skills are baked in the image
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: coolstore-quarkus-migrator
+  namespace: konveyor-agents
+spec:
+  image: quay.io/konveyor/agent-java:dev   # skills baked at /opt/skills: plan, execute, verify, javaee-to-quarkus, patternfly-migration
+  providers:
+    - ref: aws-bedrock                     # must match a Ready LLMProvider; validateModels checks membership
+  params:
+    - name: max_turns
+      type: number
+      description: Tool-call budget per stage
+      default: "150"                       # harness reads KONVEYOR_PARAM_MAX_TURNS; default-not-required (CEL forbids both)
+  prompt: |
+    You are a senior Java engineer performing one stage of a staged Java EE 7 to
+    Quarkus 3 migration. Work only inside the workspace repository. Never run git
+    commands yourself; the harness commits and pushes your file writes automatically.
+---
+# 2. AgentPlaybook — guide becomes KONVEYOR_PLAYBOOK_INSTRUCTIONS in every stage
+apiVersion: konveyor.io/v1alpha1
+kind: AgentPlaybook
+metadata:
+  name: coolstore-quarkus-demo
+  namespace: konveyor-agents
+spec:
+  guide: |
+    Three-stage migration of the coolstore application from Java EE 7 (WAR on an
+    app server) to Quarkus 3: assess -> remediate -> validate. All stages share one
+    git branch; each stage builds on the files the previous stage committed there.
+    A Konveyor Hub static-analysis report is available at .konveyor/analysis.json
+    in the repo root. The patternfly-migration skill does not apply to this
+    application (no PatternFly UI) — ignore it in every stage.
+  stages:
+    - name: assess
+      agentRef: coolstore-quarkus-migrator
+      instructions: |
+        Stage 1 of 3 (assess). Follow the `plan` skill exactly: run graphify, read
+        .konveyor/analysis.json (Konveyor Hub analysis insights for this app), and
+        use the javaee-to-quarkus skill's phase list and references to identify what
+        must change. Write PLAN.md in the repo root, ordering steps by the
+        javaee-to-quarkus phases (build config -> app config -> EJB-to-CDI ->
+        messaging -> lifecycle -> cleanup). Set `mvn compile` as the Verification
+        build command. Do NOT modify any source files and do NOT run the
+        javaee-to-quarkus per-phase build gates — planning only.
+    - name: remediate
+      agentRef: coolstore-quarkus-migrator
+      instructions: |
+        Stage 2 of 3 (remediate). PLAN.md already exists in the repo root from the
+        assess stage. Follow the `execute` skill exactly: work through every PLAN.md
+        step in order, applying the transformation patterns from the
+        javaee-to-quarkus modules and references (annotation-map, dependency-map,
+        config-map, pattern-map). Do NOT run builds or tests, do NOT modify PLAN.md,
+        and do NOT follow the javaee-to-quarkus build gates — the validate stage
+        handles compilation.
+    - name: validate
+      agentRef: coolstore-quarkus-migrator
+      instructions: |
+        Stage 3 of 3 (validate). Follow the `verify` skill exactly: run the build
+        command from PLAN.md's Verification section (mvn compile), fix compiler
+        errors minimally using the javaee-to-quarkus references/verify-errors.md
+        mappings, and iterate. Then run the tests and report results without fixing
+        test failures. Do NOT modify PLAN.md.
+---
+# 3. AgentPlaybookRun — spec is immutable; models + env are copied to ALL stages
+apiVersion: konveyor.io/v1alpha1
+kind: AgentPlaybookRun
+metadata:
+  name: coolstore-quarkus-demo-1
+  namespace: konveyor-agents
+spec:
+  playbookRef: coolstore-quarkus-demo
+  models:                                  # REQUIRED by hand — no controller defaults these
+    - role: primary
+      provider: aws-bedrock
+      model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  params:
+    - name: max_turns
+      value: "150"                         # declared on the (single) Agent, so valid for every stage
+  env:                                     # copied verbatim to every stage pod, appended last
+    - name: HUB_BASE_URL
+      value: http://tackle-hub.konveyor-tackle.svc:8080
+    - name: APP_ID
+      value: "1"                           # coolstore in the Hub -> resolves https://github.com/ibolton336/coolstore.git + source identity
+    - name: TARGET_BRANCH
+      value: quarkus-migration-demo-1      # ONE branch for all three stages; must differ from the Hub source branch (main)
