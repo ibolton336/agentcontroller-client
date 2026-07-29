@@ -4,16 +4,29 @@
     {
       "name": "agent-ui",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "ui", "--", "--port", "5175", "--strictPort"],
+      "runtimeArgs": ["run", "dev", "--prefix", "agentic-controller/clients/ui", "--", "--port", "5175", "--strictPort"],
       "port": 5175
+    },
+    {
+      "name": "agent-ui-alt",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "agentic-controller/clients/ui", "--", "--port", "5176", "--strictPort"],
+      "port": 5176
+    },
+    {
+      "name": "tackle2-ui-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start:dev", "--prefix", "/Users/ibolton/Development/tackle2-ui"],
+      "port": 9000
     },
     {
       "name": "hub-shim",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "start", "--prefix", "packages/hub-shim"],
+      "runtimeArgs": ["run", "start", "--prefix", "agentic-controller/clients/packages/hub-shim"],
       "port": 7080,
       "env": {
-        "HUB_URL": "http://127.0.0.1:18090"
+        "HUB_URL": "http://127.0.0.1:18090",
+        "RUN_HUB_BASE_URL": "http://tackle-hub.konveyor-tackle.svc:8080"
       }
     }
   ]

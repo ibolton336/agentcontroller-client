@@ -1,0 +1,42 @@
+# E2E agent for the #53 migration-harness on THIS minikube (cri-dockerd):
+# - image is the locally built quay.io/konveyor/agent-java:dev (pr-53
+#   Containerfile) with skills BAKED at /opt/skills — SkillCard image
+#   volumes don't mount on cri-dockerd, so no skillCards refs here.
+# - param-sources annotations make the UI app-scope the run; the shim
+#   translates applicationRef into HUB_BASE_URL/APP_ID/TARGET_BRANCH env
+#   that the harness requires (it ignores the repository/branch params).
+# - aws-bedrock is the Ready provider; the harness lowercases/underscores
+#   the name into goose's aws_bedrock id.
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: java-hub-analyzer
+  namespace: konveyor-agents
+  labels:
+    konveyor.io/managed: "true"
+  annotations:
+    konveyor.io/param-sources: |
+      {"repository": "konveyor.io/application-repository-url",
+       "branch": "konveyor.io/application-repository-branch"}
+    konveyor.io/credential-sources: |
+      {"git": "konveyor.io/application-identity"}
+spec:
+  image: quay.io/konveyor/agent-java:dev
+  prompt: >-
+    You are a Java EE migration analyzer. Examine the application in the
+    workspace and produce a migration plan under .konveyor/plan.md.
+  providers:
+    - ref: aws-bedrock
+  params:
+    - name: repository
+      type: string
+      required: true
+      description: Git URL of the application
+    - name: branch
+      type: string
+      default: main
+      description: Branch to analyze
+    - name: max_turns
+      type: number
+      default: "40"
+      description: Turn budget for the run
