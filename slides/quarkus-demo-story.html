@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Findings → Pull Request — Konveyor agentic demo</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #30363d;
+    --fg: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --ok: #3fb950;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    overflow: hidden;
+  }
+  .slide {
+    position: absolute; inset: 0; display: none;
+    grid-template-rows: auto 1fr auto; gap: 1rem;
+    padding: 2.2vh 3vw 1.5vh;
+  }
+  .slide.active { display: grid; }
+  header .beat { color: var(--accent); font-size: .8rem; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; }
+  header h1 { margin: .15em 0 .1em; font-size: clamp(1.4rem, 2.9vw, 2.3rem); line-height: 1.15; }
+  header p.sub { margin: 0; color: var(--muted); font-size: clamp(.85rem, 1.25vw, 1.05rem); max-width: 90ch; }
+  .media {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 0; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  .media img, .media video { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+  .media.two { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); }
+  .media.two > * { background: var(--panel); min-height: 0; max-height: 100%; object-fit: contain; width: 100%; }
+  footer { display: flex; align-items: center; gap: 1.2rem; border-top: 1px solid var(--line); padding-top: .7rem; }
+  footer .say { flex: 1; color: var(--muted); font-size: clamp(.8rem, 1.15vw, .98rem); }
+  footer .say b { color: var(--fg); font-weight: 600; }
+  footer .nav { color: var(--muted); font-size: .82rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  code { background: #21262d; padding: .1em .38em; border-radius: 4px; font-size: .92em; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .progress { position: fixed; left: 0; top: 0; height: 3px; background: var(--accent); transition: width .18s ease; }
+  @media print { body { overflow: visible; } .slide { display: grid !important; position: static; page-break-after: always; height: 100vh; } }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+
+<!-- 1 -->
+<section class="slide active">
+  <header>
+    <div class="beat">Beat 1 — the problem is already known</div>
+    <h1>Konveyor analysis found 26 issues in coolstore</h1>
+    <p class="sub">Real static analysis against <code>konveyor.io/target=quarkus</code>: EJB annotations, transaction boundaries, the pom, persistence config. This is the Konveyor everyone already trusts — it tells you <em>what</em> is wrong.</p>
+  </header>
+  <div class="media"><img src="assets/quarkus-demo/00a-hub-issues-coolstore.png" alt="Konveyor Issues for coolstore" /></div>
+  <footer>
+    <div class="say"><b>Say:</b> “Analysis has always told us what to fix. The gap was everything after that — someone still has to open the IDE and do it. Watch what happens next.”</div>
+    <div class="nav" id="nav1"></div>
+  </footer>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <header>
+    <div class="beat">Beat 2 — the method is a reviewable asset</div>
+    <h1>Skills, Agents, Playbooks — not prompt spaghetti</h1>
+    <p class="sub">Migration know-how lives in versioned <b>Skills</b>. An <b>Agent</b> is a governed capability: an image, declared providers, declared params. A <b>Playbook</b> is the process. Credentials never appear in a spec — they resolve from Hub identities at run time.</p>
+  </header>
+  <div class="media two">
+    <img src="assets/quarkus-demo/00d-skill-library.png" alt="Skill library" />
+    <img src="assets/quarkus-demo/00c-agent-library.png" alt="Agent library" />
+  </div>
+  <footer>
+    <div class="say"><b>Say:</b> “Nothing here is a magic prompt. These are cataloged, reviewable objects your platform team owns and versions.”</div>
+    <div class="nav"></div>
+  </footer>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <header>
+    <div class="beat">Beat 3 — one run, three stages</div>
+    <h1>assess → remediate → validate, sharing one branch</h1>
+    <p class="sub">A single <code>AgentPlaybookRun</code>. Each stage is its own sandboxed pod with a fresh clone; the shared target branch on the fork is the entire handoff between them. No shared volume, no hidden state.</p>
+  </header>
+  <div class="media"><img src="assets/quarkus-demo/01-playbook-detail-assess.png" alt="Playbook run detail, assess stage" /></div>
+  <footer>
+    <div class="say"><b>Say:</b> “One command starts this. The stage ladder is the audit trail — every stage is a real run you can open.”</div>
+    <div class="nav"></div>
+  </footer>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <header>
+    <div class="beat">Beat 4 — assess</div>
+    <h1>The plan cites the findings by rule ID</h1>
+    <p class="sub">The harness pulls the Hub's analysis into the workspace as <code>.konveyor/analysis.json</code> before the agent starts. The plan it commits is grounded in those findings — <code>ee-to-quarkus-00020</code>, <code>javaee-pom-to-quarkus-00010</code> — mapped to real files.</p>
+  </header>
+  <div class="media"><video src="assets/quarkus-demo/01-console-assess.webm" autoplay loop muted playsinline></video></div>
+  <footer>
+    <div class="say"><b>Say:</b> “This isn't the model guessing at a Java EE app. It's reading your analysis and writing a plan against it.”</div>
+    <div class="nav"></div>
+  </footer>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <header>
+    <div class="beat">Beat 5 — remediate</div>
+    <h1>It writes the actual code</h1>
+    <p class="sub">Working the plan step by step: the pom rebuilt on the Quarkus BOM, <code>persistence.xml</code> folded into <code>application.properties</code>, EJBs to CDI, transactions annotated, the JMS MDBs rewritten onto messaging channels.</p>
+  </header>
+  <div class="media"><video src="assets/quarkus-demo/02-console-remediate.webm" autoplay loop muted playsinline></video></div>
+  <footer>
+    <div class="say"><b>Say:</b> “Every file it writes is auto-committed to the branch as it goes — you can watch the work land in real time.”</div>
+    <div class="nav"></div>
+  </footer>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <header>
+    <div class="beat">Beat 6 — validate</div>
+    <h1>The gate is “it starts”, not “it compiles”</h1>
+    <p class="sub"><code>mvn package</code>, then actually boot the jar and curl the endpoints. Compile-only gates wave through apps that cannot start — CDI scope errors and messaging wiring failures only surface at startup.</p>
+  </header>
+  <div class="media"><video src="assets/quarkus-demo/03-console-validate.webm" autoplay loop muted playsinline></video></div>
+  <footer>
+    <div class="say"><b>Say:</b> “Package green, app up in 0.976 seconds, <code>/services/products</code> and <code>/cart</code> answering 200 — and it wrote those receipts into the plan.”</div>
+    <div class="nav"></div>
+  </footer>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <header>
+    <div class="beat">Beat 7 — the result</div>
+    <h1>Three green stages in 33 minutes</h1>
+    <p class="sub">One playbook run, start to finish, against a real application in the Hub — with every commit on the branch traceable back to the stage that made it.</p>
+  </header>
+  <div class="media"><img src="assets/quarkus-demo/04-playbook-detail-final-Succeeded.png" alt="Playbook run succeeded, three green stages" /></div>
+  <footer>
+    <div class="say"><b>Say:</b> “Thirty-three minutes, unattended. The interesting part isn't the speed — it's that the output is reviewable.”</div>
+    <div class="nav"></div>
+  </footer>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <header>
+    <div class="beat">Beat 8 — a human closes the loop</div>
+    <h1>It ends as a pull request, not a merge</h1>
+    <p class="sub">The branch is on GitHub, able to merge, waiting for review. The platform does the migration; it does not decide the migration is correct.</p>
+  </header>
+  <div class="media"><img src="assets/quarkus-demo/04-github-compare.png" alt="GitHub compare view, able to merge" /></div>
+  <footer>
+    <div class="say"><b>Say:</b> “This is the governance answer. Nothing merged itself. A reviewer sees a normal PR — and the plan in the branch explains every change.” <span class="ok">Close here.</span></div>
+    <div class="nav"></div>
+  </footer>
+</section>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  let i = 0;
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('active', k === i));
+    document.getElementById('progress').style.width = ((i + 1) / slides.length * 100) + '%';
+    slides[i].querySelectorAll('video').forEach(v => {
+      v.currentTime = 0;
+      v.play().catch(() => {});
+      // Demo-day safety net: if autoplay is blocked or the codec is unavailable,
+      // swap in the GIF, which animates unconditionally.
+      const t0 = v.currentTime;
+      setTimeout(() => {
+        if (!v.isConnected || v.currentTime > t0) return;
+        const img = document.createElement('img');
+        img.src = v.currentSrc.replace(/\.webm$/, '.gif');
+        img.alt = '';
+        v.replaceWith(img);
+      }, 1200);
+    });
+    document.querySelectorAll('.nav').forEach(n => n.textContent = (i + 1) + ' / ' + slides.length);
+  }
+  document.addEventListener('keydown', e => {
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); show(i + 1); }
+    if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); show(i - 1); }
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End') show(slides.length - 1);
+    if (e.key === 'f') document.documentElement.requestFullscreen?.();
+  });
+  document.addEventListener('click', e => { if (!e.target.closest('a')) show(i + 1); });
+  show(0);
+</script>
+</body>
+</html>
