@@ -62,6 +62,9 @@ kind: AgentPlaybook
 metadata:
   name: rhdh-upgrade
   namespace: konveyor-agents
+  labels:
+    # Konveyor UI lists filter on this — unlabeled playbooks are invisible.
+    konveyor.io/managed: "true"
 spec:
   guide: |
     You are one stage of an automated three-stage RHDH upgrade pipeline
