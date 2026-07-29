@@ -34,7 +34,9 @@ spec:
     app server) to Quarkus 3: assess -> remediate -> validate. All stages share one
     git branch; each stage builds on the files the previous stage committed there.
     A Konveyor Hub static-analysis report is available at .konveyor/analysis.json
-    in the repo root. The patternfly-migration skill does not apply to this
+    in the repo root. The finished state must be a Quarkus app that packages AND
+    starts cleanly — compiling is not the bar. The REST base path /services must
+    be preserved. The patternfly-migration skill does not apply to this
     application (no PatternFly UI) — ignore it in every stage.
   stages:
     - name: assess
@@ -45,9 +47,14 @@ spec:
         use the javaee-to-quarkus skill's phase list and references to identify what
         must change. Write PLAN.md in the repo root, ordering steps by the
         javaee-to-quarkus phases (build config -> app config -> EJB-to-CDI ->
-        messaging -> lifecycle -> cleanup). Set `mvn compile` as the Verification
-        build command. Do NOT modify any source files and do NOT run the
-        javaee-to-quarkus per-phase build gates — planning only.
+        messaging -> lifecycle -> cleanup). Include in the plan: a messaging
+        topology table for the original app (producer -> broker address ->
+        consumers, including topic fan-out) that the converted app must preserve,
+        and an explicit disposition for src/main/webapp under JAR packaging.
+        Set the Verification section to: `mvn package -DskipTests` must succeed
+        AND `java -jar target/quarkus-app/quarkus-run.jar` must start cleanly.
+        Do NOT modify any source files and do NOT run the javaee-to-quarkus
+        per-phase build gates — planning only.
     - name: remediate
       agentRef: coolstore-quarkus-migrator
       instructions: |
@@ -55,23 +62,64 @@ spec:
         assess stage. Follow the `execute` skill exactly: work through every PLAN.md
         step in order, applying the transformation patterns from the
         javaee-to-quarkus modules and references (annotation-map, dependency-map,
-        config-map, pattern-map). Do NOT run builds or tests, do NOT modify PLAN.md,
-        and do NOT follow the javaee-to-quarkus build gates — the validate stage
-        handles compilation.
+        config-map, pattern-map). Hard rules for this codebase:
+        - BOM discipline: cross-check every versionless io.quarkus artifact against
+          the pinned quarkus.platform.version BOM. On 3.8 LTS the REST stack is
+          quarkus-resteasy-reactive-* (quarkus-rest-* names exist only from 3.9).
+        - Extension replaces library: when a Quarkus extension supersedes a
+          manually-wired library (quarkus-flyway for flyway-core, quarkus-hibernate-orm
+          for persistence.xml), DELETE the obsolete bootstrap class and rely on the
+          extension's config (quarkus.flyway.migrate-at-start=true) — never pin the
+          legacy library's old version to keep dead code compiling.
+        - Messaging topology: preserve the PLAN.md topology table. Every @Incoming
+          channel must have a producer; a channel name must never appear as both
+          mp.messaging.incoming.* and mp.messaging.outgoing.* (use distinct names
+          joined by .address); preserve JMS topic fan-out via @Broadcast or a
+          multicast address — never leave a consumer on an address nobody publishes to.
+        - Classpath honesty: never reference a connector, annotation, or class whose
+          artifact is not in <dependencies>; declare explicit deps for directly
+          imported APIs (quarkus-jsonp for jakarta.json, jakarta.xml.bind-api for
+          JAXB) rather than relying on transitives.
+        - Deletion postconditions: before deleting a JAX-RS Application class,
+          capture its @ApplicationPath and re-apply it as
+          quarkus.resteasy-reactive.path. Record a disposition for src/main/webapp
+          (move served static content to src/main/resources/META-INF/resources or
+          state the UI is dropped in PLAN.md's notes).
+        - Stateful conversion: key per-user state by an identifier already in the
+          API (e.g. Map<cartId, ShoppingCart>) instead of widening @Stateful to a
+          shared @ApplicationScoped singleton; never leave @SessionScoped on REST
+          endpoints without quarkus-undertow — prefer @RequestScoped.
+        - System-scoped dependencies are unsupported by Quarkus packaging: use
+          mvn install:install-file + a normal compile-scope dependency.
+        - Address Hibernate 6 implicit-sequence insights by pinning
+          @SequenceGenerator to the sequence the Flyway scripts actually create.
+        Do NOT run builds or tests, and do NOT modify the plan's step list — the
+        validate stage handles compilation and startup.
     - name: validate
       agentRef: coolstore-quarkus-migrator
       instructions: |
-        Stage 3 of 3 (validate). Follow the `verify` skill exactly: run the build
-        command from PLAN.md's Verification section (mvn compile), fix compiler
-        errors minimally using the javaee-to-quarkus references/verify-errors.md
-        mappings, and iterate. Then run the tests and report results without fixing
-        test failures. Do NOT modify PLAN.md.
+        Stage 3 of 3 (validate). Follow the `verify` skill, but the gate is NOT a
+        green compile. The gate, in order:
+        1. `mvn package -DskipTests` succeeds.
+        2. `timeout 60 java -jar target/quarkus-app/quarkus-run.jar > /tmp/app.log 2>&1`
+           then inspect /tmp/app.log: the app must reach "Listening on" with no
+           deployment errors — CDI scope errors, SmallRye wiring errors (e.g.
+           SRMSG00073 dual-direction channel), unknown-connector and
+           missing-sequence failures only surface at augmentation/startup, never
+           at compile. Do not use quarkus:dev or anything needing Docker/testcontainers.
+        3. While the app runs, curl the REST endpoints under the /services base
+           path (e.g. /services/products) and confirm they respond.
+        Fix failures minimally using the javaee-to-quarkus references/verify-errors.md
+        mappings and iterate until all three gates pass. Then append a short
+        Verification Results section to PLAN.md: gates passed, fixes applied, and
+        honest caveats compile cannot see (messaging end-to-end untested, in-mem H2,
+        no prod AMQP broker configured). Do NOT modify PLAN.md's step list.
 ---
 # 3. AgentPlaybookRun — spec is immutable; models + env are copied to ALL stages
 apiVersion: konveyor.io/v1alpha1
 kind: AgentPlaybookRun
 metadata:
-  name: coolstore-quarkus-demo-1
+  name: coolstore-quarkus-demo-2
   namespace: konveyor-agents
   labels:
     konveyor.io/managed: "true"
@@ -90,4 +138,4 @@ spec:
     - name: APP_ID
       value: "1"                           # coolstore in the Hub -> resolves https://github.com/ibolton336/coolstore.git + source identity
     - name: TARGET_BRANCH
-      value: quarkus-migration-demo-1      # ONE branch for all three stages; must differ from the Hub source branch (main)
+      value: quarkus-migration-demo-2      # ONE branch for all three stages; must differ from the Hub source branch (main); fresh per attempt
