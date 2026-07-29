@@ -43,6 +43,25 @@ export type ToolCallDiff = {
   newText: string;
 };
 
+/**
+ * A file location attached to a tool_call / tool_call_update (standard ACP
+ * ToolCallLocation — the protocol's "follow-along" feature: which file the
+ * agent is touching, optionally at which line).
+ */
+export type ToolCallLocation = {
+  path: string;
+  line?: number | null;
+};
+
+/** One entry from a session/list response (standard ACP SessionInfo). */
+export type SessionInfo = {
+  sessionId: string;
+  cwd?: string;
+  title?: string | null;
+  /** ISO 8601 timestamp of last activity, when the agent reports one. */
+  updatedAt?: string | null;
+};
+
 /** An agent -> client session/request_permission ask. */
 export type PermissionRequest = {
   sessionId: string;
@@ -129,7 +148,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Extracts {type:"diff"} blocks from a ToolCallUpdate.content array. */
-function parseToolCallDiffs(content: unknown): ToolCallDiff[] | undefined {
+export function parseToolCallDiffs(content: unknown): ToolCallDiff[] | undefined {
   if (!Array.isArray(content)) return undefined;
   const diffs: ToolCallDiff[] = [];
   for (const block of content) {
@@ -144,9 +163,32 @@ function parseToolCallDiffs(content: unknown): ToolCallDiff[] | undefined {
   return diffs.length > 0 ? diffs : undefined;
 }
 
+/**
+ * Extracts ToolCallLocation entries from a tool_call/tool_call_update.
+ * Returns undefined only when the field is absent/invalid; a present-but-empty
+ * array comes back as [] so callers can honor ACP's replace semantics
+ * (absent = no change, [] = explicitly cleared).
+ */
+export function parseToolCallLocations(locations: unknown): ToolCallLocation[] | undefined {
+  if (!Array.isArray(locations)) return undefined;
+  const out: ToolCallLocation[] = [];
+  for (const loc of locations) {
+    if (!isRecord(loc) || typeof loc.path !== "string") continue;
+    out.push({
+      path: loc.path,
+      line: typeof loc.line === "number" ? loc.line : null,
+    });
+  }
+  return out;
+}
+
 interface InitializeResult {
   protocolVersion?: number;
-  agentCapabilities?: { loadSession?: boolean; [k: string]: unknown };
+  agentCapabilities?: {
+    loadSession?: boolean;
+    sessionCapabilities?: { list?: unknown; [k: string]: unknown };
+    [k: string]: unknown;
+  };
   [k: string]: unknown;
 }
 
@@ -168,6 +210,7 @@ export class AcpSession {
 
   private _sessionId: string | null = null;
   private _loadSessionSupported = false;
+  private _listSessionsSupported = false;
   private promptActive = false;
   private closed = false;
   private explicitlyClosed = false;
@@ -243,10 +286,25 @@ export class AcpSession {
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: {},
     });
+    // The spec says a client that can't speak the agent's protocol should
+    // disconnect rather than limp along misinterpreting frames.
+    const agentProtocol = initialized?.protocolVersion;
+    if (typeof agentProtocol === "number" && agentProtocol > PROTOCOL_VERSION) {
+      await session.close();
+      throw new Error(
+        `agent speaks ACP protocol v${agentProtocol}; this client supports up to v${PROTOCOL_VERSION}`,
+      );
+    }
     session._loadSessionSupported = initialized?.agentCapabilities?.loadSession === true;
+    // Per the ACP schema, sessionCapabilities.list is an object ({} means
+    // supported); absent or null means the agent does not advertise it.
+    session._listSessionsSupported = isRecord(
+      initialized?.agentCapabilities?.sessionCapabilities?.list,
+    );
     logger.info(
       `AcpSession: initialized protocol v${initialized?.protocolVersion ?? "?"}, ` +
-        `loadSession=${session._loadSessionSupported}`,
+        `loadSession=${session._loadSessionSupported}, ` +
+        `listSessions=${session._listSessionsSupported}`,
     );
     return session;
   }
@@ -257,6 +315,10 @@ export class AcpSession {
 
   get loadSessionSupported(): boolean {
     return this._loadSessionSupported;
+  }
+
+  get listSessionsSupported(): boolean {
+    return this._listSessionsSupported;
   }
 
   isPromptActive(): boolean {
@@ -273,11 +335,48 @@ export class AcpSession {
     return res.sessionId;
   }
 
-  /** Attach to an existing session; the agent replays history as updates. */
-  async loadSession(id: string): Promise<void> {
+  /**
+   * List sessions the agent knows about (session/list). The agent's run
+   * sessions appear here even when they were created on another connection —
+   * this is how a viewer finds the in-flight run session to attach to.
+   * Feature-detect with listSessionsSupported before calling.
+   */
+  async listSessions(): Promise<SessionInfo[]> {
+    const out: SessionInfo[] = [];
+    let cursor: string | undefined;
+    // Follow nextCursor so the newest session can't hide on a later page;
+    // the page cap only bounds a misbehaving agent.
+    for (let page = 0; page < 16; page++) {
+      const res = await this.request<{ sessions?: unknown; nextCursor?: unknown }>(
+        "session/list",
+        cursor ? { cursor } : {},
+      );
+      if (Array.isArray(res?.sessions)) {
+        for (const s of res.sessions) {
+          if (!isRecord(s) || typeof s.sessionId !== "string") continue;
+          out.push({
+            sessionId: s.sessionId,
+            cwd: typeof s.cwd === "string" ? s.cwd : undefined,
+            title: typeof s.title === "string" ? s.title : null,
+            updatedAt: typeof s.updatedAt === "string" ? s.updatedAt : null,
+          });
+        }
+      }
+      cursor = typeof res?.nextCursor === "string" && res.nextCursor ? res.nextCursor : undefined;
+      if (!cursor) break;
+    }
+    return out;
+  }
+
+  /**
+   * Attach to an existing session; the agent replays history as updates.
+   * Pass the session's own cwd (from session/list) when known — the load
+   * request's cwd should match the session it opens.
+   */
+  async loadSession(id: string, cwd?: string): Promise<void> {
     await this.request("session/load", {
       sessionId: id,
-      cwd: DEFAULT_CWD,
+      cwd: cwd ?? DEFAULT_CWD,
       mcpServers: [],
     });
     this._sessionId = id;
@@ -288,24 +387,32 @@ export class AcpSession {
     if (!this._sessionId) {
       throw new Error("AcpSession: no active session — call newSession() or loadSession() first");
     }
+    // Pin the target so a concurrent loadSession (e.g. a follow-poll reload)
+    // can't retarget this turn's cancel to a different session.
+    const sessionId = this._sessionId;
+    this.promptSessionId = sessionId;
     this.promptActive = true;
     try {
       // No client-side timeout: agent turns can be long; the promise settles
       // on the agent's response or on connection close.
       const res = await this.request<{ stopReason: string }>("session/prompt", {
-        sessionId: this._sessionId,
+        sessionId,
         prompt: [{ type: "text", text }],
       });
       return res.stopReason;
     } finally {
       this.promptActive = false;
+      this.promptSessionId = null;
     }
   }
 
+  private promptSessionId: string | null = null;
+
   /** Cancel the in-flight turn (notification; the prompt settles separately). */
   async cancel(): Promise<void> {
-    if (this._sessionId && !this.closed) {
-      this.notify("session/cancel", { sessionId: this._sessionId });
+    const target = this.promptActive && this.promptSessionId ? this.promptSessionId : this._sessionId;
+    if (target && !this.closed) {
+      this.notify("session/cancel", { sessionId: target });
     }
   }
 

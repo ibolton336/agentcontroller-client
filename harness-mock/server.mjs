@@ -8,9 +8,13 @@
  * contract:
  *   - WebSocket + streamable HTTP at :4000/acp
  *   - X-Secret-Key auth from GOOSE_SERVER__SECRET_KEY
- *   - session/new, session/load (full history replay), session/prompt,
- *     session/cancel
+ *   - session/new, session/load (full history replay), session/list
+ *     (cross-connection, with updatedAt — the attach-to-run discovery path),
+ *     session/prompt, session/cancel
  *   - GOOSE_MODE=auto suppresses request_permission
+ *   - MOCK_SELF_RUN=1 simulates a harness-owned run session that appends
+ *     history without live notifies (matches goose: turns are only streamed
+ *     to the connection that owns them; viewers catch up via re-load)
  *
  * Replace with the real harness image when the controller lands; nothing
  * in the client changes.
@@ -46,7 +50,12 @@ const params = Object.entries(process.env)
   .filter(([k]) => k.startsWith("KONVEYOR_PARAM_"))
   .map(([k, v]) => `${k.slice("KONVEYOR_PARAM_".length).toLowerCase()}=${v}`);
 
-/** sessionId -> { history: SessionNotification[] } (stand-in for goose's SQLite) */
+/**
+ * sessionId -> { history: SessionNotification[], title, updatedAt }
+ * (stand-in for goose's SQLite). Module-scoped on purpose: like goose's
+ * on-disk store, sessions survive across connections, so a second client
+ * can session/list + session/load a session it did not create.
+ */
 const sessions = new Map();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -55,10 +64,14 @@ const newId = () =>
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
+function record(session, sessionId, update) {
+  session.history.push({ sessionId, update });
+  session.updatedAt = new Date().toISOString();
+}
+
 async function notifyAndRecord(cx, session, sessionId, update) {
-  const notification = { sessionId, update };
-  session.history.push(notification);
-  await cx.client.notify(acp.methods.client.session.update, notification);
+  record(session, sessionId, update);
+  await cx.client.notify(acp.methods.client.session.update, { sessionId, update });
 }
 
 function buildAgent() {
@@ -66,15 +79,27 @@ function buildAgent() {
     .agent({ name: "mock-goose-harness" })
     .onRequest(acp.methods.agent.initialize, () => ({
       protocolVersion: acp.PROTOCOL_VERSION,
-      agentCapabilities: { loadSession: true },
+      agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} } },
     }))
     .onRequest(acp.methods.agent.authenticate, () => ({}))
     .onRequest(acp.methods.agent.session.new, () => {
       const sessionId = newId();
-      sessions.set(sessionId, { history: [] });
+      sessions.set(sessionId, {
+        history: [],
+        title: null,
+        updatedAt: new Date().toISOString(),
+      });
       console.log(`[mock-harness] session/new -> ${sessionId}`);
       return { sessionId };
     })
+    .onRequest(acp.methods.agent.session.list, () => ({
+      sessions: [...sessions.entries()].map(([sessionId, s]) => ({
+        sessionId,
+        cwd: "/workspace",
+        title: s.title ?? null,
+        updatedAt: s.updatedAt ?? null,
+      })),
+    }))
     .onRequest(acp.methods.agent.session.load, async (cx) => {
       const session = sessions.get(cx.params.sessionId);
       if (!session) throw new Error(`unknown session ${cx.params.sessionId}`);
@@ -101,6 +126,14 @@ function buildAgent() {
         .map((block) => (block.type === "text" ? block.text : `[${block.type}]`))
         .join(" ");
       console.log(`[mock-harness] session/prompt ${sessionId}: ${userText}`);
+
+      // History-only (no live notify): the prompting client already renders
+      // its own user bubble; replay restores it for late-joining viewers —
+      // matching goose, whose session/load replays user messages too.
+      record(session, sessionId, {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: userText },
+      });
 
       const say = (text) =>
         notifyAndRecord(cx, session, sessionId, {
@@ -134,6 +167,36 @@ function buildAgent() {
           {
             type: "content",
             content: { type: "text", text: "Found 42 source files (mock)." },
+          },
+        ],
+      });
+
+      // A text_editor-style edit with follow-along locations (path+line, the
+      // shape goose 1.39 emits for str_replace/write) and a {type:"diff"}
+      // content block on completion — exercises the live files-touched path
+      // without the permission flow.
+      const editId = `edit_${newId().slice(0, 6)}`;
+      await notifyAndRecord(cx, session, sessionId, {
+        sessionUpdate: "tool_call",
+        toolCallId: editId,
+        title: "Editing InventoryService.java",
+        kind: "edit",
+        status: "in_progress",
+        locations: [
+          { path: "src/main/java/com/example/InventoryService.java", line: 3 },
+        ],
+      });
+      await sleep(300);
+      await notifyAndRecord(cx, session, sessionId, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: editId,
+        status: "completed",
+        content: [
+          {
+            type: "diff",
+            path: "src/main/java/com/example/InventoryService.java",
+            oldText: "import javax.ejb.Stateless;\nimport javax.persistence.EntityManager;",
+            newText: "import jakarta.ejb.Stateless;\nimport jakarta.persistence.EntityManager;",
           },
         ],
       });
@@ -206,6 +269,70 @@ function buildAgent() {
     });
 }
 
+/**
+ * MOCK_SELF_RUN=1: simulate the harness driving its own run session — a
+ * session nobody's client created, appended to on a timer (history only, no
+ * live notify: exactly goose's behavior for a turn owned by another
+ * connection). Lets a UI exercise the attach-and-follow flow (session/list →
+ * session/load → poll) without a real harness in the pod.
+ */
+function startSelfRun() {
+  const sessionId = `run-${newId().slice(0, 8)}`;
+  const session = {
+    history: [],
+    title: "migration run (mock self-run)",
+    updatedAt: new Date().toISOString(),
+  };
+  sessions.set(sessionId, session);
+  console.log(`[mock-harness] MOCK_SELF_RUN: run session ${sessionId}`);
+
+  const files = [
+    "src/main/java/com/example/InventoryService.java",
+    "src/main/java/com/example/CartService.java",
+    "src/main/java/com/example/rest/ProductEndpoint.java",
+    "src/main/webapp/WEB-INF/beans.xml",
+  ];
+  let step = 0;
+  record(session, sessionId, {
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "text", text: "Starting migration item #1: javax → jakarta imports.\n" },
+  });
+  const timer = setInterval(() => {
+    step += 1;
+    if (step > files.length) {
+      record(session, sessionId, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Item #1 complete — all imports migrated.\n" },
+      });
+      clearInterval(timer);
+      return;
+    }
+    const path = files[step - 1];
+    const toolCallId = `run_edit_${step}`;
+    record(session, sessionId, {
+      sessionUpdate: "tool_call",
+      toolCallId,
+      title: `Editing ${path.split("/").pop()}`,
+      kind: "edit",
+      status: "in_progress",
+      locations: [{ path, line: 1 + step * 3 }],
+    });
+    record(session, sessionId, {
+      sessionUpdate: "tool_call_update",
+      toolCallId,
+      status: "completed",
+      content: [
+        {
+          type: "diff",
+          path,
+          oldText: "import javax.enterprise.context.ApplicationScoped;",
+          newText: "import jakarta.enterprise.context.ApplicationScoped;",
+        },
+      ],
+    });
+  }, 8_000);
+}
+
 const acpServer = new AcpServer({ createAgent: buildAgent });
 const httpHandler = createNodeHttpHandler(acpServer);
 const wss = new WebSocketServer({ noServer: true });
@@ -247,4 +374,9 @@ server.listen(PORT, () => {
   console.log(
     `[mock-harness] ACP listening on :${PORT}/acp (auth=${SECRET_KEY ? "X-Secret-Key" : "OPEN"}, GOOSE_MODE=${GOOSE_MODE})`,
   );
+  // MOCK_SELF_RUN for standalone runs; the param spelling reaches the pod
+  // via the controller's KONVEYOR_PARAM_{NAME} injection contract.
+  if (process.env.MOCK_SELF_RUN === "1" || process.env.KONVEYOR_PARAM_SELF_RUN === "1") {
+    startSelfRun();
+  }
 });

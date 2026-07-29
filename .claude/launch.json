@@ -28,6 +28,24 @@
         "HUB_URL": "http://127.0.0.1:18090",
         "RUN_HUB_BASE_URL": "http://tackle-hub.konveyor-tackle.svc:8080"
       }
+    },
+    {
+      "name": "demo-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "ui", "--", "--port", "5178", "--strictPort"],
+      "port": 5178,
+      "env": {
+        "VITE_SHIM_URL": "http://127.0.0.1:7081"
+      }
+    },
+    {
+      "name": "demo-shim",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "start", "--prefix", "packages/hub-shim"],
+      "port": 7081,
+      "env": {
+        "PORT": "7081"
+      }
     }
   ]
 }

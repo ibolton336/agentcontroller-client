@@ -10,12 +10,18 @@ import {
 } from "@patternfly/react-core";
 import CheckCircleIcon from "@patternfly/react-icons/dist/esm/icons/check-circle-icon";
 import ExclamationCircleIcon from "@patternfly/react-icons/dist/esm/icons/exclamation-circle-icon";
-import { AcpSession } from "@konveyor/agentic-client/acp";
+import {
+  AcpSession,
+  parseToolCallDiffs,
+  parseToolCallLocations,
+} from "@konveyor/agentic-client/acp";
 import type {
   PermissionOutcome,
   PermissionRequest,
+  SessionInfo,
   SessionUpdate,
   ToolCallDiff,
+  ToolCallLocation,
 } from "@konveyor/agentic-client/acp";
 import { isTerminalPhase, waitForRunning } from "@konveyor/agentic-client/contract";
 import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
@@ -43,8 +49,14 @@ interface ToolItem {
   id: number;
   toolCallId: string;
   title: string;
+  /** ACP ToolKind (read/edit/delete/…): drives the files-ticker filter. */
+  toolKind?: string;
   status: string;
   detail: string;
+  /** Files the tool is touching (ACP ToolCallLocation "follow-along"). */
+  locations?: ToolCallLocation[];
+  /** File modifications carried as {type:"diff"} content blocks. */
+  diffs?: ToolCallDiff[];
 }
 interface PermissionItem {
   kind: "permission";
@@ -114,6 +126,17 @@ function reduceUpdate(items: ChatItem[], u: SessionUpdate, nextId: () => number)
       }
       return [...items, { kind: "agent", id: nextId(), text }];
     }
+    case "user_message_chunk": {
+      // Replayed history includes the user's side of each turn; without this
+      // case a session/load reload would silently drop the user's messages.
+      const text = contentText(u.content);
+      if (!text) return items;
+      const last = items[items.length - 1];
+      if (last && last.kind === "user") {
+        return [...items.slice(0, -1), { ...last, text: last.text + text }];
+      }
+      return [...items, { kind: "user", id: nextId(), text }];
+    }
     case "agent_thought_chunk": {
       const text = contentText(u.content);
       if (!text) return items;
@@ -131,8 +154,11 @@ function reduceUpdate(items: ChatItem[], u: SessionUpdate, nextId: () => number)
           id: nextId(),
           toolCallId: str(u.toolCallId),
           title: str(u.title) || "Tool call",
+          toolKind: str(u.kind) || undefined,
           status: str(u.status) || "pending",
           detail: toolUpdateText(u.content),
+          locations: parseToolCallLocations(u.locations),
+          diffs: parseToolCallDiffs(u.content),
         },
       ];
     }
@@ -149,11 +175,19 @@ function reduceUpdate(items: ChatItem[], u: SessionUpdate, nextId: () => number)
       if (idx < 0) return items;
       const tool = items[idx] as ToolItem;
       const extra = toolUpdateText(u.content);
+      // locations follow ACP replace semantics: absent = keep, [] = cleared.
+      // Diffs stay sticky — updates whose content is just text must not wipe
+      // a previously shown file modification.
+      const locations = parseToolCallLocations(u.locations);
+      const diffs = parseToolCallDiffs(u.content);
       const next: ToolItem = {
         ...tool,
         status: str(u.status) || tool.status,
         title: str(u.title) || tool.title,
+        toolKind: str(u.kind) || tool.toolKind,
         detail: extra ? (tool.detail ? `${tool.detail}\n${extra}` : extra) : tool.detail,
+        locations: locations !== undefined ? locations : tool.locations,
+        diffs: diffs && diffs.length > 0 ? diffs : tool.diffs,
       };
       return [...items.slice(0, idx), next, ...items.slice(idx + 1)];
     }
@@ -162,6 +196,25 @@ function reduceUpdate(items: ChatItem[], u: SessionUpdate, nextId: () => number)
       return items;
   }
 }
+
+/**
+ * Most recently active session wins (ISO 8601 compares lexicographically).
+ * During a run this is the harness's session — the one worth following.
+ * Only sessions that report updatedAt qualify: without a timestamp the
+ * follow-poll has no change signal, so auto-attach would freeze while
+ * claiming to refresh.
+ */
+function pickLatestSession(sessions: SessionInfo[]): SessionInfo | null {
+  let best: SessionInfo | null = null;
+  for (const s of sessions) {
+    if (s.updatedAt == null) continue;
+    if (!best || s.updatedAt > (best.updatedAt ?? "")) best = s;
+  }
+  return best;
+}
+
+/** How often a following viewer re-checks session/list for new activity. */
+const FOLLOW_POLL_MS = 5_000;
 
 // ----------------------------------------------------------------- panel
 
@@ -177,10 +230,23 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [turnActive, setTurnActive] = useState(false);
   const [attempt, setAttempt] = useState(0); // bumped by Retry / Reconnect
+  // True when attached to an agent-owned session found via session/list
+  // (the run's own transcript) rather than one this panel created.
+  const [following, setFollowing] = useState(false);
+  // Mirrors reloadingRef for rendering (composer gating).
+  const [reloading, setReloading] = useState(false);
 
   const idRef = useRef(0);
   const sessionRef = useRef<AcpSession | null>(null);
   const lastSessionIdRef = useRef<string | null>(null);
+  const followedUpdatedAtRef = useRef<string | null>(null);
+  const reloadingRef = useRef(false);
+  const followingRef = useRef(false);
+  const turnActiveRef = useRef(false);
+  // Non-null while a follow reload's session/load replay is streaming:
+  // updates buffer here and swap in atomically when the load settles, so a
+  // reload never renders a half-empty transcript or interleaves two replays.
+  const replayRef = useRef<SessionUpdate[] | null>(null);
   const permissionResolvers = useRef(new Map<number, (o: PermissionOutcome) => void>());
   const logRef = useRef<HTMLDivElement | null>(null);
 
@@ -189,6 +255,10 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
   const pushItem = (item: ChatItem) => setItems((prev) => [...prev, item]);
 
   const handleUpdate = useCallback((u: SessionUpdate) => {
+    if (replayRef.current) {
+      replayRef.current.push(u);
+      return;
+    }
     setItems((prev) => reduceUpdate(prev, u, () => ++idRef.current));
   }, []);
 
@@ -235,6 +305,7 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
     let localSession: AcpSession | null = null;
 
     const connect = async () => {
+      setFollowing(false);
       setConn({ kind: "waiting", message: "checking run status…" });
       const current = await api.getRun(runName);
       const phase = current.status?.phase ?? "Pending";
@@ -270,23 +341,63 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
           setSession(null);
         }
       });
-      // Prefer resuming the previous session after a drop — the agent
-      // replays its history as session/update notifications.
-      let sessionId: string;
+      // Session selection policy:
+      // 1. A panel that was CHATTING (not following) resumes its own session
+      //    after a drop — reconnect must never silently switch the user's
+      //    conversation to whichever session is newest.
+      // 2. Otherwise attach to the most recently active listed session —
+      //    during a run that is the session the harness is driving, so the
+      //    panel shows the run's live transcript instead of an empty
+      //    parallel one. (The agent lazily activates on-disk sessions for
+      //    this connection on session/load.) "Following" only applies when
+      //    that session isn't the panel's own previous one.
+      // 3. Fall back to resume-prior, then session/new.
+      let sessionId: string | null = null;
+      let attached = false;
       const prior = lastSessionIdRef.current;
-      if (prior && localSession.loadSessionSupported) {
+      const wasFollowing = followingRef.current;
+      if (prior && !wasFollowing && localSession.loadSessionSupported) {
         setItems([]); // the replay repopulates the transcript
         try {
           await localSession.loadSession(prior);
           sessionId = prior;
         } catch {
+          sessionId = null;
+        }
+      }
+      if (!sessionId && localSession.listSessionsSupported && localSession.loadSessionSupported) {
+        try {
+          const latest = pickLatestSession(await localSession.listSessions());
+          if (latest && !disposed) {
+            setItems([]); // the replay repopulates the transcript
+            await localSession.loadSession(latest.sessionId, latest.cwd);
+            followedUpdatedAtRef.current = latest.updatedAt ?? null;
+            sessionId = latest.sessionId;
+            attached = latest.sessionId !== prior || wasFollowing;
+          }
+        } catch {
+          sessionId = null; // fall through to the pre-existing flow
+        }
+      }
+      // Otherwise resume the previous session after a drop — the agent
+      // replays its history as session/update notifications.
+      if (!sessionId) {
+        setItems([]); // discard any partial replay from a failed attach
+        if (prior && localSession.loadSessionSupported) {
+          try {
+            await localSession.loadSession(prior);
+            sessionId = prior;
+          } catch {
+            sessionId = await localSession.newSession();
+          }
+        } else {
           sessionId = await localSession.newSession();
         }
-      } else {
-        sessionId = await localSession.newSession();
       }
       lastSessionIdRef.current = sessionId;
       if (!disposed) {
+        followingRef.current = attached;
+        setFollowing(attached);
         setSession(localSession);
         setConn({ kind: "connected", sessionId });
       }
@@ -307,6 +418,58 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
     };
   }, [api, runName, attempt, handleUpdate, handlePermission]);
 
+  // Follow the run: goose only pushes live updates to the connection that
+  // owns the turn, so a viewer catches up by re-loading the session whenever
+  // session/list reports new activity (updatedAt advanced or a newer session
+  // appeared). A self-scheduling timeout chain — ticks can never overlap,
+  // unlike setInterval, whose ticks would race when a round-trip spans the
+  // interval. Suppressed while the user's own turn is streaming (refs, not
+  // state deps, so a prompt mid-reload doesn't cancel the reload).
+  useEffect(() => {
+    if (conn.kind !== "connected" || !following || !session) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const tick = async () => {
+      try {
+        if (cancelled || turnActiveRef.current || reloadingRef.current) return;
+        const latest = pickLatestSession(await session.listSessions());
+        if (cancelled || turnActiveRef.current || reloadingRef.current) return;
+        const advanced =
+          latest != null &&
+          latest.updatedAt != null &&
+          (latest.sessionId !== session.sessionId ||
+            (followedUpdatedAtRef.current ?? "") < latest.updatedAt);
+        if (!latest || !advanced) return;
+        reloadingRef.current = true;
+        setReloading(true);
+        replayRef.current = []; // buffer the replay; swap in atomically below
+        try {
+          await session.loadSession(latest.sessionId, latest.cwd);
+          if (!cancelled) {
+            const replay = replayRef.current ?? [];
+            setItems(replay.reduce((acc, u) => reduceUpdate(acc, u, () => ++idRef.current), [] as ChatItem[]));
+            followedUpdatedAtRef.current = latest.updatedAt ?? null;
+            lastSessionIdRef.current = latest.sessionId;
+            setConn({ kind: "connected", sessionId: latest.sessionId });
+          }
+        } finally {
+          replayRef.current = null;
+          reloadingRef.current = false;
+          setReloading(false);
+        }
+      } catch {
+        // transient (e.g. agent busy mid-turn) — try again next tick
+      } finally {
+        if (!cancelled) timer = setTimeout(() => void tick(), FOLLOW_POLL_MS);
+      }
+    };
+    timer = setTimeout(() => void tick(), FOLLOW_POLL_MS);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [conn.kind, following, session]);
+
   // Keep the transcript pinned to the bottom as updates stream in.
   useEffect(() => {
     const el = logRef.current;
@@ -316,9 +479,12 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
   const send = async () => {
     const text = input.trim();
     const s = session;
-    if (!text || !s || turnActive) return;
+    // reloading gate: mid-reload the transcript is being swapped and the
+    // session id may be changing — a prompt would race both.
+    if (!text || !s || turnActive || reloadingRef.current) return;
     setInput("");
     pushItem({ kind: "user", id: nextId(), text });
+    turnActiveRef.current = true;
     setTurnActive(true);
     try {
       const stopReason = await s.prompt(text);
@@ -326,7 +492,26 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
     } catch (err) {
       pushItem({ kind: "error", id: nextId(), message: errorMessage(err) });
     } finally {
+      turnActiveRef.current = false;
       setTurnActive(false);
+    }
+  };
+
+  // Opt out of following: start a fresh interactive session so the user's
+  // prompts stop landing in the harness-owned run session.
+  const startFreshChat = async () => {
+    const s = sessionRef.current;
+    if (!s || turnActive || reloadingRef.current) return;
+    try {
+      const id = await s.newSession();
+      lastSessionIdRef.current = id;
+      followedUpdatedAtRef.current = null;
+      followingRef.current = false;
+      setFollowing(false);
+      setItems([]);
+      setConn({ kind: "connected", sessionId: id });
+    } catch (err) {
+      pushItem({ kind: "error", id: nextId(), message: errorMessage(err) });
     }
   };
 
@@ -348,7 +533,16 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
         {conn.kind === "connected" && (
           <>
             <Label color="green">connected</Label>
-            <span className="chat-status-detail">session {conn.sessionId}</span>
+            {following && <Label color="blue">following run session</Label>}
+            <span className="chat-status-detail">
+              session {conn.sessionId}
+              {following ? " — transcript refreshes as the run progresses" : ""}
+            </span>
+            {following && (
+              <Button variant="link" isInline onClick={() => void startFreshChat()}>
+                new chat session
+              </Button>
+            )}
           </>
         )}
         {conn.kind === "finished" && (
@@ -382,12 +576,24 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
         )}
       </div>
 
+      <FilesTouchedTicker items={items} />
+
       <div className="chat-log" ref={logRef}>
         {items.length === 0 && conn.kind === "connected" && (
-          <div className="chat-meta">Connected — send a message to start the turn.</div>
+          <div className="chat-meta">
+            {following
+              ? "Attached to the run session — waiting for agent activity…"
+              : "Connected — send a message to start the turn."}
+          </div>
         )}
-        {items.map((item) => (
-          <ChatItemView key={item.id} item={item} onPermission={choosePermission} />
+        {items.map((item, i) => (
+          // Tool items key by toolCallId (+ position for repeated ids) so
+          // their expansion state survives a follow reload's replay swap.
+          <ChatItemView
+            key={item.kind === "tool" ? `tool:${item.toolCallId}:${i}` : `${item.kind}:${item.id}`}
+            item={item}
+            onPermission={choosePermission}
+          />
         ))}
       </div>
 
@@ -405,15 +611,19 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
             }}
             rows={2}
             resizeOrientation="vertical"
-            isDisabled={!session || turnActive}
-            placeholder="Message the agent… (tip: include TEST_PERMISSION to exercise the approval flow)"
+            isDisabled={!session || turnActive || reloading}
+            placeholder={
+              following
+                ? "Message the run's session… (or start a new chat session above)"
+                : "Message the agent… (tip: include TEST_PERMISSION to exercise the approval flow)"
+            }
           />
         </div>
         <div className="chat-input-actions">
           <Button
             variant="primary"
             onClick={() => void send()}
-            isDisabled={!session || turnActive || !input.trim()}
+            isDisabled={!session || turnActive || reloading || !input.trim()}
             isLoading={turnActive}
           >
             Send
@@ -430,6 +640,55 @@ export function ChatPanel({ api, runName }: ChatPanelProps) {
 }
 
 // ------------------------------------------------------------- item views
+
+/** Trailing path segment, for compact display. */
+function baseName(path: string): string {
+  const idx = path.lastIndexOf("/");
+  return idx >= 0 ? path.slice(idx + 1) : path;
+}
+
+/**
+ * Live "files being touched" strip: every path seen in tool locations or
+ * diff blocks, most recent activity last. This is the ACP follow-along
+ * data goose already streams — visible before any commit exists.
+ */
+function FilesTouchedTicker({ items }: { items: ChatItem[] }) {
+  const seen = new Map<string, ToolCallLocation>();
+  for (const item of items) {
+    if (item.kind !== "tool") continue;
+    // Read-tool locations are often directories or mere lookups — the
+    // ticker tracks files being CHANGED. (goose leaves kind defaulted, so
+    // unknown kinds pass.)
+    if (item.toolKind !== "read") {
+      for (const loc of item.locations ?? []) {
+        seen.delete(loc.path); // re-insert so latest activity sorts last
+        seen.set(loc.path, loc);
+      }
+    }
+    for (const d of item.diffs ?? []) {
+      if (!seen.has(d.path)) seen.set(d.path, { path: d.path });
+    }
+  }
+  if (seen.size === 0) return null;
+  const paths = [...seen.values()];
+  const shown = paths.slice(-6);
+  return (
+    <div className="chat-files-ticker">
+      <span className="chat-files-ticker-label">Files</span>
+      {paths.length > shown.length && (
+        <span className="chat-files-ticker-more">+{paths.length - shown.length} more</span>
+      )}
+      {shown.map((loc) => (
+        <Label key={loc.path} isCompact variant="outline" title={loc.path}>
+          <code>
+            {baseName(loc.path)}
+            {loc.line != null ? `:${loc.line}` : ""}
+          </code>
+        </Label>
+      ))}
+    </div>
+  );
+}
 
 type DiffLine = { op: "add" | "del" | "ctx"; text: string };
 
@@ -527,23 +786,42 @@ function ChatItemView({
           {item.message}
         </Alert>
       );
-    case "tool":
+    case "tool": {
+      const firstLoc = item.locations?.[0];
       return (
         <div className="chat-tool">
           <ExpandableSection
             toggleContent={
               <span className="chat-tool-toggle">
                 <ToolStatusIcon status={item.status} /> {item.title}{" "}
+                {firstLoc && (
+                  <code className="chat-tool-loc" title={firstLoc.path}>
+                    {baseName(firstLoc.path)}
+                    {firstLoc.line != null ? `:${firstLoc.line}` : ""}
+                  </code>
+                )}{" "}
                 <Label color={toolStatusColor(item.status)} variant="outline">
                   {item.status}
                 </Label>
               </span>
             }
           >
+            {item.locations && item.locations.length > 0 && (
+              <div className="chat-tool-locations">
+                {item.locations.map((loc) => (
+                  <code key={`${loc.path}:${loc.line ?? ""}`}>
+                    {loc.path}
+                    {loc.line != null ? `:${loc.line}` : ""}
+                  </code>
+                ))}
+              </div>
+            )}
+            {item.diffs?.map((d) => <DiffPreview key={d.path} diff={d} />)}
             <pre className="chat-tool-detail">{item.detail || "(no output yet)"}</pre>
           </ExpandableSection>
         </div>
       );
+    }
     case "permission": {
       const chosenName = item.chosen
         ? (item.options.find((o) => o.optionId === item.chosen)?.name ?? item.chosen)
