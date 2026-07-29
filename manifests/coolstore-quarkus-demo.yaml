@@ -4,6 +4,8 @@ kind: Agent
 metadata:
   name: coolstore-quarkus-migrator
   namespace: konveyor-agents
+  labels:
+    konveyor.io/managed: "true"
 spec:
   image: quay.io/konveyor/agent-java:dev   # skills baked at /opt/skills: plan, execute, verify, javaee-to-quarkus, patternfly-migration
   providers:
@@ -24,6 +26,8 @@ kind: AgentPlaybook
 metadata:
   name: coolstore-quarkus-demo
   namespace: konveyor-agents
+  labels:
+    konveyor.io/managed: "true"
 spec:
   guide: |
     Three-stage migration of the coolstore application from Java EE 7 (WAR on an
@@ -69,6 +73,8 @@ kind: AgentPlaybookRun
 metadata:
   name: coolstore-quarkus-demo-1
   namespace: konveyor-agents
+  labels:
+    konveyor.io/managed: "true"
 spec:
   playbookRef: coolstore-quarkus-demo
   models:                                  # REQUIRED by hand — no controller defaults these
