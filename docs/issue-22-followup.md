@@ -1,8 +1,9 @@
 # Follow-up comment for konveyor/agentic-controller#22
 
-Paste-ready. Standing rule: upstream delivery is a human decision — post
-this manually after review. Posting matters before @djzager's Hub fork gets
-far, since it targets the surface table in the earlier comment.
+**History:** posted upstream 2026-07-08 (issuecomment-4918891416);
+accidentally re-posted 2026-07-21 inside a combined comment; both were
+folded into the consolidated canonical comment on 2026-07-21 and reduced
+to stubs. Current record: `issue-22-contract.md`.
 
 ---
 

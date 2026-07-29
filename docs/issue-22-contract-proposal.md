@@ -1,9 +1,9 @@
 # Draft comment for konveyor/agentic-controller#22 (3.1 API client layer)
 
-**Posted upstream 2026-07-07.** The table below has since been updated with
-`/api/applications`, `applicationRef`, and the managed-label filter (ADR
-0005) — the posted comment predates those. See
-`docs/issue-22-followup.md` for the paste-ready follow-up.
+**Posted upstream 2026-07-07; edited in place 2026-07-21** into the
+consolidated canonical contract comment (original preserved in GitHub edit
+history). This file is the original Jul 7 text only — the current record
+is `issue-22-contract.md`.
 
 Standing rule: upstream delivery is a human decision — post manually after
 review.
