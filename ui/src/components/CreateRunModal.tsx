@@ -91,7 +91,7 @@ function AgentImageLine({ image, catalogEntry }: { image: string; catalogEntry?:
       {catalogEntry && (
         <span style={{ opacity: 0.7 }}>
           {" "}
-          &mdash; {catalogEntry.displayName} &middot; {catalogEntry.description.split(".")[0]}
+          &mdash; {catalogEntry.displayName} &middot; {catalogEntry.description?.split(".")[0]}
         </span>
       )}
     </HelperTextItem>
