@@ -36,6 +36,12 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
+  # The image catalog: /api/images reads it, POST /api/defaults seeds it.
+  # Without "get" the shim silently falls back to the builtin quay catalog
+  # and plans seed sets this cluster cannot actually pull.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
