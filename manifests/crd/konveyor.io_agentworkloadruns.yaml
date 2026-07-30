@@ -4,21 +4,21 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: agentplaybookruns.konveyor.io
+  name: agentworkloadruns.konveyor.io
 spec:
   group: konveyor.io
   names:
-    kind: AgentPlaybookRun
-    listKind: AgentPlaybookRunList
-    plural: agentplaybookruns
+    kind: AgentWorkloadRun
+    listKind: AgentWorkloadRunList
+    plural: agentworkloadruns
     shortNames:
     - apr
-    singular: agentplaybookrun
+    singular: agentworkloadrun
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.playbookRef
-      name: Playbook
+    - jsonPath: .spec.workloadRef
+      name: Workload
       type: string
     - jsonPath: .status.phase
       name: Phase
@@ -33,8 +33,8 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          AgentPlaybookRun is a request to execute an AgentPlaybook. It references
-          an AgentPlaybook and carries generic parameters. The controller orchestrates
+          AgentWorkloadRun is a request to execute an AgentWorkload. It references
+          an AgentWorkload and carries generic parameters. The controller orchestrates
           execution: creates an AgentRun per stage, manages cross-stage handoff via
           committed files on a shared target branch.
         properties:
@@ -56,7 +56,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: AgentPlaybookRunSpec defines the desired state of an AgentPlaybookRun.
+            description: AgentWorkloadRunSpec defines the desired state of an AgentWorkloadRun.
             properties:
               env:
                 description: |-
@@ -324,27 +324,27 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
-              playbookRef:
-                description: PlaybookRef is the name of the AgentPlaybook CR to execute.
+              workloadRef:
+                description: WorkloadRef is the name of the AgentWorkload CR to execute.
                 minLength: 1
                 type: string
             required:
-            - playbookRef
+            - workloadRef
             type: object
             x-kubernetes-validations:
-            - message: playbookRef is immutable
-              rule: self.playbookRef == oldSelf.playbookRef
+            - message: workloadRef is immutable
+              rule: self.workloadRef == oldSelf.workloadRef
           status:
-            description: AgentPlaybookRunStatus defines the observed state of an AgentPlaybookRun.
+            description: AgentWorkloadRunStatus defines the observed state of an AgentWorkloadRun.
             properties:
               completionTime:
-                description: CompletionTime is the time the playbook run finished.
+                description: CompletionTime is the time the workload run finished.
                 format: date-time
                 type: string
               conditions:
                 description: |-
                   Conditions represent the latest available observations of the
-                  AgentPlaybookRun's state.
+                  AgentWorkloadRun's state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -413,7 +413,7 @@ spec:
                 type: integer
               phase:
                 default: Pending
-                description: Phase is the current phase of the overall playbook run.
+                description: Phase is the current phase of the overall workload run.
                 enum:
                 - Pending
                 - Running
@@ -424,8 +424,8 @@ spec:
                 description: Stages tracks the status of each stage.
                 items:
                   description: |-
-                    AgentPlaybookRunStageStatus tracks the status of a single stage within
-                    a playbook run.
+                    AgentWorkloadRunStageStatus tracks the status of a single stage within
+                    a workload run.
                   properties:
                     agentRunName:
                       description: AgentRunName is the name of the AgentRun CR created
@@ -433,7 +433,7 @@ spec:
                       type: string
                     name:
                       description: Name is the stage name, matching a stage in the
-                        AgentPlaybook.
+                        AgentWorkload.
                       type: string
                     phase:
                       description: Phase is the current phase of this stage.
@@ -452,7 +452,7 @@ spec:
                 - name
                 x-kubernetes-list-type: map
               startTime:
-                description: StartTime is the time the playbook run started.
+                description: StartTime is the time the workload run started.
                 format: date-time
                 type: string
             type: object

@@ -360,62 +360,62 @@ export interface LLMProvider {
   };
 }
 
-// ---------------------------------------------------------- AgentPlaybook
+// ---------------------------------------------------------- AgentWorkload
 
 export const STAGE_NAME_PATTERN = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 
-export interface AgentPlaybookStage {
+export interface AgentWorkloadStage {
   name: string;
   agentRef: string;
   instructions?: string;
 }
 
-export interface AgentPlaybookSpec {
+export interface AgentWorkloadSpec {
   guide?: string;
-  stages: AgentPlaybookStage[];
+  stages: AgentWorkloadStage[];
 }
 
-export interface AgentPlaybook {
+export interface AgentWorkload {
   apiVersion?: string;
   kind?: string;
   metadata: ObjectMeta;
-  spec: AgentPlaybookSpec;
+  spec: AgentWorkloadSpec;
   status?: { observedGeneration?: number; conditions?: Condition[] };
 }
 
-// ------------------------------------------------------- AgentPlaybookRun
+// ------------------------------------------------------- AgentWorkloadRun
 
-export type AgentPlaybookRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
+export type AgentWorkloadRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
 
-export interface AgentPlaybookRunStageStatus {
+export interface AgentWorkloadRunStageStatus {
   name: string;
   phase?: AgentRunPhase;
   agentRunName?: string;
 }
 
-export interface AgentPlaybookRunStatus {
-  phase?: AgentPlaybookRunPhase;
+export interface AgentWorkloadRunStatus {
+  phase?: AgentWorkloadRunPhase;
   observedGeneration?: number;
   currentStage?: string;
-  stages?: AgentPlaybookRunStageStatus[];
+  stages?: AgentWorkloadRunStageStatus[];
   startTime?: string;
   completionTime?: string;
   conditions?: Condition[];
 }
 
-export interface AgentPlaybookRun {
+export interface AgentWorkloadRun {
   apiVersion?: string;
   kind?: string;
   metadata: ObjectMeta;
   spec: {
-    playbookRef: string;
+    workloadRef: string;
     models?: AgentRunModelSelection[];
     params?: AgentRunParam[];
     instructions?: string;
     env?: EnvVar[];
     envFrom?: EnvFromSource[];
   };
-  status?: AgentPlaybookRunStatus;
+  status?: AgentWorkloadRunStatus;
 }
 
 // -------------------------------------------------------- naming / helpers
@@ -461,8 +461,8 @@ export interface CreateRunInput {
   model?: { provider: string; model: string };
 }
 
-export interface CreatePlaybookRunInput {
-  playbookRef: string;
+export interface CreateWorkloadRunInput {
+  workloadRef: string;
   params?: Record<string, string>;
   instructions?: string;
   applicationRef?: string;
@@ -479,11 +479,11 @@ export interface RunApi {
   createRun(input: CreateRunInput): Promise<AgentRun>;
   getRun(name: string): Promise<AgentRun>;
   deleteRun(name: string): Promise<void>;
-  listPlaybooks(): Promise<AgentPlaybook[]>;
-  listPlaybookRuns(): Promise<AgentPlaybookRun[]>;
-  getPlaybookRun(name: string): Promise<AgentPlaybookRun>;
-  createPlaybookRun(input: CreatePlaybookRunInput): Promise<AgentPlaybookRun>;
-  deletePlaybookRun(name: string): Promise<void>;
+  listWorkloads(): Promise<AgentWorkload[]>;
+  listWorkloadRuns(): Promise<AgentWorkloadRun[]>;
+  getWorkloadRun(name: string): Promise<AgentWorkloadRun>;
+  createWorkloadRun(input: CreateWorkloadRunInput): Promise<AgentWorkloadRun>;
+  deleteWorkloadRun(name: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------- CatalogApi
@@ -504,10 +504,10 @@ export interface CatalogApi {
   createAgent(name: string, spec: AgentResourceSpec): Promise<AgentResource>;
   updateAgent(name: string, spec: AgentResourceSpec): Promise<AgentResource>;
   deleteAgent(name: string): Promise<void>;
-  getPlaybook(name: string): Promise<AgentPlaybook>;
-  createPlaybook(name: string, spec: AgentPlaybookSpec): Promise<AgentPlaybook>;
-  updatePlaybook(name: string, spec: AgentPlaybookSpec): Promise<AgentPlaybook>;
-  deletePlaybook(name: string): Promise<void>;
+  getWorkload(name: string): Promise<AgentWorkload>;
+  createWorkload(name: string, spec: AgentWorkloadSpec): Promise<AgentWorkload>;
+  updateWorkload(name: string, spec: AgentWorkloadSpec): Promise<AgentWorkload>;
+  deleteWorkload(name: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------- waiting

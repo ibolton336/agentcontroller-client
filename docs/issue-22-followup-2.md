@@ -30,7 +30,7 @@ of this end-to-end:
 
 | # | Host obligation | Notes from the running system |
 |---|-----------------|-------------------------------|
-| R1 | Authenticated REST CRUD over the CRs (agents, runs, playbooks, playbook-runs; read-only providers/skillcards/skillcollections) | Plain k8s passthrough + authz + the `konveyor.io/managed` list filter. No domain logic. |
+| R1 | Authenticated REST CRUD over the CRs (agents, runs, workloads, workload-runs; read-only providers/skillcards/skillcollections) | Plain k8s passthrough + authz + the `konveyor.io/managed` list filter. No domain logic. |
 | R2 | Long-lived bidirectional WS proxy to the run pod: resolve via `status.sandboxName`, read `status.secretKeyRef`, inject `X-Secret-Key`, pipe frames for the life of the interactive session | The one capability browsers cannot supply themselves and no existing Hub mechanism provides. Makes the host stateful (holds connections). |
 | R3 | Application inventory read (`GET /api/applications`) | Hub-native data; the shim reads a real Hub for it today. |
 | R4 | Identity → Secret materialization: the application's platform credential becomes a mounted Secret before pod start | Stubbed in the shim (`IDENTITY_SECRET_BRIDGE`); only the vault owner can do this for real. |
@@ -48,18 +48,18 @@ rather than settle it:
   lands is the real decision, and it can be decided separately from the
   launch path.
 
-### Playbook surface delta
+### Workload surface delta
 
-The three-stage playbook flow (assess → remediate → validate, behind #36)
+The three-stage workload flow (assess → remediate → validate, behind #36)
 is running end-to-end in batch mode, and needed exactly two additions to
 the surface:
 
 | Method | Route | Behavior |
 |--------|-------|----------|
-| GET | `/api/agentplaybooks[/:name]` | list filtered to `konveyor.io/managed=true`, same as agents |
-| GET/POST | `/api/agentplaybookruns`; GET/DELETE `/:name` | POST body `{playbookRef, params?, applicationRef?}` — `applicationRef` resolves per §2, values forwarded to every stage |
+| GET | `/api/agentworkloads[/:name]` | list filtered to `konveyor.io/managed=true`, same as agents |
+| GET/POST | `/api/agentworkloadruns`; GET/DELETE `/:name` | POST body `{workloadRef, params?, applicationRef?}` — `applicationRef` resolves per §2, values forwarded to every stage |
 
-Worth noting for placement: playbook stage runs are batch (pod exits,
+Worth noting for placement: workload stage runs are batch (pod exits,
 stage completes) — they exercise R1/R3–R5 but never R2. Interactive
 single-agent runs are today's only R2 consumer. That split is why the
 launch path and the interactive channel don't have to land in the same

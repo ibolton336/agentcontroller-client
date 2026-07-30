@@ -18,29 +18,29 @@ import {
   TextInput,
 } from "@patternfly/react-core";
 import type {
-  AgentPlaybook,
-  AgentPlaybookSpec,
-  AgentPlaybookStage,
+  AgentWorkload,
+  AgentWorkloadSpec,
+  AgentWorkloadStage,
   AgentResource,
 } from "@konveyor/agentic-client/contract";
 import { RESOURCE_NAME_PATTERN, STAGE_NAME_PATTERN } from "@konveyor/agentic-client/contract";
 import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
 import { errorMessage } from "../format";
 
-interface PlaybookComposerModalProps {
+interface WorkloadComposerModalProps {
   api: ShimClient;
-  existing?: AgentPlaybook;
+  existing?: AgentWorkload;
   onClose: () => void;
   onSaved: () => void;
 }
 
-const emptyStage = (): AgentPlaybookStage => ({ name: "", agentRef: "", instructions: "" });
+const emptyStage = (): AgentWorkloadStage => ({ name: "", agentRef: "", instructions: "" });
 
-export function PlaybookComposerModal({ api, existing, onClose, onSaved }: PlaybookComposerModalProps) {
+export function WorkloadComposerModal({ api, existing, onClose, onSaved }: WorkloadComposerModalProps) {
   const isEdit = !!existing;
   const [name, setName] = useState(existing?.metadata.name ?? "");
   const [guide, setGuide] = useState(existing?.spec.guide ?? "");
-  const [stages, setStages] = useState<AgentPlaybookStage[]>(
+  const [stages, setStages] = useState<AgentWorkloadStage[]>(
     existing?.spec.stages.length ? [...existing.spec.stages] : [emptyStage()],
   );
   const [agents, setAgents] = useState<AgentResource[] | null>(null);
@@ -73,7 +73,7 @@ export function PlaybookComposerModal({ api, existing, onClose, onSaved }: Playb
 
   const canSubmit = name.trim() !== "" && nameValid && validStages.length > 0 && stagesValid && !submitting;
 
-  const updateStage = (i: number, field: keyof AgentPlaybookStage, value: string) => {
+  const updateStage = (i: number, field: keyof AgentWorkloadStage, value: string) => {
     setStages((prev) => prev.map((s, j) => (j === i ? { ...s, [field]: value } : s)));
   };
 
@@ -92,7 +92,7 @@ export function PlaybookComposerModal({ api, existing, onClose, onSaved }: Playb
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const spec: AgentPlaybookSpec = {
+      const spec: AgentWorkloadSpec = {
         guide: guide.trim() || undefined,
         stages: validStages.map((s) => ({
           name: s.name,
@@ -101,9 +101,9 @@ export function PlaybookComposerModal({ api, existing, onClose, onSaved }: Playb
         })),
       };
       if (isEdit) {
-        await api.updatePlaybook(name, spec);
+        await api.updateWorkload(name, spec);
       } else {
-        await api.createPlaybook(name, spec);
+        await api.createWorkload(name, spec);
       }
       onSaved();
     } catch (err) {
@@ -114,8 +114,8 @@ export function PlaybookComposerModal({ api, existing, onClose, onSaved }: Playb
 
   return (
     <Modal variant={ModalVariant.large} isOpen onClose={() => { if (!submitting) onClose(); }}
-      aria-labelledby="playbook-composer-title">
-      <ModalHeader title={isEdit ? `Edit playbook: ${name}` : "Create playbook"} labelId="playbook-composer-title" />
+      aria-labelledby="workload-composer-title">
+      <ModalHeader title={isEdit ? `Edit workload: ${name}` : "Create workload"} labelId="workload-composer-title" />
       <ModalBody>
         {submitError && <Alert variant="danger" isInline title="Save failed" style={{ marginBottom: "1rem" }}>{submitError}</Alert>}
 
@@ -144,7 +144,7 @@ export function PlaybookComposerModal({ api, existing, onClose, onSaved }: Playb
 
           <FormGroup label="Guide" fieldId="pb-guide">
             <TextArea id="pb-guide" value={guide} onChange={(_e, v) => setGuide(v)}
-              rows={3} resizeOrientation="vertical" placeholder="High-level guidance for this playbook" />
+              rows={3} resizeOrientation="vertical" placeholder="High-level guidance for this workload" />
           </FormGroup>
 
           <FormGroup label="Stages" isRequired fieldId="pb-stages">

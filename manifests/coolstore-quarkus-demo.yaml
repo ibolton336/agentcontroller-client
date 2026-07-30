@@ -20,9 +20,9 @@ spec:
     Quarkus 3 migration. Work only inside the workspace repository. Never run git
     commands yourself; the harness commits and pushes your file writes automatically.
 ---
-# 2. AgentPlaybook — guide becomes KONVEYOR_PLAYBOOK_INSTRUCTIONS in every stage
+# 2. AgentWorkload — guide becomes KONVEYOR_WORKLOAD_INSTRUCTIONS in every stage
 apiVersion: konveyor.io/v1alpha1
-kind: AgentPlaybook
+kind: AgentWorkload
 metadata:
   name: coolstore-quarkus-demo
   namespace: konveyor-agents
@@ -115,16 +115,16 @@ spec:
         honest caveats compile cannot see (messaging end-to-end untested, in-mem H2,
         no prod AMQP broker configured). Do NOT modify PLAN.md's step list.
 ---
-# 3. AgentPlaybookRun — spec is immutable; models + env are copied to ALL stages
+# 3. AgentWorkloadRun — spec is immutable; models + env are copied to ALL stages
 apiVersion: konveyor.io/v1alpha1
-kind: AgentPlaybookRun
+kind: AgentWorkloadRun
 metadata:
   name: coolstore-quarkus-demo-2
   namespace: konveyor-agents
   labels:
     konveyor.io/managed: "true"
 spec:
-  playbookRef: coolstore-quarkus-demo
+  workloadRef: coolstore-quarkus-demo
   models:                                  # REQUIRED by hand — no controller defaults these
     - role: primary
       provider: aws-bedrock

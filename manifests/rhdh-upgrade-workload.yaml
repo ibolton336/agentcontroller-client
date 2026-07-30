@@ -1,5 +1,5 @@
-# Three-stage RHDH upgrade playbook: assess -> remediate -> validate.
-# Runs behind the AgentPlaybook/AgentPlaybookRun controllers (upstream #36).
+# Three-stage RHDH upgrade workload: assess -> remediate -> validate.
+# Runs behind the AgentWorkload/AgentWorkloadRun controllers (upstream #36).
 #
 # Stage handoff is the #36 convention: every stage receives the same
 # `branch` param, clones it, and pushes its output back to it. The testbed
@@ -9,7 +9,7 @@
 # Stages run the goose harness in batch mode (mode=batch param): the
 # entrypoint runs `goose run` with the stage instructions and exits, so
 # the pod completes and the stage AgentRun can Succeed. Every param on the
-# AgentPlaybookRun is forwarded to every stage, and the AgentRun controller
+# AgentWorkloadRun is forwarded to every stage, and the AgentRun controller
 # rejects params an Agent doesn't declare — so both agents declare the
 # full shared param set.
 ---
@@ -42,7 +42,7 @@ spec:
       default: "git://192.168.65.254:9418/rhdh-upgrade-testbed"
     - name: branch
       type: string
-      description: Shared playbook branch to read from and push to
+      description: Shared workload branch to read from and push to
       default: main
     - name: target_version
       type: string
@@ -58,12 +58,12 @@ spec:
       default: "batch"
 ---
 apiVersion: konveyor.io/v1alpha1
-kind: AgentPlaybook
+kind: AgentWorkload
 metadata:
   name: rhdh-upgrade
   namespace: konveyor-agents
   labels:
-    # Konveyor UI lists filter on this — unlabeled playbooks are invisible.
+    # Konveyor UI lists filter on this — unlabeled workloads are invisible.
     konveyor.io/managed: "true"
 spec:
   guide: |
@@ -72,7 +72,7 @@ spec:
     out at /workspace. All stages share the same git branch: read what
     earlier stages committed, and commit and push your own output to
     origin HEAD before finishing. Use a git identity of
-    playbook@konveyor.local / "rhdh-upgrade playbook" when committing.
+    workload@konveyor.local / "rhdh-upgrade workload" when committing.
     Work autonomously; there is no human to ask.
   stages:
     - name: assess
@@ -109,12 +109,12 @@ spec:
         post-remediation assessment" and push to origin HEAD.
 ---
 apiVersion: konveyor.io/v1alpha1
-kind: AgentPlaybookRun
+kind: AgentWorkloadRun
 metadata:
   name: upgrade-run-1
   namespace: konveyor-agents
 spec:
-  playbookRef: rhdh-upgrade
+  workloadRef: rhdh-upgrade
   models:
     - role: primary
       provider: bedrock

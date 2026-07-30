@@ -33,7 +33,7 @@ Issue 3.1 depends on the Stream 2 API contract, so here's a concrete proposal �
 Prototyped against the real controller (PR #4) on minikube (Agent Sandbox v0.5.0); verified with the mock harness and a real goose+Bedrock base:
 
 - create AgentRun → `Running` → resolve pod + ACP secret → ACP session: streaming updates, HITL permission round-trips with diff preview, cancel
-- three-stage AgentPlaybook flow (assess → remediate → validate) end-to-end in batch mode behind #36
+- three-stage AgentWorkload flow (assess → remediate → validate) end-to-end in batch mode behind #36
 - isomorphic client core (`@konveyor/agentic-client`: contract types + `AcpSession` over plain WebSocket, no node builtins); two transports: direct-k8s (IDE/node) and proxy (browser), the latter driven today against a local `hub-shim` stand-in
 
 Details: [ADR 0004 — verified client contract and layered transports](https://github.com/ibolton336/agentcontroller-client/blob/main/docs/adr/0004-client-contract-and-transports.md), [ADR 0005 — platform-resolved params](https://github.com/ibolton336/agentcontroller-client/blob/main/docs/adr/0005-platform-resolved-params.md).
@@ -54,8 +54,8 @@ Host-neutral by design — a client swaps only base URL + auth across placements
 | POST | `/api/agentruns` | 201 — body `{agentRef, params?, instructions?, applicationRef?}`; `applicationRef` resolves the agent's declared param/credential sources (below) |
 | DELETE | `/api/agentruns/:name` | 204 |
 | WS | `/api/agentruns/:name/acp` | proxy to the sandbox pod's `:4000/acp` — resolve the pod (`status.sandboxName`), read the key (`status.secretKeyRef` → `secret-key`), inject `X-Secret-Key`, pipe frames |
-| GET | `/api/agentplaybooks[/:name]` | 200, managed-filter like agents |
-| GET/POST | `/api/agentplaybookruns`; GET/DELETE `/:name` | POST body `{playbookRef, params?, applicationRef?}` — same resolution as agentruns, values forwarded to every stage |
+| GET | `/api/agentworkloads[/:name]` | 200, managed-filter like agents |
+| GET/POST | `/api/agentworkloadruns`; GET/DELETE `/:name` | POST body `{workloadRef, params?, applicationRef?}` — same resolution as agentruns, values forwarded to every stage |
 
 ## Contract facts the client layer depends on
 
@@ -75,13 +75,13 @@ Outcome of a 2026-07-27 design sync with the Hub maintainer: **Hub-native endpoi
 1. **The task system is not the launch vehicle.** A Task is the run of an addon; carrying agent runs in it would force the task engine to become a second agent-run controller. The Hub instead exposes handlers under a common route namespace (e.g. `/agent/…`) with standard scopes, fire-and-forget: POST creates the CR, no reconciliation, the UI polls. Value-add: RBAC (architect/migrator scoping) + create-time injection.
 2. **The CR stays platform-neutral.** No Konveyor spec fields (`appID` is out); generic env-var extensibility carries `HUB_URL`, the application ID, and a token materialized as a Secret. Anything in-cluster can still create the CR outside a Konveyor install.
 3. **The harness is Konveyor-aware — the addon-adapter pattern.** Given hub URL + token + app ID, it fetches the application's details via the published hub Go client, clones the repo, **withholds the credentials from the agent** (the agent can't push), builds the prompt from skills, and starts the ACP server. As with addons, the host doesn't anticipate what the workload needs — the workload pulls what it wants from the inventory.
-4. **The interactive channel (R2) is a separate Hub deliverable** — its own issue, so the launch path doesn't depend on it. The split is clean because playbook stage runs are batch and exercise R1/R3–R5, never R2; interactive single-agent runs are today's only R2 consumer.
+4. **The interactive channel (R2) is a separate Hub deliverable** — its own issue, so the launch path doesn't depend on it. The split is clean because workload stage runs are batch and exercise R1/R3–R5, never R2; interactive single-agent runs are today's only R2 consumer.
 
 ### Responsibilities
 
 | # | Responsibility | Where it lands |
 |---|----------------|----------------|
-| R1 | Authenticated REST CRUD over the CRs (agents, runs, playbooks, playbook-runs; read-only providers/skillcards/skillcollections) | Hub — thin k8s passthrough + authz + the managed-label list filter; no domain logic |
+| R1 | Authenticated REST CRUD over the CRs (agents, runs, workloads, workload-runs; read-only providers/skillcards/skillcollections) | Hub — thin k8s passthrough + authz + the managed-label list filter; no domain logic |
 | R2 | Long-lived bidirectional WS proxy to the run pod (resolve, inject key, pipe frames) | Hub, separate deliverable — the one thing browsers can't do (no custom upgrade headers, no route to the pod) and no existing Hub mechanism provides; makes the host stateful; single-writer required (below) |
 | R3 | Application inventory read (`GET /api/applications`) | Hub, for the UI's application picker (the shim reads a real Hub for this today); the harness also reads inventory directly |
 | R4 | Identity → Secret materialization | Hub materializes only the token Secret; identity retrieval lives in the harness via the Hub API (stubbed in the shim — only the vault owner can supply identities for real) |

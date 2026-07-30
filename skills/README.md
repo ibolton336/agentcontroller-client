@@ -11,10 +11,10 @@ and mounted by SkillCards at `/opt/skills/<name>/`.
 The Phase 2 stretch demo: proves the skill model generalizes beyond Java —
 pair this domain card with the same language-agnostic stage cards
 (plan/execute/verify) on `agent-nodejs` instead of `agent-java`, and the
-three-stage playbook migrates a React UI from PatternFly 5 to 6. Zero
+three-stage workload migrates a React UI from PatternFly 5 to 6. Zero
 code, one afternoon of skill-writing. The shim's `POST /api/defaults`
 seeds the SkillCard, the three `patternfly-*-agent` stage Agents, and the
-`patternfly-migration` playbook.
+`patternfly-migration` workload.
 
 ## Building the OCI image
 

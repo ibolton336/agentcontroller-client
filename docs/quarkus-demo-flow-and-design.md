@@ -1,10 +1,10 @@
-# Coolstore Java EE → Quarkus: flow explainer + 3-stage playbook design
+# Coolstore Java EE → Quarkus: flow explainer + 3-stage workload design
 
 Path shorthand:
 - `PR53` = `/private/tmp/claude-501/-Users-ibolton-agentcontroller-client/94969a53-3f25-4173-ad05-1b4727bbb3f7/scratchpad/pr53`
 - `ACMAIN` = `/private/tmp/claude-501/-Users-ibolton-agentcontroller-client/a772e825-5117-4f35-861a-a9b7bedb57d1/scratchpad/acmain`
 
-See also: [harness-mental-model.md](harness-mental-model.md) — diagram-first summary of how the #53 harness operates across a playbook run.
+See also: [harness-mental-model.md](harness-mental-model.md) — diagram-first summary of how the #53 harness operates across a workload run.
 
 ---
 
@@ -41,7 +41,7 @@ Required env (fatal if unset): `KONVEYOR_MODEL_PRIMARY_MODEL`, `KONVEYOR_MODEL_P
 4. `goose serve --port 4000 --with-builtin developer`; ACP WebSocket `ws://127.0.0.1:4000/acp?token=<secret>`; `session/new` with cwd = clone dir, no MCP servers (`goose/lifecycle.go:38-82`; `main.go:108-115`).
 5. Prompt = concatenation of (`buildPrompt`, `main.go:222-246`):
    - `KONVEYOR_PROMPT` (Agent persona)
-   - `## Migration Context` = `KONVEYOR_PLAYBOOK_INSTRUCTIONS` (playbook guide)
+   - `## Migration Context` = `KONVEYOR_WORKLOAD_INSTRUCTIONS` (workload guide)
    - `## Skill Instructions` = **all** `/opt/skills/*/SKILL.md` concatenated (zero skills = fatal; `main.go:197-220`). Skills reach goose **only** as prompt text.
    - `## Stage Task` = `KONVEYOR_INSTRUCTIONS`
 6. One `session/prompt`, tool-call budget `KONVEYOR_PARAM_MAX_TURNS` (default 200; exhaustion = stage failed but work still pushed). A filesystem watcher auto-commits ("konveyor: auto-commit progress") after 30s quiet periods with warn-only push errors (`main.go:130-143`).
@@ -50,11 +50,11 @@ Required env (fatal if unset): `KONVEYOR_MODEL_PRIMARY_MODEL`, `KONVEYOR_MODEL_P
 
 The harness consumes exactly two `KONVEYOR_PARAM_*` vars (`MAX_TURNS`; `MAX_FIX_ITERATIONS` is parsed but dead in Go — though the **verify skill's prose** tells goose to honor it). All other params are ignored by the harness but inherited into goose's env.
 
-### 4. How #36 playbooks wrap this
+### 4. How #36 workloads wrap this
 
-`AgentPlaybook.spec` = `guide` (string) + `stages[]`, each stage exactly `{name, agentRef, instructions}` — **no per-stage params/env/models** (`ACMAIN/api/v1alpha1/agentplaybook_types.go:25-60`; deployed CRD confirms). `AgentPlaybookRun.spec` = `{playbookRef, models, params, env, envFrom}`, **immutable** (CEL `self == oldSelf`), and the run won't start until the playbook is Ready (all stage Agents Ready).
+`AgentWorkload.spec` = `guide` (string) + `stages[]`, each stage exactly `{name, agentRef, instructions}` — **no per-stage params/env/models** (`ACMAIN/api/v1alpha1/agentworkload_types.go:25-60`; deployed CRD confirms). `AgentWorkloadRun.spec` = `{workloadRef, models, params, env, envFrom}`, **immutable** (CEL `self == oldSelf`), and the run won't start until the workload is Ready (all stage Agents Ready).
 
-`createAgentRunForStage` (`ACMAIN/internal/controller/agentplaybookrun_controller.go:305-343`) builds each stage AgentRun as: `agentRef`/`instructions` from the stage; `models`/`params`/`envFrom` copied **identically** from the playbook run; `env` = `[KONVEYOR_PLAYBOOK_INSTRUCTIONS=guide]` (if set) + `pbRun.spec.env` verbatim. Strictly sequential: current stage = first non-Succeeded; stage success = child AgentRun Succeeded = Sandbox condition `Finished=True/PodSucceeded` (`agentrun_controller.go:597-628`); any stage failure fails the whole run immediately, no retries (`agentplaybookrun_controller.go:250-262`).
+`createAgentRunForStage` (`ACMAIN/internal/controller/agentworkloadrun_controller.go:305-343`) builds each stage AgentRun as: `agentRef`/`instructions` from the stage; `models`/`params`/`envFrom` copied **identically** from the workload run; `env` = `[KONVEYOR_WORKLOAD_INSTRUCTIONS=guide]` (if set) + `pbRun.spec.env` verbatim. Strictly sequential: current stage = first non-Succeeded; stage success = child AgentRun Succeeded = Sandbox condition `Finished=True/PodSucceeded` (`agentrun_controller.go:597-628`); any stage failure fails the whole run immediately, no retries (`agentworkloadrun_controller.go:250-262`).
 
 ### 5. Live-vs-code drift
 
@@ -65,15 +65,15 @@ The harness consumes exactly two `KONVEYOR_PARAM_*` vars (`MAX_TURNS`; `MAX_FIX_
 
 ---
 
-## DELIVERABLE 2 — Coolstore demo playbook design
+## DELIVERABLE 2 — Coolstore demo workload design
 
 ### 2.1 Design choices (why the YAML looks like this)
 
-- **One Agent for all three stages.** Per-stage variance is instructions-only anyway, and playbook-run params are forwarded to every stage — a single Agent guarantees the params-declared-by-all-stages rule can't bite. The existing `java-hub-analyzer` is a trap: it declares `repository` as **required with no default** (any run not supplying it → `Failed/InvalidParams`) and now carries `skillCards`, which would exercise the untested ImageVolume path. Define a fresh Agent instead.
+- **One Agent for all three stages.** Per-stage variance is instructions-only anyway, and workload-run params are forwarded to every stage — a single Agent guarantees the params-declared-by-all-stages rule can't bite. The existing `java-hub-analyzer` is a trap: it declares `repository` as **required with no default** (any run not supplying it → `Failed/InvalidParams`) and now carries `skillCards`, which would exercise the untested ImageVolume path. Define a fresh Agent instead.
 - **No skillCards on the demo Agent.** The five skills are already baked into `agent-java:dev` at `/opt/skills` and the harness globs that dir regardless of mounts. Zero ImageVolume risk.
-- **Env, not params, for Hub/branch plumbing.** Params only ever become `KONVEYOR_PARAM_<UPPER>`; nothing translates them to plain names. `HUB_BASE_URL`/`APP_ID`/`TARGET_BRANCH` must ride `AgentPlaybookRun.spec.env`, which is copied verbatim to every stage AgentRun and appended last onto each container's env — the confirmed, validation-free channel.
-- **Models must be set on the AgentPlaybookRun** (no controller defaulting; kubectl-created runs that omit them produce a pod missing `KONVEYOR_MODEL_PRIMARY_*` → harness fatal → OnFailure crash-loop). LLMProvider `aws-bedrock` in `konveyor-agents` is Ready with keyless SigV4 credentialRef (`aws-bedrock-creds` envFrom).
-- **Fresh playbook name** — `java-ee-to-quarkus` and `javaee-to-quarkus` playbooks already exist in the cluster with Ready=False; don't collide with them.
+- **Env, not params, for Hub/branch plumbing.** Params only ever become `KONVEYOR_PARAM_<UPPER>`; nothing translates them to plain names. `HUB_BASE_URL`/`APP_ID`/`TARGET_BRANCH` must ride `AgentWorkloadRun.spec.env`, which is copied verbatim to every stage AgentRun and appended last onto each container's env — the confirmed, validation-free channel.
+- **Models must be set on the AgentWorkloadRun** (no controller defaulting; kubectl-created runs that omit them produce a pod missing `KONVEYOR_MODEL_PRIMARY_*` → harness fatal → OnFailure crash-loop). LLMProvider `aws-bedrock` in `konveyor-agents` is Ready with keyless SigV4 credentialRef (`aws-bedrock-creds` envFrom).
+- **Fresh workload name** — `java-ee-to-quarkus` and `javaee-to-quarkus` workloads already exist in the cluster with Ready=False; don't collide with them.
 - **Turn budget as a declared Agent param** with default 150 (assess/remediate need headroom; java-hub-analyzer's 40 is far too low for remediate). Not `required` (CEL forbids required+default).
 
 ### 2.2 Manifests (namespace `konveyor-agents`)
@@ -99,9 +99,9 @@ spec:
     Quarkus 3 migration. Work only inside the workspace repository. Never run git
     commands yourself; the harness commits and pushes your file writes automatically.
 ---
-# 2. AgentPlaybook — guide becomes KONVEYOR_PLAYBOOK_INSTRUCTIONS in every stage
+# 2. AgentWorkload — guide becomes KONVEYOR_WORKLOAD_INSTRUCTIONS in every stage
 apiVersion: konveyor.io/v1alpha1
-kind: AgentPlaybook
+kind: AgentWorkload
 metadata:
   name: coolstore-quarkus-demo
   namespace: konveyor-agents
@@ -144,14 +144,14 @@ spec:
         mappings, and iterate. Then run the tests and report results without fixing
         test failures. Do NOT modify PLAN.md.
 ---
-# 3. AgentPlaybookRun — spec is immutable; models + env are copied to ALL stages
+# 3. AgentWorkloadRun — spec is immutable; models + env are copied to ALL stages
 apiVersion: konveyor.io/v1alpha1
-kind: AgentPlaybookRun
+kind: AgentWorkloadRun
 metadata:
   name: coolstore-quarkus-demo-1
   namespace: konveyor-agents
 spec:
-  playbookRef: coolstore-quarkus-demo
+  workloadRef: coolstore-quarkus-demo
   models:                                  # REQUIRED by hand — no controller defaults these
     - role: primary
       provider: aws-bedrock
@@ -170,25 +170,25 @@ spec:
 
 ### 2.3 How APP_ID / TARGET_BRANCH / HUB_BASE_URL reach each stage pod
 
-Confirmed chain, no gaps for **env**: `AgentPlaybookRun.spec.env` → copied verbatim onto each stage AgentRun's `spec.env` (`agentplaybookrun_controller.go:323,340`) → appended last onto the sandbox container env (`agentrun_controller.go:508-509`) → read by the harness under those exact plain names. The playbook `guide` additionally arrives as `KONVEYOR_PLAYBOOK_INSTRUCTIONS` prepended to that env list. **The needed path exists; no workaround required.** What does NOT exist: per-stage env/params/models (stage fields are only name/agentRef/instructions), and any params→plain-name translation. If you ever need a per-stage env value, the smallest workarounds are (a) different Agents per stage (Agent prompt differs) or (b) the fallback in 2.5.
+Confirmed chain, no gaps for **env**: `AgentWorkloadRun.spec.env` → copied verbatim onto each stage AgentRun's `spec.env` (`agentworkloadrun_controller.go:323,340`) → appended last onto the sandbox container env (`agentrun_controller.go:508-509`) → read by the harness under those exact plain names. The workload `guide` additionally arrives as `KONVEYOR_WORKLOAD_INSTRUCTIONS` prepended to that env list. **The needed path exists; no workaround required.** What does NOT exist: per-stage env/params/models (stage fields are only name/agentRef/instructions), and any params→plain-name translation. If you ever need a per-stage env value, the smallest workarounds are (a) different Agents per stage (Agent prompt differs) or (b) the fallback in 2.5.
 
 Branch continuity: assess creates `quarkus-migration-demo-1` from the clone's HEAD and pushes PLAN.md/graph.json/.konveyor/analysis.json; remediate's fresh pod clones all refs and `CheckoutBranch` lands on `origin/quarkus-migration-demo-1` at assess's tip; same for validate. Each stage has a brand-new 10Gi emptyDir — git is the only shared state.
 
 ### 2.4 Gaps / blockers, ranked by demo risk
 
-1. **Fail-path crash-loop (HIGH — known #36 gap).** Pods are `RestartPolicy: OnFailure`; a harness exit 1 (MaxTurns exhausted, goose error, missing env) restarts the container in place, so the Sandbox never reports Finished/failed and the playbook run sits `Running` while the stage **re-runs from scratch repeatedly, burning Bedrock tokens**. Mitigation: watch `kubectl get pods -w`; on a crash-looping stage, `kubectl delete agentplaybookrun` (needs a human, since spec is immutable — no cancel field). Budget max_turns generously so exhaustion doesn't trigger this mid-demo.
-2. **Params-declared-by-all-stages rule (HIGH if ignored, ELIMINATED by this design).** pbRun params go to every stage; any stage agent that doesn't declare one → that stage `Failed/InvalidParams` (which then hits gap #1's stuck-Running or fails the playbook). Single shared Agent declaring exactly `max_turns` removes the risk. Never reuse `java-hub-analyzer` (required `repository` param).
+1. **Fail-path crash-loop (HIGH — known #36 gap).** Pods are `RestartPolicy: OnFailure`; a harness exit 1 (MaxTurns exhausted, goose error, missing env) restarts the container in place, so the Sandbox never reports Finished/failed and the workload run sits `Running` while the stage **re-runs from scratch repeatedly, burning Bedrock tokens**. Mitigation: watch `kubectl get pods -w`; on a crash-looping stage, `kubectl delete agentworkloadrun` (needs a human, since spec is immutable — no cancel field). Budget max_turns generously so exhaustion doesn't trigger this mid-demo.
+2. **Params-declared-by-all-stages rule (HIGH if ignored, ELIMINATED by this design).** pbRun params go to every stage; any stage agent that doesn't declare one → that stage `Failed/InvalidParams` (which then hits gap #1's stuck-Running or fails the workload). Single shared Agent declaring exactly `max_turns` removes the risk. Never reuse `java-hub-analyzer` (required `repository` param).
 3. **Models injection for kubectl-created runs (HIGH if forgotten).** No controller defaults `spec.models`. Omitting it validates fine but yields a pod without `KONVEYOR_MODEL_PRIMARY_*` → harness fatal at startup → crash-loop per #1. The manifest above sets it explicitly.
-4. **Verify "success" is not build success (MEDIUM, narrative risk).** The harness derives stage success from ACP errors/goose liveness only; a verify stage that *reports* "build still failing" exits 0 and the playbook shows Succeeded. Demo script should show the pushed branch/`mvn compile` output, not just the CR phase.
+4. **Verify "success" is not build success (MEDIUM, narrative risk).** The harness derives stage success from ACP errors/goose liveness only; a verify stage that *reports* "build still failing" exits 0 and the workload shows Succeeded. Demo script should show the pushed branch/`mvn compile` output, not just the CR phase.
 5. **Skill-steering hazard (MEDIUM).** All five SKILL.md files are in every prompt; javaee-to-quarkus's own per-phase build gates contradict plan ("no source changes") and execute ("no builds"), and patternfly-migration is irrelevant. The stage instructions + guide above explicitly demote/exclude them — keep that text.
 6. **Memory pressure (MEDIUM).** ~7.65 GiB allocatable node, BestEffort pods, goose + graphify + (validate) Maven JVM concurrently. Stages run one-at-a-time which helps; avoid running other heavy pods during the demo. First `mvn` run cold-downloads the Quarkus tree into `~/.m2` — expect several extra minutes in validate.
 7. **Maven availability: NOT a blocker.** agent-java:dev has Maven 3.9.9 + OpenJDK 21 verified live; coolstore's system-scope `audit-logging-library` jar is in-repo. Residual: pre-migration pom pins maven-compiler-plugin 3.0 (2013) which may fail on JDK 21 — moot because validate runs *after* remediate rewrites the pom, and the verify skill fixes compile breakage (UNCERTAIN only for a pre-migration baseline build).
 8. **Non-fast-forward push (LOW).** Final push is non-force and fatal on failure; stages are sequential so the only realistic collision is a human pushing to TARGET_BRANCH mid-demo. Don't.
-9. **Housekeeping (LOW).** `.konveyor/analysis.json` + `graph.json` get committed to the demo branch (arguably a feature — shows Hub provenance). Playbook run name/branch must be fresh per attempt (spec immutable; reusing TARGET_BRANCH from a bad run resumes its history).
+9. **Housekeeping (LOW).** `.konveyor/analysis.json` + `graph.json` get committed to the demo branch (arguably a feature — shows Hub provenance). Workload run name/branch must be fresh per attempt (spec immutable; reusing TARGET_BRANCH from a bad run resumes its history).
 
-### 2.5 Fallback: three sequential AgentRuns (no playbook CRD)
+### 2.5 Fallback: three sequential AgentRuns (no workload CRD)
 
-Same story, human-sequenced — use if anything in the playbook plumbing misbehaves on the day. Uses only the AgentRun path already proven live today (fork-w8vfb pushed to the real fork). Since there's no playbook, supply the migration-context text yourself via `KONVEYOR_PLAYBOOK_INSTRUCTIONS` in `spec.env` (the harness reads it as a plain env var; it doesn't care who set it).
+Same story, human-sequenced — use if anything in the workload plumbing misbehaves on the day. Uses only the AgentRun path already proven live today (fork-w8vfb pushed to the real fork). Since there's no workload, supply the migration-context text yourself via `KONVEYOR_WORKLOAD_INSTRUCTIONS` in `spec.env` (the harness reads it as a plain env var; it doesn't care who set it).
 
 ```yaml
 apiVersion: konveyor.io/v1alpha1
@@ -208,7 +208,7 @@ spec:
   instructions: |
     <assess stage instructions from 2.2, verbatim>
   env:
-    - name: KONVEYOR_PLAYBOOK_INSTRUCTIONS
+    - name: KONVEYOR_WORKLOAD_INSTRUCTIONS
       value: "<guide text from 2.2, verbatim>"
     - name: HUB_BASE_URL
       value: http://tackle-hub.konveyor-tackle.svc:8080
@@ -218,7 +218,7 @@ spec:
       value: quarkus-migration-demo-1
 ```
 
-Then wait for `phase: Succeeded` (`kubectl get agentrun coolstore-assess-1 -w`), and create `coolstore-remediate-1` and `coolstore-validate-1` identically, changing only `metadata.name` and `instructions` (remediate/validate text from 2.2). **Identical env — especially TARGET_BRANCH — in all three**; branch-resume via `origin/<TARGET_BRANCH>` does the chaining exactly as in the playbook. Advantages: you can inspect the pushed branch between beats, tune the next stage's instructions from what actually landed, and a crash-looping stage only wedges itself (delete the one AgentRun, fix, recreate) instead of wedging an immutable playbook run.
+Then wait for `phase: Succeeded` (`kubectl get agentrun coolstore-assess-1 -w`), and create `coolstore-remediate-1` and `coolstore-validate-1` identically, changing only `metadata.name` and `instructions` (remediate/validate text from 2.2). **Identical env — especially TARGET_BRANCH — in all three**; branch-resume via `origin/<TARGET_BRANCH>` does the chaining exactly as in the workload. Advantages: you can inspect the pushed branch between beats, tune the next stage's instructions from what actually landed, and a crash-looping stage only wedges itself (delete the one AgentRun, fix, recreate) instead of wedging an immutable workload run.
 
 ---
 

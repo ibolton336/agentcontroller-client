@@ -208,39 +208,39 @@ export interface SkillCollection {
   status?: { observedGeneration?: number; conditions?: Condition[] };
 }
 
-// ---------------------------------------------------------- AgentPlaybook
+// ---------------------------------------------------------- AgentWorkload
 
-export interface AgentPlaybookStage {
+export interface AgentWorkloadStage {
   name: string;
   agentRef: string;
   instructions?: string;
 }
 
-export interface AgentPlaybookSpec {
+export interface AgentWorkloadSpec {
   guide?: string;
-  stages: AgentPlaybookStage[];
+  stages: AgentWorkloadStage[];
 }
 
-export interface AgentPlaybook {
+export interface AgentWorkload {
   apiVersion: typeof API_VERSION;
-  kind: "AgentPlaybook";
+  kind: "AgentWorkload";
   metadata: ObjectMeta;
-  spec: AgentPlaybookSpec;
+  spec: AgentWorkloadSpec;
   status?: { observedGeneration?: number; conditions?: Condition[] };
 }
 
-// ------------------------------------------------------- AgentPlaybookRun
+// ------------------------------------------------------- AgentWorkloadRun
 
-export type AgentPlaybookRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
+export type AgentWorkloadRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
 
-export interface AgentPlaybookRunStageStatus {
+export interface AgentWorkloadRunStageStatus {
   name: string;
   phase?: AgentRunPhase;
   agentRunName?: string;
 }
 
-export interface AgentPlaybookRunSpec {
-  playbookRef: string;
+export interface AgentWorkloadRunSpec {
+  workloadRef: string;
   models?: AgentRunModelSelection[];
   params?: AgentRunParam[];
   instructions?: string;
@@ -248,22 +248,22 @@ export interface AgentPlaybookRunSpec {
   envFrom?: EnvFromSource[];
 }
 
-export interface AgentPlaybookRunStatus {
-  phase?: AgentPlaybookRunPhase;
+export interface AgentWorkloadRunStatus {
+  phase?: AgentWorkloadRunPhase;
   observedGeneration?: number;
   currentStage?: string;
-  stages?: AgentPlaybookRunStageStatus[];
+  stages?: AgentWorkloadRunStageStatus[];
   startTime?: string;
   completionTime?: string;
   conditions?: Condition[];
 }
 
-export interface AgentPlaybookRun {
+export interface AgentWorkloadRun {
   apiVersion: typeof API_VERSION;
-  kind: "AgentPlaybookRun";
+  kind: "AgentWorkloadRun";
   metadata: ObjectMeta;
-  spec: AgentPlaybookRunSpec;
-  status?: AgentPlaybookRunStatus;
+  spec: AgentWorkloadRunSpec;
+  status?: AgentWorkloadRunStatus;
 }
 
 export const PLURALS = {
@@ -272,6 +272,6 @@ export const PLURALS = {
   LLMProvider: "llmproviders",
   SkillCard: "skillcards",
   SkillCollection: "skillcollections",
-  AgentPlaybook: "agentplaybooks",
-  AgentPlaybookRun: "agentplaybookruns",
+  AgentWorkload: "agentworkloads",
+  AgentWorkloadRun: "agentworkloadruns",
 } as const;

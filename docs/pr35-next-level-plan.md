@@ -8,9 +8,9 @@ the *client stack's* next phase, which can proceed in parallel with the
 Hub/harness/controller tracks.
 
 **The one-line thesis:** PR #35 today is a *run console* (create runs,
-chat, watch playbooks). Next level = a *management console* — define
+chat, watch workloads). Next level = a *management console* — define
 agents (image + skills), author skillcards/collections, compose
-playbooks, launch against real applications, track executions — built on
+workloads, launch against real applications, track executions — built on
 the CR shapes, images, and harness contract PR #53 establishes.
 
 ---
@@ -44,7 +44,7 @@ the CR shapes, images, and harness contract PR #53 establishes.
   fatals on zero `SKILL.md` matches. Image-sourced cards are the only
   Ready kind (inline/git-source reconcile to NotReady "Phase 3").
 - **One prompt, four layers.** `KONVEYOR_PROMPT` (Agent) +
-  `KONVEYOR_PLAYBOOK_INSTRUCTIONS` (guide) + concatenated skills +
+  `KONVEYOR_WORKLOAD_INSTRUCTIONS` (guide) + concatenated skills +
   `KONVEYOR_INSTRUCTIONS` (stage/run). The harness owns the ACP session
   (cwd `/workspace/repo`) and sends that prompt itself.
 - **Models are hard-required** (`KONVEYOR_MODEL_PRIMARY_*`); the shim's
@@ -52,13 +52,13 @@ the CR shapes, images, and harness contract PR #53 establishes.
   maps to a goose provider id *verbatim* (lowercased, `-`→`_`) — the CR
   must be named e.g. `gcp-vertex-ai`; a provider named `bedrock` no
   longer maps to `aws_bedrock`.
-- **No HITL anywhere.** Plan approval was deleted; the playbook
+- **No HITL anywhere.** Plan approval was deleted; the workload
   controller auto-advances stages. `handoff.md` is claimed by ADR 0006
   but not implemented; token usage is parsed then discarded.
 - **What survives untouched:** sandboxName == run name, `<run>-acp-key`
   Secret + `status.secretKeyRef`, ACP `:4000/acp`, `KONVEYOR_PARAM_*` /
   `KONVEYOR_MODEL_<ROLE>_*` injection, keyless-credentialRef → envFrom,
-  spec immutability, playbook stage labels + deterministic stage-run
+  spec immutability, workload stage labels + deterministic stage-run
   names. The UI's run pages and `waitForRunning` keep working; the WS
   bridge *should* keep working but dials with the `X-Secret-Key` header
   while #53's own client uses `?token=` — header auth on unpinned goose
@@ -88,7 +88,7 @@ Develop against a kind cluster running the `pr-53` branch CRDs.
    samples and shim stop exercising them.)
 2. **Browser contract additions** (`agentic-client/src/contract`):
    `skillCards`/`skillCollections` on `AgentResourceSpec`; typed
-   `env`/`envFrom` on `AgentRunSpec` *and* `AgentPlaybookRunSpec`;
+   `env`/`envFrom` on `AgentRunSpec` *and* `AgentWorkloadRunSpec`;
    create inputs grow `targetBranch` (`applicationRef` already exists
    on both create inputs and both shim POST parsers — don't re-add it;
    the node-side `agentrun-client/src/types.ts` already matches #53,
@@ -110,11 +110,11 @@ Develop against a kind cluster running the `pr-53` branch CRDs.
 |---|---|---|
 | "defining agents, specify image, specify skills" | **Agent Designer**: name, image (dropdown from the image catalog, Phase 2), prompt, providers picker, skillCards/skillCollections pickers showing Ready + `resolvedImage` (loud warning at zero skills — runs will fatal), params editor (name/type/default/required; CEL forbids required+default) | `agent_types.go`, zero-skills fatal in `main.go` |
 | "skill cards and skill collections need a UX for creation" | **Skill Library**: read-only list ships immediately (shim GET routes exist, UI never consumed them); create = image-ref cards only (the one Ready kind: name, displayName, image, type `skill|rule`, tags); inline authoring marked demo-only/NotReady; collection composer = ordered member refs (members with direct `image` need no SkillCard) | `skillcard_controller.go` Phase-3 gates |
-| "playbook — agent in sequence, agent with prompt, then agent with *that* prompt" | **Playbook Composer**: guide + ordered stages `{name, agentRef, instructions}`; validate label-safe stage names and provider overlap across stage agents (run-time constraint: one shared model selection forwarded to all stages). **Stage chaining today is artifact-based, not prompt-based**: stage N commits its output to `TARGET_BRANCH` (plan writes `PLAN.md`), stage N+1's skill reads it from the branch — there is no mechanism that feeds one stage's prompt/output into the next stage's prompt. If literal prompt-chaining is wanted, that's the unimplemented `handoff.md` from ADR 0006 fed into the next stage's `KONVEYOR_INSTRUCTIONS` — file it upstream (extends feedback #5), don't fake it client-side | `agentplaybook_types.go`, forwarding in playbookrun controller, `git.go` branch-continuation |
+| "workload — agent in sequence, agent with prompt, then agent with *that* prompt" | **Workload Composer**: guide + ordered stages `{name, agentRef, instructions}`; validate label-safe stage names and provider overlap across stage agents (run-time constraint: one shared model selection forwarded to all stages). **Stage chaining today is artifact-based, not prompt-based**: stage N commits its output to `TARGET_BRANCH` (plan writes `PLAN.md`), stage N+1's skill reads it from the branch — there is no mechanism that feeds one stage's prompt/output into the next stage's prompt. If literal prompt-chaining is wanted, that's the unimplemented `handoff.md` from ADR 0006 fed into the next stage's `KONVEYOR_INSTRUCTIONS` — file it upstream (extends feedback #5), don't fake it client-side | `agentworkload_types.go`, forwarding in workloadrun controller, `git.go` branch-continuation |
 | "input parameter — custom on the fly vs hub pulled" / "prompt as input" / "hub fields" | **Run Launcher**: application picker (Hub inventory) answers *hub-pulled* — repo/branch/creds/analysis are harness-fetched, never form fields; *custom* = the agent's declared params (typed widgets from `AgentParam.type`: string/number/boolean) + instructions (the "prompt as input"); model picker (provider+model role `primary`, default = shim policy shown as a preview); **target-branch field, prefilled `konveyor/migration-<ts>`, editable** — the branch UX decision; the "hub fields" (repo URL, source branch, identity, analysis) appear as a read-only preview of what the harness will pull, never as inputs | harness config contract |
-| "manage … executions" | **Execution Console** upgrades: show run spec (params/models/instructions/branch — currently hidden), TARGET_BRANCH link to the repo branch, incremental-commit feed ("konveyor: auto-commit progress"), stage outputs by convention (`PLAN.md`, `.konveyor/analysis.json`), re-run = delete+recreate affordance (spec is immutable), playbook-run delete button (client exists, UI missing), deep-link routing | watcher/commit contract |
+| "manage … executions" | **Execution Console** upgrades: show run spec (params/models/instructions/branch — currently hidden), TARGET_BRANCH link to the repo branch, incremental-commit feed ("konveyor: auto-commit progress"), stage outputs by convention (`PLAN.md`, `.konveyor/analysis.json`), re-run = delete+recreate affordance (spec is immutable), workload-run delete button (client exists, UI missing), deep-link routing | watcher/commit contract |
 | "we need Labels konveyor.io/managed" | Today the filter exists **only** in the shim's Agent list; the UI has no label code and nothing the stack creates stamps the label. Keep the filter, extend it to the other list routes, stamp the label on everything the UI creates, and get #53's seeds labeled (feedback #3) | shim `server.ts` `LIST_LABEL_SELECTORS` |
-| — | **Write routes on the shim** (POST/PUT/DELETE agents, skillcards, skillcollections, playbooks) — these become the R1 route proposal for the Hub, same as the run routes did; fix the stale gateway RBAC — the deployed Role covers only agentruns/agents/llmproviders, so agentplaybooks, **agentplaybookruns** (the shipped playbook-run pages!), skillcards, and skillcollections all 403 in-cluster | ADR 0004 handover role, `deploy/manifests/gateway.yaml` |
+| — | **Write routes on the shim** (POST/PUT/DELETE agents, skillcards, skillcollections, workloads) — these become the R1 route proposal for the Hub, same as the run routes did; fix the stale gateway RBAC — the deployed Role covers only agentruns/agents/llmproviders, so agentworkloads, **agentworkloadruns** (the shipped workload-run pages!), skillcards, and skillcollections all 403 in-cluster | ADR 0004 handover role, `deploy/manifests/gateway.yaml` |
 
 ## Phase 2 — Image catalog + seeded defaults + demo
 
@@ -130,13 +130,13 @@ Develop against a kind cluster running the `pr-53` branch CRDs.
   routes, replacing `demo-up.sh` kubectl): provider named as a goose
   provider id, three stage Agents (plan/execute/verify) on
   `agent-java`, the four `quay.io/konveyor/skills:<name>` cards,
-  the `java-ee-to-quarkus` playbook — all labeled managed. (Note: the
-  *playbook* is `java-ee-to-quarkus`, the *skillcard* is
+  the `java-ee-to-quarkus` workload — all labeled managed. (Note: the
+  *workload* is `java-ee-to-quarkus`, the *skillcard* is
   `javaee-to-quarkus` — don't mix them up in scripts.)
 - **"goose base – skills – patternfly migrations":** the demo stretch —
   author a PatternFly-migration *domain* skill as a scratch OCI image,
   pair it with the stage skills on the `agent-nodejs` image, seed it as
-  a second playbook. Proves the skill model generalizes beyond Java in
+  a second workload. Proves the skill model generalizes beyond Java in
   one afternoon of skill-writing, zero code.
 - **"use agent run against a real application":** the acceptance test —
   launcher → real Hub app id → real repo → branch link with commits.
@@ -152,15 +152,15 @@ Develop against a kind cluster running the `pr-53` branch CRDs.
   are baked into agent, no app discovery": under today's model skills
   live on the Agent spec and mount at pod creation, so there is no
   per-run skill selection. Archetype suggestions therefore belong at
-  *authoring* time (suggest skills while building an agent/playbook for
+  *authoring* time (suggest skills while building an agent/workload for
   an archetype), not at launch time — launch-time selection would need
   an upstream CR change (run-level skill refs). Needs Hub archetype
   data the client doesn't have yet; park behind Phase 2.
 - **RHDH always-hub-pulled:** already the model — RHDH posts
-  `{agentRef/playbookRef, applicationRef, params?}` to the same
+  `{agentRef/workloadRef, applicationRef, params?}` to the same
   endpoints; nothing extra needed beyond Phase 0.
 - **HITL for plan approval:** deleted upstream in #53. If the demo
-  needs an approval beat, it's a playbook-composer feature request
+  needs an approval beat, it's a workload-composer feature request
   upstream (pause-between-stages), not client work. Flag, don't build.
 
 ## Sequencing
@@ -169,7 +169,7 @@ Develop against a kind cluster running the `pr-53` branch CRDs.
 now ──► file #53 feedback (5 items) ── while #53 is still open
      ├► Phase 0 (contract + shim + observer chat)      ~ the unblocker
      ├► Phase 1 screens in parallel once Phase 0 lands:
-     │     Skill Library (read-only) → Agent Designer → Playbook
+     │     Skill Library (read-only) → Agent Designer → Workload
      │     Composer → Launcher → Execution Console upgrades
      └► Phase 2 (catalog, seeded defaults, patternfly demo, real-app run)
 ```

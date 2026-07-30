@@ -132,7 +132,7 @@ const agentJavaValidator = cr("Agent", "java-migration-validator", {
   ],
 });
 
-const playbookJavaEeToQuarkus = cr("AgentPlaybook", "javaee-to-quarkus", {
+const workloadJavaEeToQuarkus = cr("AgentWorkload", "javaee-to-quarkus", {
   guide: "Three-stage Java EE to Quarkus migration pipeline. All stages share the same branch and push their output back to it.",
   stages: [
     { name: "plan", agentRef: "java-migration-analyzer", instructions: "Stage 1: analyze the application and produce a migration plan." },
@@ -185,7 +185,7 @@ const agentPfValidator = cr("Agent", "pf-migration-validator", {
   ],
 });
 
-const playbookPatternFly = cr("AgentPlaybook", "patternfly-migration", {
+const workloadPatternFly = cr("AgentWorkload", "patternfly-migration", {
   guide: "Three-stage PatternFly 5→6 migration pipeline for frontend applications.",
   stages: [
     { name: "analyze", agentRef: "pf-migration-analyzer", instructions: "Stage 1: analyze the frontend and produce a PF5→PF6 migration plan." },
@@ -201,11 +201,11 @@ export const SEED_RESOURCES: SeedResource[] = [
   // Java EE → Quarkus
   skillJavaEeToQuarkus, skillPlan, skillExecute, skillVerify,
   agentJavaAnalyzer, agentJavaRemediator, agentJavaValidator,
-  playbookJavaEeToQuarkus,
+  workloadJavaEeToQuarkus,
   // PatternFly
   skillPatternFly,
   agentPfAnalyzer, agentPfRemediator, agentPfValidator,
-  playbookPatternFly,
+  workloadPatternFly,
 ];
 
 /** Plurals map for seeding — maps Kind to the k8s API plural. */
@@ -214,6 +214,6 @@ export const KIND_TO_PLURAL: Record<string, string> = {
   Agent: PLURALS.Agent,
   SkillCard: PLURALS.SkillCard,
   SkillCollection: PLURALS.SkillCollection,
-  AgentPlaybook: PLURALS.AgentPlaybook,
-  AgentPlaybookRun: PLURALS.AgentPlaybookRun,
+  AgentWorkload: PLURALS.AgentWorkload,
+  AgentWorkloadRun: PLURALS.AgentWorkloadRun,
 };

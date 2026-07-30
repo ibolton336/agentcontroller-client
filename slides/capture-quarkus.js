@@ -1,4 +1,4 @@
-/* Capture stills + webm clips of the tackle2-ui (:9000) for the Quarkus playbook demo.
+/* Capture stills + webm clips of the tackle2-ui (:9000) for the Quarkus workload demo.
  * Usage:
  *   node capture-quarkus.js shot <urlOrPath> <out.png> [waitMs]
  *   node capture-quarkus.js clip <urlOrPath> <out.webm> <seconds> [reloadHalfway]

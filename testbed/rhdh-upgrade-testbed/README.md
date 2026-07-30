@@ -11,7 +11,7 @@ workspace for automated upgrade assessments.
 ## Demo runs
 
 `demo-runs/*.bundle` are git bundles preserving the full branch history of
-completed playbook runs — the audit trail the demo pitches. Inspect one:
+completed workload runs — the audit trail the demo pitches. Inspect one:
 
     git clone demo-runs/upgrade-run-1.bundle -b upgrade/rhdh-1.10 /tmp/run
     git -C /tmp/run log --oneline   # assess -> remediate -> validate commits

@@ -171,7 +171,7 @@ Nothing goes on savitharaghunathan's branch.
 - Is `/dev/termination-log` the sanctioned way for the controller to read
   result.json from a completed pod? Better still — can Agent Sandbox surface it
   in status so the controller needs no pod RBAC?
-- Does the playbook controller *park* on `awaiting_input` rather than advance?
+- Does the workload controller *park* on `awaiting_input` rather than advance?
   **Until answered, "stop" must be unreachable by default** — a stage that
   Succeeds while genuinely waiting is a silent false approval, the worst
   failure available here.

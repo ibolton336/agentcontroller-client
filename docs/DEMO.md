@@ -26,8 +26,8 @@ which seeds 14 domain resources + the image catalog ConfigMap into the
 cluster (create-only — re-seeding never clobbers edits):
 
 - **Provider**: `gcp-vertex-ai` (shared)
-- **Java EE → Quarkus set**: 4 SkillCards, 3 Agents on `agent-java`, 1 AgentPlaybook
-- **PatternFly 5→6 set**: 1 SkillCard, 3 Agents on `agent-nodejs`, 1 AgentPlaybook
+- **Java EE → Quarkus set**: 4 SkillCards, 3 Agents on `agent-java`, 1 AgentWorkload
+- **PatternFly 5→6 set**: 1 SkillCard, 3 Agents on `agent-nodejs`, 1 AgentWorkload
 - **Image catalog**: `agent-image-catalog` ConfigMap (PR #53 hierarchy)
 
 The PatternFly-migration domain skill lives in `skills/patternfly-migration/`.

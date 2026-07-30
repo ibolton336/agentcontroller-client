@@ -122,7 +122,7 @@ proposal keeps that deliberately open, but every candidate must supply:
 
 | # | Obligation | One-liner | Hub already has the shape? |
 |---|-----------|-----------|----------------------------|
-| R1 | REST CRUD over the CRs | List/create/delete agents, runs, playbooks; read-only providers/skills | ✅ plain authenticated k8s passthrough |
+| R1 | REST CRUD over the CRs | List/create/delete agents, runs, workloads; read-only providers/skills | ✅ plain authenticated k8s passthrough |
 | R2 | **WS proxy to the run pod** | Resolve pod → read key → inject → pipe frames | ⚠️ closest thing is `ServiceHandler.Forward` — static routes, no credential swap |
 | R3 | Application inventory read | `GET /api/applications` | ✅ it's Hub's own data |
 | R4 | Identity → Secret materialization | App's platform credential becomes a mounted Secret before pod start | ✅ Hub owns the vault |

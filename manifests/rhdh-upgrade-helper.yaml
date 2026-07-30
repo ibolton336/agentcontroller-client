@@ -59,5 +59,5 @@ spec:
       default: "1.8"
     - name: mode
       type: string
-      description: '"serve" for interactive chat (default), "batch" to run the task headlessly and exit (playbook stages)'
+      description: '"serve" for interactive chat (default), "batch" to run the task headlessly and exit (workload stages)'
       default: "serve"

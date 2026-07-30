@@ -36,15 +36,20 @@
   footer { display: flex; align-items: center; gap: 1.2rem; border-top: 1px solid var(--line); padding-top: .7rem; }
   footer .say { flex: 1; color: var(--muted); font-size: clamp(.8rem, 1.15vw, .98rem); }
   footer .say b { color: var(--fg); font-weight: 600; }
-  footer .nav { color: var(--muted); font-size: .82rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  footer .nav { color: var(--muted); font-size: .82rem; white-space: nowrap; font-variant-numeric: tabular-nums; margin-left: auto; }
+  /* Speaker notes are hidden by default so screen-sharing never leaks them; `s` toggles. */
+  body.no-say .say { display: none; }
+  .hint { position: fixed; left: .6rem; bottom: .35rem; color: var(--line); font-size: .68rem; letter-spacing: .04em; }
+  body:not(.no-say) .hint { display: none; }
   code { background: #21262d; padding: .1em .38em; border-radius: 4px; font-size: .92em; }
   .ok { color: var(--ok); font-weight: 600; }
   .progress { position: fixed; left: 0; top: 0; height: 3px; background: var(--accent); transition: width .18s ease; }
   @media print { body { overflow: visible; } .slide { display: grid !important; position: static; page-break-after: always; height: 100vh; } }
 </style>
 </head>
-<body>
+<body class="no-say">
 <div class="progress" id="progress"></div>
+<div class="hint">s = notes</div>
 
 <!-- 1 -->
 <section class="slide active">
@@ -64,8 +69,8 @@
 <section class="slide">
   <header>
     <div class="beat">Beat 2 — the method is a reviewable asset</div>
-    <h1>Skills, Agents, Playbooks — not prompt spaghetti</h1>
-    <p class="sub">Migration know-how lives in versioned <b>Skills</b>. An <b>Agent</b> is a governed capability: an image, declared providers, declared params. A <b>Playbook</b> is the process. Credentials never appear in a spec — they resolve from Hub identities at run time.</p>
+    <h1>Skills, Agents, Workloads — not prompt spaghetti</h1>
+    <p class="sub">Migration know-how lives in versioned <b>Skills</b>. An <b>Agent</b> is a governed capability: an image, declared providers, declared params. A <b>Workload</b> is the process. Credentials never appear in a spec — they resolve from Hub identities at run time.</p>
   </header>
   <div class="media two">
     <img src="assets/quarkus-demo/00d-skill-library.png" alt="Skill library" />
@@ -82,9 +87,9 @@
   <header>
     <div class="beat">Beat 3 — one run, three stages</div>
     <h1>assess → remediate → validate, sharing one branch</h1>
-    <p class="sub">A single <code>AgentPlaybookRun</code>. Each stage is its own sandboxed pod with a fresh clone; the shared target branch on the fork is the entire handoff between them. No shared volume, no hidden state.</p>
+    <p class="sub">A single <code>AgentWorkloadRun</code>. Each stage is its own sandboxed pod with a fresh clone; the shared target branch on the fork is the entire handoff between them. No shared volume, no hidden state.</p>
   </header>
-  <div class="media"><img src="assets/quarkus-demo/01-playbook-detail-assess.png" alt="Playbook run detail, assess stage" /></div>
+  <div class="media"><img src="assets/quarkus-demo/01-workload-detail-assess.png" alt="Workload run detail, assess stage" /></div>
   <footer>
     <div class="say"><b>Say:</b> “One command starts this. The stage ladder is the audit trail — every stage is a real run you can open.”</div>
     <div class="nav"></div>
@@ -138,9 +143,9 @@
   <header>
     <div class="beat">Beat 7 — the result</div>
     <h1>Three green stages in 33 minutes</h1>
-    <p class="sub">One playbook run, start to finish, against a real application in the Hub — with every commit on the branch traceable back to the stage that made it.</p>
+    <p class="sub">One workload run, start to finish, against a real application in the Hub — with every commit on the branch traceable back to the stage that made it.</p>
   </header>
-  <div class="media"><img src="assets/quarkus-demo/04-playbook-detail-final-Succeeded.png" alt="Playbook run succeeded, three green stages" /></div>
+  <div class="media"><img src="assets/quarkus-demo/04-workload-detail-final-Succeeded.png" alt="Workload run succeeded, three green stages" /></div>
   <footer>
     <div class="say"><b>Say:</b> “Thirty-three minutes, unattended. The interesting part isn't the speed — it's that the output is reviewable.”</div>
     <div class="nav"></div>
@@ -190,6 +195,7 @@
     if (e.key === 'Home') show(0);
     if (e.key === 'End') show(slides.length - 1);
     if (e.key === 'f') document.documentElement.requestFullscreen?.();
+    if (e.key === 's') document.body.classList.toggle('no-say');
   });
   document.addEventListener('click', e => { if (!e.target.closest('a')) show(i + 1); });
   show(0);

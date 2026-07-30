@@ -19,9 +19,9 @@ the reference UI that exercises the contract. The two meet at one seam:
 | Piece | On `feature/agent-runs`? |
 |---|---|
 | Runs list/detail + ACP chat (WS through `/agentic`, `ws: true`) | yes |
-| Agents / Skills / Playbooks CRUD pages + composer | yes |
+| Agents / Skills / Workloads CRUD pages + composer | yes |
 | **Image catalog** — `useFetchImagesWithSource`, Designer image dropdown **with custom-image escape** | **yes** (earlier note claiming it was missing is wrong) |
-| Playbook **runs** (REST/queries/pages/launch modal) | no — contract **types already present** in `api/agentic/contract.ts`, nothing implemented |
+| Workload **runs** (REST/queries/pages/launch modal) | no — contract **types already present** in `api/agentic/contract.ts`, nothing implemented |
 | Load defaults (`POST /defaults`) | no |
 | Run-detail extras (BranchPanel commit feed, PLAN.md/analysis links, run-spec env/branch panel) | no — detail page is chat + 4 fields |
 | Sidebar gating / i18n | no — Agentic group ungated, hardcoded English |
@@ -36,25 +36,25 @@ versions, not the stale ones.
    logical commits:
    - *shim hardening*: `safePathname()` (malformed target / bad
      percent-encoding no longer kill the process or the WS bridges),
-     `k8sMessage` error bodies, playbook models from the **intersection**
+     `k8sMessage` error bodies, workload models from the **intersection**
      of stage-agent provider lists.
    - *UI polish*: hash deep-links, Designer `imageTouched` + unlisted-ref
-     rows, playbook-run param **union** + disabled non-universal params,
+     rows, workload-run param **union** + disabled non-universal params,
      stub-application disable, `/HTTP 404\b/` tightening, re-run branch
-     gating, playbook-run delete affordance, BranchPanel retry,
+     gating, workload-run delete affordance, BranchPanel retry,
      `format.ts` URL-normalization order.
    - *ops*: gateway.yaml RBAC widening (llmproviders create, secrets
      create/update, configmaps get/create) + demo-up.sh
      `konveyor-tackle/tackle-hub` defaults.
 2. **Stamp `konveyor.io/managed` on the samples-manifest seeds**
-   (`analyze-java-ee`, `cloud-readiness-rules`, mock agent's playbooks) —
+   (`analyze-java-ee`, `cloud-readiness-rules`, mock agent's workloads) —
    the extended list filter now hides unlabeled resources from BOTH UIs.
    This was the open thread when the Phase 1 session paused.
 3. Push to the fork → PR #35 updated. The PR keeps: shim + write routes +
    `/api/images` + `/api/defaults` (these ARE the Hub R1/R2 route
    proposal), `defaults.ts` seed set, `image-catalog.yaml`, gateway RBAC,
    demo scripts, and the prototype UI as the reference client. Do **not**
-   delete the prototype UI yet — it is the only working playbook-run and
+   delete the prototype UI yet — it is the only working workload-run and
    BranchPanel implementation until Track 2 reaches parity, and PR #35 is
    by charter the *reference stack*.
 4. Follow-up (non-blocking): propose `skills/patternfly-migration/` (this
@@ -71,21 +71,21 @@ Each item is one commit, in this order:
    restructure the Designer effect setState. Everything after this pushes
    against a green baseline. (CI = prettier, eslint ≤20 warnings, tsc via
    prebuild, jest, lockfile check.)
-2. **Playbook runs** (biggest demo gap): REST fns + react-query hooks for
-   `/agentic/agentplaybookruns`, PlaybookRunsPage (list + delete),
-   PlaybookRunDetailPage (stage ladder → links to stage AgentRuns),
-   CreatePlaybookRunModal, and a "Run" action on the playbooks page.
+2. **Workload runs** (biggest demo gap): REST fns + react-query hooks for
+   `/agentic/agentworkloadruns`, WorkloadRunsPage (list + delete),
+   WorkloadRunDetailPage (stage ladder → links to stage AgentRuns),
+   CreateWorkloadRunModal, and a "Run" action on the workloads page.
    Contract types are already on the branch; port the component logic from
    the *post-Track-1* prototype (union param merge, disabled
    non-universal params, stub-app disable, 404 regex).
 3. **Load defaults**: one REST fn + mutation; surface as toolbar action +
-   empty-state action on the Agents and Playbooks pages ("populate this
+   empty-state action on the Agents and Workloads pages ("populate this
    cluster with the reference migration set"). Empty catalog screens are
    the first thing a demo audience sees — this is the fix.
 4. **Run-detail parity**: run-spec panel (application id, target branch,
    model, token-hidden env) + BranchPanel (branch link, commit feed with
    its retry fix, PLAN.md / `.konveyor/analysis.json` presence checks).
-   This is what makes the playbook demo legible — stages visibly chain
+   This is what makes the workload demo legible — stages visibly chain
    through commits on one branch.
 5. **Upstream-readiness pass** (before opening the konveyor PR, not
    before demoing): gate the Agentic sidebar group + routes behind a
@@ -103,16 +103,16 @@ Each item is one commit, in this order:
   server on :9000 fronting the no-auth Hub. Shim on :7080 must postdate
   the crash fixes (restart any process started before them).
 - Script: tackle2-ui → Agentic group → **Load defaults** → Skills/Agents
-  show the seeded set → Agent Designer (catalog dropdown) → Playbooks →
+  show the seeded set → Agent Designer (catalog dropdown) → Workloads →
   launch `java-ee-to-quarkus` against the real `coolstore` app (Hub #1,
   live inventory) → watch stage ladder + branch commits.
 - Runnability caveat (unchanged): actually *executing* the seeded
-  playbooks needs the #53 images (`agent-java`/`agent-nodejs` +
+  workloads needs the #53 images (`agent-java`/`agent-nodejs` +
   `skills:*`) plus ImageVolume support (containerd/kind — this minikube's
   cri-dockerd cannot mount SkillCards; the local fallback is the
   baked-skill image pattern in `skills/README.md` and the goose-bedrock
   path). Until then the mock agent covers the create-flow beat and the
-  RHDH playbook covers the real-run beat.
+  RHDH workload covers the real-run beat.
 
 ## Housekeeping
 
@@ -127,7 +127,7 @@ Each item is one commit, in this order:
 ```
 1. Track 1 commits + push (fork/clients-reference-stack → PR #35)
 2. tackle2-ui lint fix                      ── unblocks every later push
-3. Playbook runs → Load defaults → Run-detail parity   (demo-ready here)
+3. Workload runs → Load defaults → Run-detail parity   (demo-ready here)
 4. Demo rehearsal on :9000 against the live shim
 5. Gate + i18n pass → open konveyor/tackle2-ui PR (links #3504)
 6. Upstream follow-ups: PF skill → #53 skills/, AGENTIC_SHIM_URL operator wiring

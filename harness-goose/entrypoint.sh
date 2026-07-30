@@ -58,14 +58,14 @@ if [ "${GOOSE_PROVIDER:-}" = "aws_bedrock" ] && [ -z "${AWS_ACCESS_KEY_ID:-}" ];
   log "WARNING: aws_bedrock selected but AWS_ACCESS_KEY_ID is unset — pass the credential secret via run.spec.envFrom"
 fi
 
-# 3. Standing prompt + instructions + playbook guide -> .goosehints in the
+# 3. Standing prompt + instructions + workload guide -> .goosehints in the
 #    workspace (sessions run with cwd /workspace; goose reads hints from
-#    there). KONVEYOR_PLAYBOOK_INSTRUCTIONS is the AgentPlaybook Guide the
-#    playbook-run controller injects for every stage (#36).
-if [ -n "${KONVEYOR_PROMPT:-}${KONVEYOR_INSTRUCTIONS:-}${KONVEYOR_PLAYBOOK_INSTRUCTIONS:-}" ]; then
+#    there). KONVEYOR_WORKLOAD_INSTRUCTIONS is the AgentWorkload Guide the
+#    workload-run controller injects for every stage (#36).
+if [ -n "${KONVEYOR_PROMPT:-}${KONVEYOR_INSTRUCTIONS:-}${KONVEYOR_WORKLOAD_INSTRUCTIONS:-}" ]; then
   {
     [ -n "${KONVEYOR_PROMPT:-}" ] && printf '%s\n' "$KONVEYOR_PROMPT"
-    [ -n "${KONVEYOR_PLAYBOOK_INSTRUCTIONS:-}" ] && printf '\n## Playbook guide\n\n%s\n' "$KONVEYOR_PLAYBOOK_INSTRUCTIONS"
+    [ -n "${KONVEYOR_WORKLOAD_INSTRUCTIONS:-}" ] && printf '\n## Workload guide\n\n%s\n' "$KONVEYOR_WORKLOAD_INSTRUCTIONS"
     [ -n "${KONVEYOR_INSTRUCTIONS:-}" ] && printf '\n%s\n' "$KONVEYOR_INSTRUCTIONS"
     true # group status must reflect the redirect, not the last [ -n ] test
   } > /workspace/.goosehints 2>/dev/null && log "wrote /workspace/.goosehints" \
@@ -92,7 +92,7 @@ fi
 
 # 5. Serve ACP (interactive chat runs), or — when the run carries a
 #    mode=batch param — execute the task headlessly and exit so the pod
-#    completes. Playbook stages need run-to-completion semantics: a stage
+#    completes. Workload stages need run-to-completion semantics: a stage
 #    AgentRun only Succeeds when its pod exits 0, and `goose serve` never
 #    exits. The task text is the stage instructions; prompt + guide are
 #    already in .goosehints.

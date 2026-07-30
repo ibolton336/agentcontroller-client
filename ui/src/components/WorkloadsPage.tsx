@@ -21,22 +21,22 @@ import {
 } from "@patternfly/react-core";
 import { ActionsColumn, Table, Tbody, Td, Th, Thead, Tr } from "@patternfly/react-table";
 import CubesIcon from "@patternfly/react-icons/dist/esm/icons/cubes-icon";
-import type { AgentPlaybook } from "@konveyor/agentic-client/contract";
+import type { AgentWorkload } from "@konveyor/agentic-client/contract";
 import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
 import { errorMessage, formatAge, truncate } from "../format";
 import { ReadyLabel, usePolledList } from "./sources";
-import { PlaybookComposerModal } from "./PlaybookComposerModal";
+import { WorkloadComposerModal } from "./WorkloadComposerModal";
 
-interface PlaybooksPageProps {
+interface WorkloadsPageProps {
   api: ShimClient;
 }
 
-export function PlaybooksPage({ api }: PlaybooksPageProps) {
-  const { items: playbooks, error: fetchError, refresh } = usePolledList(
-    () => api.listPlaybooks(), [api],
+export function WorkloadsPage({ api }: WorkloadsPageProps) {
+  const { items: workloads, error: fetchError, refresh } = usePolledList(
+    () => api.listWorkloads(), [api],
   );
   const [createOpen, setCreateOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<AgentPlaybook | null>(null);
+  const [editTarget, setEditTarget] = useState<AgentWorkload | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export function PlaybooksPage({ api }: PlaybooksPageProps) {
     setDeleting(true);
     setDeleteError(null);
     try {
-      await api.deletePlaybook(deleteTarget);
+      await api.deleteWorkload(deleteTarget);
       setDeleteTarget(null);
       void refresh();
     } catch (err) {
@@ -56,7 +56,7 @@ export function PlaybooksPage({ api }: PlaybooksPageProps) {
     }
   };
 
-  const stagesSummary = (pb: AgentPlaybook) => {
+  const stagesSummary = (pb: AgentWorkload) => {
     const names = pb.spec.stages.map((s) => s.name);
     return `${names.length}: ${names.join(" → ")}`;
   };
@@ -64,28 +64,28 @@ export function PlaybooksPage({ api }: PlaybooksPageProps) {
   return (
     <>
       <PageSection>
-        <Title headingLevel="h2" size="xl">Playbooks</Title>
+        <Title headingLevel="h2" size="xl">Workloads</Title>
         <Toolbar inset={{ default: "insetNone" }}>
           <ToolbarContent>
             <ToolbarItem>
-              <Button variant="primary" onClick={() => setCreateOpen(true)}>Create playbook</Button>
+              <Button variant="primary" onClick={() => setCreateOpen(true)}>Create workload</Button>
             </ToolbarItem>
           </ToolbarContent>
         </Toolbar>
         {fetchError && <Alert variant="danger" isInline title="Cannot reach the hub-shim" style={{ marginBottom: "1rem" }}>{fetchError}</Alert>}
-        {playbooks === null && !fetchError ? (
-          <Bullseye><Spinner aria-label="Loading playbooks" /></Bullseye>
-        ) : playbooks !== null && playbooks.length === 0 ? (
-          <EmptyState titleText="No playbooks" headingLevel="h3" icon={CubesIcon}>
-            <EmptyStateBody>No managed AgentPlaybook CRs exist. Create one to compose a multi-stage workflow.</EmptyStateBody>
+        {workloads === null && !fetchError ? (
+          <Bullseye><Spinner aria-label="Loading workloads" /></Bullseye>
+        ) : workloads !== null && workloads.length === 0 ? (
+          <EmptyState titleText="No workloads" headingLevel="h3" icon={CubesIcon}>
+            <EmptyStateBody>No managed AgentWorkload CRs exist. Create one to compose a multi-stage workflow.</EmptyStateBody>
             <EmptyStateFooter>
               <EmptyStateActions>
-                <Button variant="primary" onClick={() => setCreateOpen(true)}>Create playbook</Button>
+                <Button variant="primary" onClick={() => setCreateOpen(true)}>Create workload</Button>
               </EmptyStateActions>
             </EmptyStateFooter>
           </EmptyState>
-        ) : playbooks !== null ? (
-          <Table aria-label="Playbooks" variant="compact">
+        ) : workloads !== null ? (
+          <Table aria-label="Workloads" variant="compact">
             <Thead>
               <Tr>
                 <Th>Name</Th>
@@ -97,7 +97,7 @@ export function PlaybooksPage({ api }: PlaybooksPageProps) {
               </Tr>
             </Thead>
             <Tbody>
-              {playbooks.map((pb) => {
+              {workloads.map((pb) => {
                 const name = pb.metadata.name ?? "";
                 return (
                   <Tr key={pb.metadata.uid ?? name}>
@@ -121,17 +121,17 @@ export function PlaybooksPage({ api }: PlaybooksPageProps) {
       </PageSection>
 
       {(createOpen || editTarget) && (
-        <PlaybookComposerModal api={api} existing={editTarget ?? undefined}
+        <WorkloadComposerModal api={api} existing={editTarget ?? undefined}
           onClose={() => { setCreateOpen(false); setEditTarget(null); }}
           onSaved={() => { setCreateOpen(false); setEditTarget(null); void refresh(); }} />
       )}
 
       <Modal variant={ModalVariant.small} isOpen={deleteTarget !== null}
         onClose={() => { if (!deleting) setDeleteTarget(null); }} aria-labelledby="delete-pb-title">
-        <ModalHeader title="Delete Playbook?" labelId="delete-pb-title" />
+        <ModalHeader title="Delete Workload?" labelId="delete-pb-title" />
         <ModalBody>
           {deleteError && <Alert variant="danger" isInline title="Delete failed" style={{ marginBottom: "1rem" }}>{deleteError}</Alert>}
-          Delete playbook <strong>{deleteTarget}</strong>? Existing playbook runs are unaffected.
+          Delete workload <strong>{deleteTarget}</strong>? Existing workload runs are unaffected.
         </ModalBody>
         <ModalFooter>
           <Button variant="danger" isLoading={deleting} isDisabled={deleting} onClick={() => void confirmDelete()}>Delete</Button>

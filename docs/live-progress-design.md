@@ -163,7 +163,7 @@ ticker, and the transcript grows across poll ticks with no interaction.
 
 ## Later tiers (gated, in order)
 
-- **Stage/item ladder as ACP `plan` updates.** The playbook's items map
+- **Stage/item ladder as ACP `plan` updates.** The workload's items map
   naturally onto `PlanEntry` pending/in_progress/completed. Two gates:
   (a) reconcile with the agreed `.konveyor/result.json` stage-status contract
   (#43/#54) — durable stage status stays in result.json; the ACP stream

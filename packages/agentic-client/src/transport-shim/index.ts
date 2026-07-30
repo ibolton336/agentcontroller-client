@@ -16,15 +16,15 @@
  */
 import type {
   AgentImage,
-  AgentPlaybook,
-  AgentPlaybookRun,
-  AgentPlaybookSpec,
+  AgentWorkload,
+  AgentWorkloadRun,
+  AgentWorkloadSpec,
   AgentResource,
   AgentResourceSpec,
   AgentRun,
   Application,
   CatalogApi,
-  CreatePlaybookRunInput,
+  CreateWorkloadRunInput,
   CreateRunInput,
   LLMProvider,
   RunApi,
@@ -114,26 +114,26 @@ export class ShimClient implements RunApi, CatalogApi {
     await this.send("DELETE", `/api/agentruns/${encodeURIComponent(name)}`);
   }
 
-  // ----------------------------------------------------- RunApi: playbooks
+  // ----------------------------------------------------- RunApi: workloads
 
-  listPlaybooks(): Promise<AgentPlaybook[]> {
-    return this.json<AgentPlaybook[]>("GET", "/api/agentplaybooks");
+  listWorkloads(): Promise<AgentWorkload[]> {
+    return this.json<AgentWorkload[]>("GET", "/api/agentworkloads");
   }
 
-  listPlaybookRuns(): Promise<AgentPlaybookRun[]> {
-    return this.json<AgentPlaybookRun[]>("GET", "/api/agentplaybookruns");
+  listWorkloadRuns(): Promise<AgentWorkloadRun[]> {
+    return this.json<AgentWorkloadRun[]>("GET", "/api/agentworkloadruns");
   }
 
-  getPlaybookRun(name: string): Promise<AgentPlaybookRun> {
-    return this.json<AgentPlaybookRun>("GET", `/api/agentplaybookruns/${encodeURIComponent(name)}`);
+  getWorkloadRun(name: string): Promise<AgentWorkloadRun> {
+    return this.json<AgentWorkloadRun>("GET", `/api/agentworkloadruns/${encodeURIComponent(name)}`);
   }
 
-  createPlaybookRun(input: CreatePlaybookRunInput): Promise<AgentPlaybookRun> {
-    return this.json<AgentPlaybookRun>("POST", "/api/agentplaybookruns", input);
+  createWorkloadRun(input: CreateWorkloadRunInput): Promise<AgentWorkloadRun> {
+    return this.json<AgentWorkloadRun>("POST", "/api/agentworkloadruns", input);
   }
 
-  async deletePlaybookRun(name: string): Promise<void> {
-    await this.send("DELETE", `/api/agentplaybookruns/${encodeURIComponent(name)}`);
+  async deleteWorkloadRun(name: string): Promise<void> {
+    await this.send("DELETE", `/api/agentworkloadruns/${encodeURIComponent(name)}`);
   }
 
   // --------------------------------------------------- CatalogApi: providers
@@ -204,22 +204,22 @@ export class ShimClient implements RunApi, CatalogApi {
     await this.send("DELETE", `/api/agents/${encodeURIComponent(name)}`);
   }
 
-  // ------------------------------------------------ CatalogApi: playbooks
+  // ------------------------------------------------ CatalogApi: workloads
 
-  getPlaybook(name: string): Promise<AgentPlaybook> {
-    return this.json<AgentPlaybook>("GET", `/api/agentplaybooks/${encodeURIComponent(name)}`);
+  getWorkload(name: string): Promise<AgentWorkload> {
+    return this.json<AgentWorkload>("GET", `/api/agentworkloads/${encodeURIComponent(name)}`);
   }
 
-  createPlaybook(name: string, spec: AgentPlaybookSpec): Promise<AgentPlaybook> {
-    return this.json<AgentPlaybook>("POST", "/api/agentplaybooks", { name, spec });
+  createWorkload(name: string, spec: AgentWorkloadSpec): Promise<AgentWorkload> {
+    return this.json<AgentWorkload>("POST", "/api/agentworkloads", { name, spec });
   }
 
-  updatePlaybook(name: string, spec: AgentPlaybookSpec): Promise<AgentPlaybook> {
-    return this.json<AgentPlaybook>("PUT", `/api/agentplaybooks/${encodeURIComponent(name)}`, { spec });
+  updateWorkload(name: string, spec: AgentWorkloadSpec): Promise<AgentWorkload> {
+    return this.json<AgentWorkload>("PUT", `/api/agentworkloads/${encodeURIComponent(name)}`, { spec });
   }
 
-  async deletePlaybook(name: string): Promise<void> {
-    await this.send("DELETE", `/api/agentplaybooks/${encodeURIComponent(name)}`);
+  async deleteWorkload(name: string): Promise<void> {
+    await this.send("DELETE", `/api/agentworkloads/${encodeURIComponent(name)}`);
   }
 
   // --------------------------------------------------------------- ACP URL

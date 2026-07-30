@@ -17,7 +17,7 @@ import { RunsPage } from "./components/RunsPage";
 import { RunDetailPage } from "./components/RunDetailPage";
 import { AgentsPage } from "./components/AgentsPage";
 import { SkillsPage } from "./components/SkillsPage";
-import { PlaybooksPage } from "./components/PlaybooksPage";
+import { WorkloadsPage } from "./components/WorkloadsPage";
 
 const SHIM_URL =
   import.meta.env.VITE_SHIM_URL ??
@@ -28,7 +28,7 @@ type View =
   | { kind: "detail"; runName: string }
   | { kind: "agents" }
   | { kind: "skills" }
-  | { kind: "playbooks" };
+  | { kind: "workloads" };
 
 function viewToHash(v: View): string {
   switch (v.kind) {
@@ -36,7 +36,7 @@ function viewToHash(v: View): string {
     case "detail": return `#/runs/${encodeURIComponent(v.runName)}`;
     case "agents": return "#/agents";
     case "skills": return "#/skills";
-    case "playbooks": return "#/playbooks";
+    case "workloads": return "#/workloads";
   }
 }
 
@@ -44,7 +44,7 @@ function hashToView(hash: string): View {
   const h = hash.startsWith("#") ? hash.slice(1) : hash;
   if (h === "/agents") return { kind: "agents" };
   if (h === "/skills") return { kind: "skills" };
-  if (h === "/playbooks") return { kind: "playbooks" };
+  if (h === "/workloads") return { kind: "workloads" };
   const runMatch = /^\/runs\/(.+)$/.exec(h);
   if (runMatch) {
     try {
@@ -122,8 +122,8 @@ export function App() {
                   onChange={() => navigate({ kind: "agents" })} />
                 <ToggleGroupItem text="Skills" isSelected={navTab === "skills"}
                   onChange={() => navigate({ kind: "skills" })} />
-                <ToggleGroupItem text="Playbooks" isSelected={navTab === "playbooks"}
-                  onChange={() => navigate({ kind: "playbooks" })} />
+                <ToggleGroupItem text="Workloads" isSelected={navTab === "workloads"}
+                  onChange={() => navigate({ kind: "workloads" })} />
               </ToggleGroup>
             </PageSection>
           )}
@@ -137,7 +137,7 @@ export function App() {
           )}
           {view.kind === "agents" && <AgentsPage api={api.client} />}
           {view.kind === "skills" && <SkillsPage api={api.client} />}
-          {view.kind === "playbooks" && <PlaybooksPage api={api.client} />}
+          {view.kind === "workloads" && <WorkloadsPage api={api.client} />}
         </>
       )}
     </Page>

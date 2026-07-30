@@ -158,11 +158,11 @@ async function main(): Promise<void> {
       createRun: unused,
       deleteRun: unused,
       getRun: () => Promise.resolve(sequence[Math.min(i++, sequence.length - 1)] as AgentRun),
-      listPlaybooks: unused,
-      listPlaybookRuns: unused,
-      getPlaybookRun: unused,
-      createPlaybookRun: unused,
-      deletePlaybookRun: unused,
+      listWorkloads: unused,
+      listWorkloadRuns: unused,
+      getWorkloadRun: unused,
+      createWorkloadRun: unused,
+      deleteWorkloadRun: unused,
     };
   };
   const run = (status: AgentRun["status"]): AgentRun => ({

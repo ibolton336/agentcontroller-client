@@ -1,13 +1,13 @@
-# Harness mental model: one end-to-end playbook run
+# Harness mental model: one end-to-end workload run
 
 How the PR #53 `migration-harness` operates and what it touches across a three-stage
-`AgentPlaybookRun`. Companion to [quarkus-demo-flow-and-design.md](quarkus-demo-flow-and-design.md),
+`AgentWorkloadRun`. Companion to [quarkus-demo-flow-and-design.md](quarkus-demo-flow-and-design.md),
 which carries the full code-level walkthrough; file references below (`harness/...`,
 `internal/controller/...`) are paths in the #53 tree using that doc's shorthand.
 
 Scope note: this describes the **#53 self-serving harness** (the one baked into
 `quay.io/konveyor/agent-java:dev` and verified on run `fork-w8vfb`) composed with the
-**#36 playbook controller**. The `ACMAIN/harness/` tree is the old pre-#53 harness
+**#36 workload controller**. The `ACMAIN/harness/` tree is the old pre-#53 harness
 (`GIT_TARGET_BRANCH`, CLI-arg request) — ignore it.
 
 The one-sentence version: **the harness is a self-serving git-and-Hub chauffeur — it
@@ -17,11 +17,11 @@ connecting the stages.**
 
 ## 1. The end-to-end run
 
-A playbook run is three sequential pods stitched together by a git branch.
+A workload run is three sequential pods stitched together by a git branch.
 
 ```mermaid
 flowchart TD
-    C["Playbook controller<br/>runs stages in order"]
+    C["Workload controller<br/>runs stages in order"]
     A["Assess<br/>writes PLAN.md"]
     R["Remediate<br/>executes PLAN.md"]
     V["Validate<br/>compile, fix, test"]
@@ -37,17 +37,17 @@ flowchart TD
     V <--> B
 ```
 
-The controller side is deliberately dumb (`agentplaybookrun_controller.go:305-343`):
+The controller side is deliberately dumb (`agentworkloadrun_controller.go:305-343`):
 
-- `AgentPlaybookRun.spec` is **immutable** (CEL `self == oldSelf`) and won't start
-  until the playbook is Ready (all stage Agents Ready).
+- `AgentWorkloadRun.spec` is **immutable** (CEL `self == oldSelf`) and won't start
+  until the workload is Ready (all stage Agents Ready).
 - Strictly sequential: current stage = first non-Succeeded child `AgentRun`; stage
   success = child AgentRun Succeeded = Sandbox `Finished=True/PodSucceeded`
   (`agentrun_controller.go:597-628`).
 - Any stage failure fails the whole run immediately — **no retries**
-  (`agentplaybookrun_controller.go:250-262`).
+  (`agentworkloadrun_controller.go:250-262`).
 - Each stage AgentRun gets `models`/`params`/`envFrom` copied identically from the
-  playbook run, plus `env` = `KONVEYOR_PLAYBOOK_INSTRUCTIONS=<guide>` followed by
+  workload run, plus `env` = `KONVEYOR_WORKLOAD_INSTRUCTIONS=<guide>` followed by
   `pbRun.spec.env` verbatim — the only channel for `HUB_BASE_URL`, `APP_ID`,
   `TARGET_BRANCH`, `HUB_TOKEN`.
 - Each stage pod is brand new with a fresh 10Gi emptyDir at `/workspace`. There is
@@ -125,13 +125,13 @@ flowchart TD
    inter-stage handoff. `TARGET_BRANCH` must differ from the Hub source branch.
 3. **Ground** — fetch Hub analysis Insights and write
    `<workdir>/.konveyor/analysis.json` (warn-only, `main.go:287-315`). The
-   playbook guide tells the agent to read this file; grounding is file-based.
+   workload guide tells the agent to read this file; grounding is file-based.
 4. **Launch** — `goose serve --port 4000 --with-builtin developer`, open the ACP
    session, and start the filesystem watcher that auto-commits
    ("konveyor: auto-commit progress") after 30s quiet periods with warn-only push
    errors (`main.go:130-143`).
 5. **Work** — one `session/prompt` whose text is the concatenation of
-   `KONVEYOR_PROMPT` (Agent persona) + `KONVEYOR_PLAYBOOK_INSTRUCTIONS` (playbook
+   `KONVEYOR_PROMPT` (Agent persona) + `KONVEYOR_WORKLOAD_INSTRUCTIONS` (workload
    guide) + all `SKILL.md` files + `KONVEYOR_INSTRUCTIONS` (stage task)
    (`buildPrompt`, `main.go:222-246`), under a tool-call budget of
    `KONVEYOR_PARAM_MAX_TURNS` (default 200).

@@ -17,7 +17,7 @@
  *   GET    /api/llmproviders[/:name]    -> 200 LLMProvider[] | LLMProvider | 404
  *   GET    /api/skillcards[/:name]      -> 200 SkillCard[] | SkillCard | 404
  *   GET    /api/skillcollections[/:name]-> 200 SkillCollection[] | SkillCollection | 404
- *   GET    /api/agentplaybooks[/:name]  -> 200 AgentPlaybook[] | AgentPlaybook | 404
+ *   GET    /api/agentworkloads[/:name]  -> 200 AgentWorkload[] | AgentWorkload | 404
  *   GET    /api/images                  -> 200 AgentImage[] (image catalog)
  *   POST   /api/defaults               -> 200 seed result (create-only)
  *   GET    /api/agentruns               -> 200 AgentRun[]
@@ -123,21 +123,21 @@ const WRITABLE: Record<string, string> = {
   [PLURALS.Agent]: "Agent",
   [PLURALS.SkillCard]: "SkillCard",
   [PLURALS.SkillCollection]: "SkillCollection",
-  [PLURALS.AgentPlaybook]: "AgentPlaybook",
+  [PLURALS.AgentWorkload]: "AgentWorkload",
 };
 
 /** Resources served read-only as full CRs: list + get by name. */
 const READ_ONLY: Record<string, string> = {
   ...WRITABLE,
   [PLURALS.LLMProvider]: "LLMProvider",
-  [PLURALS.AgentPlaybookRun]: "AgentPlaybookRun",
+  [PLURALS.AgentWorkloadRun]: "AgentWorkloadRun",
 };
 
 const LIST_LABEL_SELECTORS: Record<string, string> = {
   [PLURALS.Agent]: `${MANAGED_LABEL}=true`,
   [PLURALS.SkillCard]: `${MANAGED_LABEL}=true`,
   [PLURALS.SkillCollection]: `${MANAGED_LABEL}=true`,
-  [PLURALS.AgentPlaybook]: `${MANAGED_LABEL}=true`,
+  [PLURALS.AgentWorkload]: `${MANAGED_LABEL}=true`,
 };
 
 /**
@@ -918,7 +918,7 @@ server.on("upgrade", (req, socket, head) => {
 server.listen(PORT, HOST, () => {
   log(`SHIM API v1 listening on http://${HOST}:${PORT} (namespace=${NAMESPACE}, acp-dial=${ACP_DIAL})`);
   log(
-    `routes: GET /healthz | GET /api/{applications,images} | POST /api/defaults | CRUD /api/{agents,skillcards,skillcollections,agentplaybooks}[/:name] | GET /api/{llmproviders,agentplaybookruns}[/:name] | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
+    `routes: GET /healthz | GET /api/{applications,images} | POST /api/defaults | CRUD /api/{agents,skillcards,skillcollections,agentworkloads}[/:name] | GET /api/{llmproviders,agentworkloadruns}[/:name] | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
   );
 });
 
