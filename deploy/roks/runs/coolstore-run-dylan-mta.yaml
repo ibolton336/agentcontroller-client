@@ -1,0 +1,29 @@
+# AgentWorkloadRun for the dylan-mta cluster ONLY.
+# On its Hub, coolstore is application id 2 (id 1 was consumed by a deleted
+# probe app; Postgres does not reuse ids). ROKS uses
+# runs/coolstore-run-roks.yaml (app id 1, different branch).
+# Spec is immutable; models + env are copied to ALL stages. Fresh run =
+# new metadata.name + new TARGET_BRANCH.
+apiVersion: konveyor.io/v1alpha1
+kind: AgentWorkloadRun
+metadata:
+  name: coolstore-quarkus-mta-1
+  namespace: konveyor-agents
+  labels:
+    konveyor.io/managed: "true"
+spec:
+  workloadRef: coolstore-quarkus-demo
+  models:                                  # REQUIRED by hand — no controller defaults these
+    - role: primary
+      provider: aws-bedrock
+      model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  params:
+    - name: max_turns
+      value: "150"                         # declared on the (single) Agent, so valid for every stage
+  env:                                     # copied verbatim to every stage pod, appended last
+    - name: HUB_BASE_URL
+      value: http://tackle-hub.konveyor-tackle.svc:8080
+    - name: APP_ID
+      value: "2"                           # coolstore on the dylan-mta Hub
+    - name: TARGET_BRANCH
+      value: quarkus-migration-mta-1       # ONE branch for all three stages; must differ from the Hub source branch (main); fresh per attempt

@@ -1,0 +1,217 @@
+# Demo stack for the ROKS cluster `demo-agentic-controller`.
+#
+# Differences from deploy/manifests (the minikube-shaped kustomization):
+#   - images come from the cluster-internal registry, built by the
+#     BuildConfigs in this namespace (no external registry, native amd64)
+#   - the gateway gets HUB_URL pointing at the in-cluster Konveyor Hub
+#   - tackle2-ui (feature/agent-runs) is deployed here rather than run as a
+#     laptop dev server, and proxies /agentic -> the gateway
+#   - exposure is OpenShift Routes with edge TLS, not an nginx Ingress
+#
+# Auth is deliberately absent (see docs/real-cluster-migration.md G8): the
+# gateway has none of its own, and the Hub runs with feature_auth_required
+# false. The Routes are reachable by anyone who knows the hostname.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentic-gateway
+  namespace: konveyor-agents
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentic-gateway
+  namespace: konveyor-agents
+rules:
+  - apiGroups: ["konveyor.io"]
+    resources: ["agentruns", "agentworkloadruns"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["konveyor.io"]
+    resources: ["agents", "agentworkloads", "llmproviders", "skillcards", "skillcollections"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentic-gateway
+  namespace: konveyor-agents
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentic-gateway
+subjects:
+  - kind: ServiceAccount
+    name: agentic-gateway
+    namespace: konveyor-agents
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentic-gateway
+  namespace: konveyor-agents
+  labels:
+    app.kubernetes.io/name: agentic-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentic-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentic-gateway
+    spec:
+      serviceAccountName: agentic-gateway
+      containers:
+        - name: gateway
+          image: image-registry.openshift-image-registry.svc:5000/konveyor-agents/agentic-gateway:demo
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 7080
+              name: http
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            # The shim reads the Hub for its application list; without this it
+            # falls back to the offline stub applications.
+            - name: HUB_URL
+              value: http://tackle-hub.konveyor-tackle.svc:8080
+            # In-cluster: dial <sandbox>.<ns>.svc:4000 directly rather than
+            # tunnelling through a port-forward.
+            - name: ACP_DIAL
+              value: direct
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentic-gateway
+  namespace: konveyor-agents
+  labels:
+    app.kubernetes.io/name: agentic-gateway
+spec:
+  selector:
+    app.kubernetes.io/name: agentic-gateway
+  ports:
+    - name: http
+      port: 7080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tackle2-ui
+  namespace: konveyor-agents
+  labels:
+    app.kubernetes.io/name: tackle2-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tackle2-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tackle2-ui
+    spec:
+      containers:
+        - name: ui
+          image: image-registry.openshift-image-registry.svc:5000/konveyor-agents/tackle2-ui:demo
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: TACKLE_HUB_URL
+              value: http://tackle-hub.konveyor-tackle.svc:8080
+            # server/src/proxies.js rewrites /agentic -> /api against this
+            # target, WebSocket upgrades included.
+            - name: AGENTIC_SHIM_URL
+              value: http://agentic-gateway.konveyor-agents.svc:7080
+            - name: AUTH_REQUIRED
+              value: "false"
+            - name: RWX_SUPPORTED
+              value: "false"
+            - name: NODE_EXTRA_CA_CERTS
+              value: /opt/app-root/src/ca.crt
+            - name: PORT
+              value: "8080"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tackle2-ui
+  namespace: konveyor-agents
+  labels:
+    app.kubernetes.io/name: tackle2-ui
+spec:
+  selector:
+    app.kubernetes.io/name: tackle2-ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: tackle2-ui
+  namespace: konveyor-agents
+spec:
+  to:
+    kind: Service
+    name: tackle2-ui
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+# Direct access to the shim API, for smoke tests and for driving runs without
+# the console. Not needed by the UI itself — that proxies server-side.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: agentic-gateway
+  namespace: konveyor-agents
+spec:
+  to:
+    kind: Service
+    name: agentic-gateway
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

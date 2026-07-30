@@ -8,12 +8,17 @@ WORKDIR /app
 
 # Install each package's deps (tsx runs the TypeScript sources directly,
 # matching the repo's dev style; dev deps are required for that).
+# The shim imports sources from BOTH sibling packages — agentrun-client for
+# kube/portforward, agentic-client for the shared contract types.
 COPY packages/agentrun-client/package*.json packages/agentrun-client/
+COPY packages/agentic-client/package*.json packages/agentic-client/
 COPY packages/hub-shim/package*.json packages/hub-shim/
 RUN cd packages/agentrun-client && npm ci --no-audit --no-fund \
+ && cd ../agentic-client && npm ci --no-audit --no-fund \
  && cd ../hub-shim && npm ci --no-audit --no-fund
 
 COPY packages/agentrun-client packages/agentrun-client
+COPY packages/agentic-client packages/agentic-client
 COPY packages/hub-shim packages/hub-shim
 
 # In-cluster defaults: bind all interfaces; ACP dial mode auto-detects

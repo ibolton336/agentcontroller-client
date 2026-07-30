@@ -1,0 +1,181 @@
+# ImageStreams + binary BuildConfigs for every demo image, native amd64 on
+# the cluster. Companion to build-images.sh, which stages a context per image
+# and runs `oc start-build <name> --from-dir=...` against these.
+#
+# All outputs use the :demo tag — the convention agentic-stack.yaml and
+# agent-java.Containerfile's BASE_IMAGE default already assume.
+#
+# Why builds happen here at all (and not `docker buildx` on the Mac): the
+# emulated x86_64 UBI10 dnf fails TLS under QEMU — see build-images.sh header
+# and docs/real-cluster-migration.md G1.
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: agent-base
+  namespace: konveyor-agents
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: agent-java
+  namespace: konveyor-agents
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: agentic-controller
+  namespace: konveyor-agents
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: agentic-gateway
+  namespace: konveyor-agents
+spec:
+  lookupPolicy:
+    local: true
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: tackle2-ui
+  namespace: konveyor-agents
+spec:
+  lookupPolicy:
+    local: true
+---
+# Context staged by build-images.sh: harness/ + images/agent-base/Containerfile.
+# The repo root is NOT usable as-is: its .dockerignore excludes images/, which
+# hides the Containerfile from dockerfilePath resolution.
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: agent-base
+  namespace: konveyor-agents
+spec:
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: images/agent-base/Containerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: agent-base:demo
+  resources:
+    requests: {cpu: "1", memory: 2Gi}
+    limits: {cpu: "3", memory: 6Gi}
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3
+---
+# Context: deploy/roks/agent-java.Containerfile (as ./Containerfile) + skills/
+# (plan, execute, verify, javaee-to-quarkus from the controller repo;
+# patternfly-migration from this one). FROM defaults to agent-base:demo in the
+# internal registry.
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: agent-java
+  namespace: konveyor-agents
+spec:
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Containerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: agent-java:demo
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "2", memory: 4Gi}
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3
+---
+# Context: git archive of the controller repo (kubebuilder Dockerfile at root).
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: agentic-controller
+  namespace: konveyor-agents
+spec:
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: agentic-controller:demo
+  resources:
+    requests: {cpu: "1", memory: 2Gi}
+    limits: {cpu: "3", memory: 4Gi}
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3
+---
+# Context: git archive of this repo (minus slides/, testbed/).
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: agentic-gateway
+  namespace: konveyor-agents
+spec:
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: deploy/gateway/Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: agentic-gateway:demo
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "2", memory: 4Gi}
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3
+---
+# Context: git archive of tackle2-ui feature/agent-runs (minus cypress/).
+# The webpack production build is the heaviest of the five.
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: tackle2-ui
+  namespace: konveyor-agents
+spec:
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: tackle2-ui:demo
+  resources:
+    requests: {cpu: "1", memory: 2Gi}
+    limits: {cpu: "3", memory: 6Gi}
+  successfulBuildsHistoryLimit: 3
+  failedBuildsHistoryLimit: 3

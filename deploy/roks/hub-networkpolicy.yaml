@@ -1,0 +1,25 @@
+# The konveyor operator drops a deny-all NetworkPolicy set into its namespace
+# (tackle-deny-all + narrow allows), which silently blocks the agentic
+# gateway and every sandbox pod in konveyor-agents from reaching the Hub API.
+# The failure mode is a hang/timeout on http://tackle-hub.<ns>.svc:8080, not
+# an error. Applies to BOTH demo clusters (ROKS and dylan-mta) — the operator
+# behaves the same on each.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-konveyor-agents-to-hub
+  namespace: konveyor-tackle
+spec:
+  podSelector:
+    matchLabels:
+      role: tackle-hub
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: konveyor-agents
+      ports:
+        - protocol: TCP
+          port: 8080
