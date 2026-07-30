@@ -19,7 +19,11 @@
  *   GET    /api/skillcollections[/:name]-> 200 SkillCollection[] | SkillCollection | 404
  *   GET    /api/agentworkloads[/:name]  -> 200 AgentWorkload[] | AgentWorkload | 404
  *   GET    /api/images                  -> 200 AgentImage[] (image catalog)
- *   POST   /api/defaults               -> 200 seed result (create-only)
+ *   POST   /api/defaults[?dryRun=true]  -> 200 seed result (create-only;
+ *                                          agents bind to the cluster's real
+ *                                          LLMProvider and catalog images;
+ *                                          dryRun computes the same plan and
+ *                                          statuses without writing)
  *   GET    /api/agentruns               -> 200 AgentRun[]
  *   POST   /api/agentruns               -> 201 AgentRun (generateName "ui-")
  *   GET    /api/agentruns/:name         -> 200 AgentRun | 404
@@ -58,7 +62,7 @@ import {
   type AgentImage,
   type Application,
 } from "../../agentic-client/src/contract/index.js";
-import { SEED_RESOURCES, KIND_TO_PLURAL } from "./defaults.js";
+import { planSeed, KIND_TO_PLURAL, type SeedPlan } from "./defaults.js";
 
 const PORT = Number(process.env.PORT ?? 7080);
 const HOST = process.env.HOST ?? "127.0.0.1";
@@ -171,12 +175,25 @@ const STUB_APPLICATIONS: Application[] = [
 
 // ------------------------------------------------------- image catalog
 
+/**
+ * Where the builtin (ConfigMap-less) catalog's image refs point. The quay.io
+ * defaults match the laptop/minikube dev convention (locally-built :dev
+ * tags); real clusters set these to a registry they can actually pull from —
+ * e.g. on OpenShift: AGENT_IMAGE_PREFIX=image-registry.openshift-image-registry.svc:5000/konveyor-agents
+ * AGENT_IMAGE_TAG=demo. A cluster-authored agent-image-catalog ConfigMap
+ * overrides all of this per image.
+ */
+const IMAGE_PREFIX = (process.env.AGENT_IMAGE_PREFIX ?? "quay.io/konveyor").replace(/\/+$/, "");
+const IMAGE_TAG = process.env.AGENT_IMAGE_TAG ?? "dev";
+
+const imageRef = (name: string) => `${IMAGE_PREFIX}/${name}:${IMAGE_TAG}`;
+
 const BUILTIN_IMAGES: AgentImage[] = [
-  { name: "agent-base", image: "quay.io/konveyor/agent-base:dev", displayName: "Agent base", description: "Harness entrypoint, git, goose runtime. No language toolchain.", languages: [], parent: null },
-  { name: "agent-java", image: "quay.io/konveyor/agent-java:dev", displayName: "Java agent", description: "JDK 21, Maven 3.9, Gradle 8. For Java EE / Jakarta / Quarkus migrations.", languages: ["java"], parent: "agent-base" },
-  { name: "agent-go", image: "quay.io/konveyor/agent-go:dev", displayName: "Go agent", description: "Go 1.22 toolchain. For Go module migrations and refactoring.", languages: ["go"], parent: "agent-base" },
-  { name: "agent-csharp", image: "quay.io/konveyor/agent-csharp:dev", displayName: "C# agent", description: ".NET 8 SDK. For .NET Framework to .NET migrations.", languages: ["csharp"], parent: "agent-base" },
-  { name: "agent-nodejs", image: "quay.io/konveyor/agent-nodejs:dev", displayName: "Node.js agent", description: "Node.js 20 LTS and npm. For frontend framework migrations (PatternFly, React).", languages: ["javascript", "typescript"], parent: "agent-base" },
+  { name: "agent-base", image: imageRef("agent-base"), displayName: "Agent base", description: "Harness entrypoint, git, goose runtime. No language toolchain.", languages: [], parent: null },
+  { name: "agent-java", image: imageRef("agent-java"), displayName: "Java agent", description: "JDK 21, Maven 3.9, Gradle 8. For Java EE / Jakarta / Quarkus migrations.", languages: ["java"], parent: "agent-base" },
+  { name: "agent-go", image: imageRef("agent-go"), displayName: "Go agent", description: "Go 1.22 toolchain. For Go module migrations and refactoring.", languages: ["go"], parent: "agent-base" },
+  { name: "agent-csharp", image: imageRef("agent-csharp"), displayName: "C# agent", description: ".NET 8 SDK. For .NET Framework to .NET migrations.", languages: ["csharp"], parent: "agent-base" },
+  { name: "agent-nodejs", image: imageRef("agent-nodejs"), displayName: "Node.js agent", description: "Node.js 20 LTS and npm. For frontend framework migrations (PatternFly, React).", languages: ["javascript", "typescript"], parent: "agent-base" },
 ];
 
 const IMAGE_CATALOG_CM = "agent-image-catalog";
@@ -194,6 +211,59 @@ async function getImageCatalog(): Promise<{ source: "configmap" | "builtin"; ima
   } catch {
     return { source: "builtin", images: BUILTIN_IMAGES };
   }
+}
+
+// ------------------------------------------------------- seed provider
+
+/**
+ * Which LLMProvider seeded agents bind to. Providers need real credentials,
+ * so POST /api/defaults never creates one — it binds to what the install
+ * actually created. Unset = discover (prefer a Ready provider).
+ */
+const SEED_PROVIDER = process.env.SEED_PROVIDER;
+
+interface ProviderCR {
+  apiVersion?: string;
+  kind?: string;
+  metadata?: { name?: string };
+  status?: { conditions?: { type?: string; status?: string }[] };
+}
+
+const providerReady = (p: ProviderCR): boolean =>
+  (p.status?.conditions ?? []).some((c) => c.type === "Ready" && c.status === "True");
+
+export interface SeedProviderInfo {
+  name: string;
+  source: "env" | "discovered";
+  ready: boolean;
+}
+
+/** Resolved provider, or the reason there is none (drives per-entry skips). */
+interface SeedProviderResolution {
+  info?: SeedProviderInfo;
+  reason?: string;
+}
+
+async function resolveSeedProvider(): Promise<SeedProviderResolution> {
+  if (SEED_PROVIDER) {
+    try {
+      const p = (await getCustom(PLURALS.LLMProvider, "LLMProvider", SEED_PROVIDER)) as ProviderCR;
+      return { info: { name: SEED_PROVIDER, source: "env", ready: providerReady(p) } };
+    } catch (err) {
+      if (k8sStatusCode(err) !== 404) throw err;
+      return {
+        reason: `LLMProvider "${SEED_PROVIDER}" (SEED_PROVIDER) not found in namespace ${NAMESPACE} — create it and re-seed`,
+      };
+    }
+  }
+  const providers = await listCustom<ProviderCR>(PLURALS.LLMProvider, "LLMProvider");
+  const pick = providers.find(providerReady) ?? providers[0];
+  if (!pick?.metadata?.name) {
+    return {
+      reason: `no LLMProvider in namespace ${NAMESPACE} — create one (with real credentials) and re-seed`,
+    };
+  }
+  return { info: { name: pick.metadata.name, source: "discovered", ready: providerReady(pick) } };
 }
 
 interface HubApp {
@@ -512,8 +582,28 @@ async function handleApi(
 
   if (pathname === "/api/defaults") {
     if (method !== "POST") return sendError(res, 405, "method not allowed");
-    const results: { kind: string; name: string; status: "created" | "exists" }[] = [];
-    for (const resource of SEED_RESOURCES) {
+    const query = new URL(req.url ?? "/", "http://localhost").searchParams;
+    const dryRun = /^(1|true)$/i.test(query.get("dryRun") ?? "");
+
+    // Resolve what THIS cluster can supply, then plan against it.
+    const provider = await resolveSeedProvider();
+    const catalog = await getImageCatalog();
+    const catalogImage = (name: string) => catalog.images.find((i) => i.name === name)?.image;
+    const plan: SeedPlan = planSeed({
+      provider: provider.info?.name,
+      noProviderReason: provider.reason,
+      images: {
+        java: catalogImage("agent-java"),
+        nodejs: catalogImage("agent-nodejs"),
+        skillJavaEe: imageRef("skill-javaee-to-quarkus"),
+        skillPatternFly: imageRef("skill-patternfly-migration"),
+      },
+    });
+
+    // In a dry run "created" means "would be created" — statuses are computed
+    // from the same existence checks, but nothing is written.
+    const results: { kind: string; name: string; status: "created" | "exists" | "skipped"; reason?: string }[] = [];
+    for (const resource of plan.resources) {
       const plural = KIND_TO_PLURAL[resource.kind];
       if (!plural) {
         warn(`defaults: unknown kind "${resource.kind}" — skipping ${resource.metadata.name}`);
@@ -530,13 +620,15 @@ async function handleApi(
         results.push({ kind: resource.kind, name: resource.metadata.name, status: "exists" });
       } catch (err) {
         if (k8sStatusCode(err) !== 404) throw err;
-        await custom.createNamespacedCustomObject({
-          group: GROUP,
-          version: VERSION,
-          namespace: NAMESPACE,
-          plural,
-          body: resource,
-        });
+        if (!dryRun) {
+          await custom.createNamespacedCustomObject({
+            group: GROUP,
+            version: VERSION,
+            namespace: NAMESPACE,
+            plural,
+            body: resource,
+          });
+        }
         results.push({ kind: resource.kind, name: resource.metadata.name, status: "created" });
       }
     }
@@ -548,31 +640,47 @@ async function handleApi(
         results.push({ kind: "ConfigMap", name: IMAGE_CATALOG_CM, status: "exists" });
       } catch (cmErr) {
         if (k8sStatusCode(cmErr) !== 404) throw cmErr;
-        await core.createNamespacedConfigMap({
-          namespace: NAMESPACE,
-          body: {
-            metadata: {
-              name: IMAGE_CATALOG_CM,
-              namespace: NAMESPACE,
-              labels: { "konveyor.io/managed": "true", "konveyor.io/catalog": "images" },
+        if (!dryRun) {
+          await core.createNamespacedConfigMap({
+            namespace: NAMESPACE,
+            body: {
+              metadata: {
+                name: IMAGE_CATALOG_CM,
+                namespace: NAMESPACE,
+                labels: { "konveyor.io/managed": "true", "konveyor.io/catalog": "images" },
+              },
+              data: Object.fromEntries(
+                BUILTIN_IMAGES.map((img) => [
+                  img.name,
+                  JSON.stringify({ image: img.image, displayName: img.displayName, description: img.description, languages: img.languages, parent: img.parent }),
+                ]),
+              ),
             },
-            data: Object.fromEntries(
-              BUILTIN_IMAGES.map((img) => [
-                img.name,
-                JSON.stringify({ image: img.image, displayName: img.displayName, description: img.description, languages: img.languages, parent: img.parent }),
-              ]),
-            ),
-          },
-        });
+          });
+        }
         results.push({ kind: "ConfigMap", name: IMAGE_CATALOG_CM, status: "created" });
       }
     } catch (err) {
       warn(`defaults: failed to seed image catalog ConfigMap: ${errorMessage(err)}`);
     }
+    for (const s of plan.skipped) {
+      results.push({ kind: s.kind, name: s.name, status: "skipped", reason: s.reason });
+    }
     const seeded = results.filter((r) => r.status === "created").length;
     const existed = results.filter((r) => r.status === "exists").length;
-    log(`defaults: ${seeded} created, ${existed} existed`);
-    return sendJson(res, 200, { seeded, existed, results });
+    const skippedCount = results.filter((r) => r.status === "skipped").length;
+    log(
+      `defaults${dryRun ? " (dry run)" : ""}: ${seeded} created, ${existed} existed, ` +
+        `${skippedCount} skipped (provider=${provider.info?.name ?? "none"})`,
+    );
+    return sendJson(res, 200, {
+      seeded,
+      existed,
+      skipped: skippedCount,
+      dryRun,
+      provider: provider.info ?? null,
+      results,
+    });
   }
 
   if (pathname === "/api/applications") {

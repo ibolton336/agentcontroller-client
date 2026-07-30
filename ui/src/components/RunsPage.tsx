@@ -112,7 +112,11 @@ export function RunsPage({ api, onOpenRun }: RunsPageProps) {
           <Alert
             variant="info"
             isInline
-            title={`Defaults: ${defaultsResult.seeded} created, ${defaultsResult.existed} already existed`}
+            title={`Defaults: ${defaultsResult.seeded} created, ${defaultsResult.existed} already existed${
+              defaultsResult.skipped
+                ? `, ${defaultsResult.skipped} skipped (not available on this cluster)`
+                : ""
+            }`}
             style={{ marginBottom: "1rem" }}
           />
         )}

@@ -92,7 +92,12 @@ export class ShimClient implements RunApi, CatalogApi {
     return { source, images };
   }
 
-  async seedDefaults(): Promise<{ seeded: number; existed: number; results: unknown[] }> {
+  async seedDefaults(): Promise<{
+    seeded: number;
+    existed: number;
+    skipped: number;
+    results: unknown[];
+  }> {
     return this.json("POST", "/api/defaults");
   }
 

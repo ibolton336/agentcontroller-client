@@ -39,6 +39,24 @@ Prereqs already on the cluster: the agentic-controller
 (`manifests/controller/install.yaml`), Agent Sandbox, and the sample
 Agents/LLMProviders (`hack/demo-up.sh` converges all of that).
 
+### Gateway env knobs (seeding)
+
+`POST /api/defaults` plans against what the cluster actually has — it
+binds seeded agents to a real LLMProvider and to catalog images, and
+reports anything the cluster can't supply as `skipped` instead of
+creating broken resources. Tune per cluster on the gateway Deployment:
+
+| env | default | meaning |
+| --- | --- | --- |
+| `SEED_PROVIDER` | *(discover)* | LLMProvider name seeded agents bind to. Unset = prefer a Ready provider in the namespace. |
+| `AGENT_IMAGE_PREFIX` | `quay.io/konveyor` | Registry/namespace prefix for builtin catalog + skill image refs. On OpenShift with in-cluster builds: `image-registry.openshift-image-registry.svc:5000/konveyor-agents`. |
+| `AGENT_IMAGE_TAG` | `dev` | Tag for those refs (e.g. `demo` for the ROKS BuildConfig outputs). |
+
+A cluster-authored `agent-image-catalog` ConfigMap overrides the builtin
+catalog entirely — list only images the cluster can pull; agent sets
+whose image is missing from it are skipped. `POST /api/defaults?dryRun=true`
+returns the same plan and statuses without writing anything.
+
 ## Access
 
 With an ingress (see `ingress.example.yaml`) — or without one:

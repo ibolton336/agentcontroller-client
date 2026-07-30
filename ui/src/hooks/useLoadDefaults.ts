@@ -4,6 +4,7 @@ import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
 interface SeedResult {
   seeded: number;
   existed: number;
+  skipped: number;
   results: unknown[];
 }
 

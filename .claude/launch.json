@@ -39,6 +39,15 @@
       }
     },
     {
+      "name": "demo-ui-worktree",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "ui", "--", "--port", "5179", "--strictPort"],
+      "port": 5179,
+      "env": {
+        "VITE_SHIM_URL": "http://127.0.0.1:7091"
+      }
+    },
+    {
       "name": "demo-shim",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "start", "--prefix", "packages/hub-shim"],

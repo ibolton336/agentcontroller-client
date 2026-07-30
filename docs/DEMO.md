@@ -22,13 +22,21 @@ is Agent Sandbox v0.5.0, the agent is goose 1.39 on AWS Bedrock.
 ### API-seeded defaults
 
 The UI's **Load defaults** button (toolbar) calls `POST /api/defaults`,
-which seeds 14 domain resources + the image catalog ConfigMap into the
-cluster (create-only — re-seeding never clobbers edits):
+which plans a seed set against what the cluster actually has and applies
+it create-only (re-seeding never clobbers edits):
 
-- **Provider**: `gcp-vertex-ai` (shared)
-- **Java EE → Quarkus set**: 4 SkillCards, 3 Agents on `agent-java`, 1 AgentWorkload
+- **Java EE → Quarkus set**: 1 SkillCard, 3 Agents on `agent-java`, 1 AgentWorkload
 - **PatternFly 5→6 set**: 1 SkillCard, 3 Agents on `agent-nodejs`, 1 AgentWorkload
 - **Image catalog**: `agent-image-catalog` ConfigMap (PR #53 hierarchy)
+
+Seeded agents bind to the cluster's real LLMProvider (`SEED_PROVIDER`
+env pins one; unset = discover, preferring Ready) and take images from
+the resolved catalog (`AGENT_IMAGE_PREFIX`/`AGENT_IMAGE_TAG` point the
+builtin refs at a pullable registry; a cluster-authored ConfigMap wins).
+No LLMProvider is ever seeded — providers need real credentials and are
+install-time infrastructure. A set whose provider or image the cluster
+can't supply is reported `skipped` with a reason instead of being
+created broken. `?dryRun=true` returns the same plan without writing.
 
 The PatternFly-migration domain skill lives in `skills/patternfly-migration/`.
 
