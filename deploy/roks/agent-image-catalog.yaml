@@ -1,0 +1,29 @@
+# Image catalog for this cluster. POST /api/defaults plans its seed sets
+# against this ConfigMap: a set whose image the catalog lacks is skipped,
+# not created broken. Deliberately java-only — the nodejs/go/csharp agent
+# images were never built here, so the PatternFly seed set skips honestly.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-image-catalog
+  namespace: konveyor-agents
+  labels:
+    konveyor.io/managed: "true"
+    konveyor.io/catalog: "images"
+data:
+  agent-base: |
+    {
+      "image": "image-registry.openshift-image-registry.svc:5000/konveyor-agents/agent-base:demo",
+      "displayName": "Agent base",
+      "description": "Harness entrypoint, git, goose runtime. No language toolchain.",
+      "languages": [],
+      "parent": null
+    }
+  agent-java: |
+    {
+      "image": "image-registry.openshift-image-registry.svc:5000/konveyor-agents/agent-java:demo",
+      "displayName": "Java agent",
+      "description": "JDK 21, Maven 3.9, Gradle 8. For Java EE / Jakarta / Quarkus migrations.",
+      "languages": ["java"],
+      "parent": "agent-base"
+    }
