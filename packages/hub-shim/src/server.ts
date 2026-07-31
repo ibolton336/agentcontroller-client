@@ -66,6 +66,7 @@ import {
   invalidTargetBranchReason,
   parseSourcesAnnotation,
   type AgentImage,
+  type AgentWorkload,
   type Application,
 } from "../../agentic-client/src/contract/index.js";
 import { planSeed, KIND_TO_PLURAL, type SeedPlan } from "./defaults.js";
@@ -864,12 +865,14 @@ function parseCreateWorkloadRunBody(raw: unknown): CreateWorkloadRunBody {
   if (typeof body.workloadRef !== "string" || body.workloadRef.trim() === "") {
     badRequest("workloadRef is required and must be a non-empty string");
   }
-  // The controller does not default models, and a run without one fails
-  // deep in session/new with an opaque -32603 — reject it here instead.
+  // Optional: absent means "default from the workload's stage agents"
+  // (same policy as single-run create). Present means shape-checked here
+  // and validated loudly by resolveExplicitModel.
   const model = body.model as Record<string, unknown> | undefined;
-  if (!model || typeof model !== "object" || Array.isArray(model) ||
-      typeof model.provider !== "string" || typeof model.model !== "string") {
-    badRequest("model is required: {provider, model} — the controller defaults no model");
+  if (model !== undefined &&
+      (!model || typeof model !== "object" || Array.isArray(model) ||
+       typeof model.provider !== "string" || typeof model.model !== "string")) {
+    badRequest("model must be {provider, model}");
   }
   let params: Record<string, string> | undefined;
   if (body.params !== undefined) {
@@ -899,7 +902,9 @@ function parseCreateWorkloadRunBody(raw: unknown): CreateWorkloadRunBody {
     params,
     applicationRef: body.applicationRef as string | undefined,
     targetBranch: body.targetBranch as string | undefined,
-    model: { provider: model.provider as string, model: model.model as string },
+    model: model
+      ? { provider: model.provider as string, model: model.model as string }
+      : undefined,
   };
 }
 
@@ -1135,13 +1140,47 @@ async function handleApi(
         if (!(err instanceof BadRequestError)) throw err;
         return sendError(res, 400, errorMessage(err));
       }
+      let workload: AgentWorkload;
       try {
-        await getCustom(PLURALS.AgentWorkload, "AgentWorkload", input.workloadRef);
+        workload = (await getCustom(PLURALS.AgentWorkload, "AgentWorkload", input.workloadRef)) as AgentWorkload;
       } catch (err) {
         if (k8sStatusCode(err) === 404) {
           return sendError(res, 400, `unknown workloadRef "${input.workloadRef}" — GET /api/agentworkloads lists them`);
         }
         throw err;
+      }
+
+      // Model policy mirrors single-run create: an explicit choice is
+      // validated loudly against the stage agents' declared providers; no
+      // choice defaults from the first stage agent's provider chain. The
+      // controller defaults nothing, and a modelless run only fails later
+      // as an opaque session/new -32603, so an unresolvable default is 400.
+      const stageRefs = [...new Set((workload.spec.stages ?? []).map((s) => s.agentRef))];
+      const stageAgents: Agent[] = [];
+      for (const ref of stageRefs) {
+        try {
+          stageAgents.push((await getCustom(PLURALS.Agent, "Agent", ref)) as Agent);
+        } catch (err) {
+          if (k8sStatusCode(err) !== 404) throw err;
+          log(`workload "${input.workloadRef}" stage agent "${ref}" not found — skipping for model resolution`);
+        }
+      }
+      let resolvedModels: AgentRunModelSelection[];
+      let modelEnvFrom: EnvFromSource[];
+      try {
+        const resolved = input.model
+          ? await resolveExplicitModel(input.model, stageAgents)
+          : await resolveModels(stageAgents[0], stageRefs[0] ?? "(no stages)");
+        resolvedModels = resolved.models;
+        modelEnvFrom = resolved.envFrom;
+      } catch (err) {
+        if (!(err instanceof BadRequestError)) throw err;
+        return sendError(res, 400, errorMessage(err));
+      }
+      if (resolvedModels.length === 0) {
+        return sendError(res, 400,
+          `no model: workload "${input.workloadRef}"'s stage agents declare no resolvable ` +
+          `LLMProvider — pass model: {provider, model} explicitly (GET /api/llmproviders lists them)`);
       }
 
       // Every stage shares one target branch; the harness requires it and
@@ -1170,9 +1209,10 @@ async function handleApi(
 
       const spec: Record<string, unknown> = {
         workloadRef: input.workloadRef,
-        models: [{ role: "primary", provider: input.model!.provider, model: input.model!.model }],
+        models: resolvedModels,
         env,
       };
+      if (modelEnvFrom.length > 0) spec.envFrom = modelEnvFrom;
       if (input.params && Object.keys(input.params).length > 0) {
         spec.params = Object.entries(input.params).map(([name, value]) => ({ name, value }));
       }
