@@ -446,6 +446,15 @@ interface CreateRunBody {
   applicationRef?: string;
 }
 
+/** Body of POST /api/agentworkloadruns (contract: CreateWorkloadRunInput). */
+interface CreateWorkloadRunBody {
+  workloadRef: string;
+  params?: Record<string, string>;
+  applicationRef?: string;
+  targetBranch?: string;
+  model?: { provider: string; model: string };
+}
+
 /**
  * What the platform contributes to a run beyond the caller's input:
  * param values resolved from the selected application, and credential
@@ -562,6 +571,53 @@ function parseCreateRunBody(raw: unknown): CreateRunBody {
     params,
     instructions: body.instructions as string | undefined,
     applicationRef: body.applicationRef as string | undefined,
+  };
+}
+
+function parseCreateWorkloadRunBody(raw: unknown): CreateWorkloadRunBody {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    badRequest("body must be a JSON object: {workloadRef, model, params?, applicationRef?, targetBranch?}");
+  }
+  const body = raw as Record<string, unknown>;
+  if (typeof body.workloadRef !== "string" || body.workloadRef.trim() === "") {
+    badRequest("workloadRef is required and must be a non-empty string");
+  }
+  // The controller does not default models, and a run without one fails
+  // deep in session/new with an opaque -32603 — reject it here instead.
+  const model = body.model as Record<string, unknown> | undefined;
+  if (!model || typeof model !== "object" || Array.isArray(model) ||
+      typeof model.provider !== "string" || typeof model.model !== "string") {
+    badRequest("model is required: {provider, model} — the controller defaults no model");
+  }
+  let params: Record<string, string> | undefined;
+  if (body.params !== undefined) {
+    if (!body.params || typeof body.params !== "object" || Array.isArray(body.params)) {
+      badRequest("params must be an object of string values");
+    }
+    params = {};
+    for (const [key, value] of Object.entries(body.params as Record<string, unknown>)) {
+      if (typeof value !== "string") {
+        badRequest(`params.${key} must be a string`);
+      }
+      params[key] = value;
+    }
+  }
+  if (body.applicationRef !== undefined && typeof body.applicationRef !== "string") {
+    badRequest("applicationRef must be a string");
+  }
+  if (body.targetBranch !== undefined && (typeof body.targetBranch !== "string" || body.targetBranch.trim() === "")) {
+    badRequest("targetBranch must be a non-empty string");
+  }
+  if (body.instructions !== undefined) {
+    // Contract carries it; the AgentWorkloadRun CRD has no such field.
+    log("createWorkloadRun: dropping unsupported field \"instructions\" (not in the CRD)");
+  }
+  return {
+    workloadRef: body.workloadRef,
+    params,
+    applicationRef: body.applicationRef as string | undefined,
+    targetBranch: body.targetBranch as string | undefined,
+    model: { provider: model.provider as string, model: model.model as string },
   };
 }
 
@@ -779,6 +835,100 @@ async function handleApi(
         if (k8sStatusCode(err) === 404) return sendError(res, 404, `${kind} "${name}" not found`);
         throw err;
       }
+    }
+
+    return sendError(res, 405, "method not allowed");
+  }
+
+  // ---- workload runs: create + delete (list/get fall through to READ_ONLY).
+  // Runs are not catalog resources — the WRITABLE path's {name, spec} shape
+  // and replace semantics don't apply, so they get a dedicated handler that
+  // mirrors POST /api/agentruns.
+  if (apiMatch && apiMatch[1] === PLURALS.AgentWorkloadRun && method !== "GET") {
+    if (method === "POST" && !apiMatch[2]) {
+      let input: CreateWorkloadRunBody;
+      try {
+        input = parseCreateWorkloadRunBody(await readJsonBody(req));
+      } catch (err) {
+        if (!(err instanceof BadRequestError)) throw err;
+        return sendError(res, 400, errorMessage(err));
+      }
+      try {
+        await getCustom(PLURALS.AgentWorkload, "AgentWorkload", input.workloadRef);
+      } catch (err) {
+        if (k8sStatusCode(err) === 404) {
+          return sendError(res, 400, `unknown workloadRef "${input.workloadRef}" — GET /api/agentworkloads lists them`);
+        }
+        throw err;
+      }
+
+      // Every stage shares one target branch; the harness requires it and
+      // requires it to differ from the source branch. Fresh per attempt.
+      const targetBranch = input.targetBranch ?? `konveyor/${input.workloadRef}-${Date.now()}`;
+      const env: Array<{ name: string; value: string }> = [
+        { name: "TARGET_BRANCH", value: targetBranch },
+      ];
+      if (input.applicationRef) {
+        const inv = await getApplications();
+        const app = inv.applications.find((a) => a.id === input.applicationRef);
+        if (!app) {
+          return sendError(res, 400, `unknown applicationRef "${input.applicationRef}" — GET /api/applications lists the inventory`);
+        }
+        if (app.repository?.branch && app.repository.branch === targetBranch) {
+          return sendError(res, 400, `targetBranch "${targetBranch}" must differ from the application source branch`);
+        }
+        if (inv.source === "stub" || !inv.endpoint) {
+          return sendError(res, 400, "applicationRef needs a real Hub inventory (current source is the built-in stub) — the run's stages resolve the repo from the Hub");
+        }
+        env.push(
+          { name: "HUB_BASE_URL", value: inv.endpoint },
+          { name: "APP_ID", value: app.id },
+        );
+      }
+
+      const spec: Record<string, unknown> = {
+        workloadRef: input.workloadRef,
+        models: [{ role: "primary", provider: input.model!.provider, model: input.model!.model }],
+        env,
+      };
+      if (input.params && Object.keys(input.params).length > 0) {
+        spec.params = Object.entries(input.params).map(([name, value]) => ({ name, value }));
+      }
+
+      const created = await custom.createNamespacedCustomObject({
+        group: GROUP,
+        version: VERSION,
+        namespace: NAMESPACE,
+        plural: PLURALS.AgentWorkloadRun,
+        body: {
+          apiVersion: API_VERSION,
+          kind: "AgentWorkloadRun",
+          metadata: {
+            generateName: "ui-",
+            namespace: NAMESPACE,
+            labels: { [MANAGED_LABEL]: "true" },
+          },
+          spec,
+        },
+      }) as { metadata?: { name?: string } };
+      log(`created AgentWorkloadRun ${created.metadata?.name} (workloadRef=${input.workloadRef}, branch=${targetBranch})`);
+      return sendJson(res, 201, { apiVersion: API_VERSION, kind: "AgentWorkloadRun", ...created as object });
+    }
+
+    if (method === "DELETE" && apiMatch[2]) {
+      const name = decodeURIComponent(apiMatch[2]);
+      try {
+        await custom.deleteNamespacedCustomObject({
+          group: GROUP, version: VERSION, namespace: NAMESPACE,
+          plural: PLURALS.AgentWorkloadRun, name,
+        });
+      } catch (err) {
+        if (k8sStatusCode(err) === 404) return sendError(res, 404, `AgentWorkloadRun ${name} not found`);
+        throw err;
+      }
+      log(`deleted AgentWorkloadRun ${name}`);
+      res.writeHead(204).end();
+      return;
     }
 
     return sendError(res, 405, "method not allowed");
@@ -1026,7 +1176,7 @@ server.on("upgrade", (req, socket, head) => {
 server.listen(PORT, HOST, () => {
   log(`SHIM API v1 listening on http://${HOST}:${PORT} (namespace=${NAMESPACE}, acp-dial=${ACP_DIAL})`);
   log(
-    `routes: GET /healthz | GET /api/{applications,images} | POST /api/defaults | CRUD /api/{agents,skillcards,skillcollections,agentworkloads}[/:name] | GET /api/{llmproviders,agentworkloadruns}[/:name] | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
+    `routes: GET /healthz | GET /api/{applications,images} | POST /api/defaults | CRUD /api/{agents,skillcards,skillcollections,agentworkloads}[/:name] | GET /api/llmproviders[/:name] | GET|POST /api/agentworkloadruns | GET|DELETE /api/agentworkloadruns/:name | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
   );
 });
 
