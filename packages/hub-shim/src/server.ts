@@ -48,16 +48,22 @@ import {
   PLURALS,
   type Agent,
   type AgentRun,
+  type AgentRunModelSelection,
   type AgentRunSpec,
   type EnvFromSource,
+  type EnvVar,
+  type LLMProvider,
 } from "../../agentrun-client/src/types.js";
 import {
   CREDENTIAL_SOURCES_ANNOTATION,
   MANAGED_LABEL,
   PARAM_SOURCES_ANNOTATION,
+  RUN_ENV,
   SOURCE_APPLICATION_IDENTITY,
   SOURCE_APPLICATION_REPOSITORY_BRANCH,
   SOURCE_APPLICATION_REPOSITORY_URL,
+  defaultTargetBranch,
+  invalidTargetBranchReason,
   parseSourcesAnnotation,
   type AgentImage,
   type Application,
@@ -152,6 +158,14 @@ const LIST_LABEL_SELECTORS: Record<string, string> = {
  * Hub-proxy reads its own Application table; the shim reads it over HTTP.
  */
 const HUB_URL = process.env.HUB_URL?.replace(/\/+$/, "");
+
+/**
+ * Hub base URL injected into run pods (RUN_ENV.HUB_BASE_URL). The POD dials
+ * this, not the shim — on a laptop, where HUB_URL is typically a localhost
+ * port-forward the pod cannot reach, set RUN_HUB_BASE_URL to the Hub's
+ * in-cluster service DNS. In-cluster (the gateway) the two are the same.
+ */
+const RUN_HUB_BASE_URL = process.env.RUN_HUB_BASE_URL?.replace(/\/+$/, "") ?? HUB_URL;
 
 /**
  * Bridges a Hub source-control Identity to a pre-created k8s Secret — the
@@ -444,6 +458,10 @@ interface CreateRunBody {
   params?: Record<string, string>;
   instructions?: string;
   applicationRef?: string;
+  /** Only meaningful with applicationRef. Defaults to defaultTargetBranch(). */
+  targetBranch?: string;
+  /** Explicit "primary"-role selection; absent = default provider policy. */
+  model?: { provider: string; model: string };
 }
 
 /** Body of POST /api/agentworkloadruns (contract: CreateWorkloadRunInput). */
@@ -538,6 +556,255 @@ async function resolveSources(input: CreateRunBody): Promise<ResolvedSources> {
   return resolved;
 }
 
+/**
+ * The platform's contribution to a run that works on an application: the
+ * Hub coordinates + application id + target branch, injected as spec.env
+ * (RUN_ENV). The Konveyor-aware harness pulls everything else — repo URL,
+ * decrypted git identity, analysis — from the Hub itself, in-pod. The
+ * harness hard-requires all three env vars and fails at startup without
+ * them, so an application-scoped run that cannot resolve them is a 400.
+ */
+async function hubEnvForRun(
+  applicationRef: string,
+  targetBranch: string | undefined,
+): Promise<EnvVar[]> {
+  // Creating an application-scoped run against stub data would inject a
+  // fabricated APP_ID the real Hub can't resolve. Not the caller's fault,
+  // so a plain Error (-> 5xx), unlike the 400s below.
+  const inv = await getApplications();
+  if (inv.source !== "hub") {
+    throw new Error(
+      `application inventory unavailable (${inv.endpoint}) — cannot create an ` +
+        `application-scoped run against stub data; retry when the Hub is reachable`,
+    );
+  }
+  const app = inv.applications.find((a) => a.id === applicationRef);
+  if (!app) {
+    badRequest(
+      `unknown applicationRef "${applicationRef}" — GET /api/applications lists the inventory`,
+    );
+  }
+  if (!/^\d+$/.test(app.id)) {
+    badRequest(
+      `application id "${app.id}" is not numeric — the harness's APP_ID parser requires a ` +
+        `uint Hub id`,
+    );
+  }
+  if (!app.repository?.url) {
+    badRequest(
+      `application "${app.id}" has no repository URL — the harness clones from the Hub ` +
+        `record; set the application's source repository first`,
+    );
+  }
+  if (!RUN_HUB_BASE_URL) {
+    badRequest(
+      "applicationRef needs a Hub the SANDBOX POD can reach: set HUB_URL (in-cluster) or " +
+        "RUN_HUB_BASE_URL (laptop dev, pointing at the Hub's in-cluster service DNS)",
+    );
+  }
+  // The pod dials this URL, not the shim: a laptop port-forward loopback
+  // address is unreachable from inside the cluster.
+  let hubHost: string;
+  try {
+    hubHost = new URL(RUN_HUB_BASE_URL).hostname;
+  } catch {
+    badRequest(`RUN_HUB_BASE_URL/HUB_URL "${RUN_HUB_BASE_URL}" is not a valid URL`);
+  }
+  if (ACP_DIAL === "tunnel" && ["localhost", "127.0.0.1", "::1", "[::1]"].includes(hubHost)) {
+    badRequest(
+      `Hub base URL "${RUN_HUB_BASE_URL}" is loopback but the shim is not in-cluster — the ` +
+        `sandbox pod cannot reach the laptop's port-forward; set RUN_HUB_BASE_URL to the ` +
+        `Hub's in-cluster service DNS (e.g. http://tackle-hub.konveyor-tackle.svc:8080)`,
+    );
+  }
+  const branch = (targetBranch ?? defaultTargetBranch()).trim();
+  const branchProblem = invalidTargetBranchReason(branch);
+  if (branchProblem) {
+    badRequest(`targetBranch "${branch}": ${branchProblem}`);
+  }
+  if (app.repository?.branch && branch === app.repository.branch) {
+    badRequest(
+      `targetBranch "${branch}" equals application "${app.id}"'s source branch — the harness ` +
+        `refuses to push onto the source branch; pick any other name`,
+    );
+  }
+  return [
+    { name: RUN_ENV.HUB_BASE_URL, value: RUN_HUB_BASE_URL },
+    { name: RUN_ENV.APP_ID, value: app.id },
+    { name: RUN_ENV.TARGET_BRANCH, value: branch },
+  ];
+}
+
+/**
+ * Fetches an Agent, tolerating 404 (undefined) — run creation leaves an
+ * unknown agentRef for the controller to report, matching the CR-level
+ * behavior a kubectl user would see.
+ */
+async function fetchAgent(agentRef: string): Promise<Agent | undefined> {
+  try {
+    return (await getCustom(PLURALS.Agent, "Agent", agentRef)) as Agent;
+  } catch (err) {
+    if (k8sStatusCode(err) === 404) return undefined;
+    throw err;
+  }
+}
+
+/**
+ * The run's model selection + LLM-provider credentials, defaulted from the
+ * Agent's declared providers — the platform-side policy the controller does
+ * not perform for itself: it turns spec.models into KONVEYOR_MODEL_{ROLE}_*
+ * env but defaults nothing, and the migration-harness hard-requires
+ * KONVEYOR_MODEL_PRIMARY_MODEL/PROVIDER at startup.
+ *
+ * Defaults to the Agent's first declared provider and that provider's
+ * primary-tier model (else its first). Best-effort: an agent with no
+ * provider, an unresolvable LLMProvider, or a provider with no models
+ * contributes nothing — fine for fixtures; the create path warns when an
+ * application-scoped run resolves no model.
+ */
+async function resolveModels(
+  agent: Agent | undefined,
+  agentRef: string,
+): Promise<{ models: AgentRunModelSelection[]; envFrom: EnvFromSource[] }> {
+  const empty = { models: [] as AgentRunModelSelection[], envFrom: [] as EnvFromSource[] };
+  // Unknown agent: let createAgentRun proceed and the controller report it.
+  if (!agent) return empty;
+  const providerRef = agent.spec.providers?.[0]?.ref;
+  if (!providerRef) return empty;
+  return resolveProviderModel(providerRef, `agent "${agentRef}"`);
+}
+
+/** The provider's primary-tier model (else first) + its credential Secret. */
+async function resolveProviderModel(
+  providerRef: string,
+  forWhom: string,
+): Promise<{ models: AgentRunModelSelection[]; envFrom: EnvFromSource[] }> {
+  const empty = { models: [] as AgentRunModelSelection[], envFrom: [] as EnvFromSource[] };
+  let provider: LLMProvider;
+  try {
+    provider = (await getCustom(PLURALS.LLMProvider, "LLMProvider", providerRef)) as LLMProvider;
+  } catch (err) {
+    if (k8sStatusCode(err) === 404) {
+      log(`${forWhom} declares provider "${providerRef}" but no such LLMProvider — no model injected`);
+      return empty;
+    }
+    throw err;
+  }
+
+  const model =
+    (provider.spec.models?.find((m) => m.tier === "primary") ?? provider.spec.models?.[0])?.name;
+  if (!model) {
+    log(`LLMProvider "${providerRef}" lists no models — no model injected`);
+    return empty;
+  }
+
+  const models: AgentRunModelSelection[] = [{ role: "primary", provider: providerRef, model }];
+  // Since controller #34, keyless credentialRefs are exposed to the sandbox
+  // by the controller itself; this duplicates that (same secret, harmless)
+  // and remains the only credential path against pre-#34 controllers.
+  // `optional` so a provider whose Secret is absent still lets the run start.
+  const secretName = provider.spec.credentialRef?.secretName;
+  const envFrom: EnvFromSource[] = secretName
+    ? [{ secretRef: { name: secretName, optional: true } }]
+    : [];
+  warnUnknownGooseProvider(providerRef);
+  log(
+    `model: ${providerRef}/${model} for ${forWhom}` +
+      (secretName ? ` (+creds secret ${secretName})` : ""),
+  );
+  return { models, envFrom };
+}
+
+/**
+ * An EXPLICIT caller model selection ({provider, model} on the create body).
+ * Unlike the default policy — which is best-effort, because the caller asked
+ * for nothing — an explicit choice fails loudly: a provider outside the
+ * Agent's declared providers, an unknown LLMProvider CR, or an undeclared
+ * model are 400s, since the controller/harness would only reject them later
+ * and less legibly.
+ */
+async function resolveExplicitModel(
+  choice: { provider: string; model: string },
+  agents: Agent[],
+): Promise<{ models: AgentRunModelSelection[]; envFrom: EnvFromSource[] }> {
+  for (const agent of agents) {
+    const declared = (agent.spec.providers ?? []).map((p) => p.ref);
+    if (!declared.includes(choice.provider)) {
+      badRequest(
+        `model.provider "${choice.provider}" is not among Agent "${agent.metadata.name}"'s ` +
+          `declared providers (${declared.join(", ") || "none"})`,
+      );
+    }
+  }
+  let provider: LLMProvider;
+  try {
+    provider = (await getCustom(
+      PLURALS.LLMProvider,
+      "LLMProvider",
+      choice.provider,
+    )) as LLMProvider;
+  } catch (err) {
+    if (k8sStatusCode(err) === 404) {
+      badRequest(`unknown LLMProvider "${choice.provider}" — GET /api/llmproviders lists them`);
+    }
+    throw err;
+  }
+  if (!provider.spec.models?.some((m) => m.name === choice.model)) {
+    const declared = (provider.spec.models ?? []).map((m) => m.name);
+    badRequest(
+      `model "${choice.model}" is not declared on LLMProvider "${choice.provider}" ` +
+        `(declared: ${declared.join(", ") || "none"})`,
+    );
+  }
+  const models: AgentRunModelSelection[] = [
+    { role: "primary", provider: choice.provider, model: choice.model },
+  ];
+  const secretName = provider.spec.credentialRef?.secretName;
+  const envFrom: EnvFromSource[] = secretName
+    ? [{ secretRef: { name: secretName, optional: true } }]
+    : [];
+  warnUnknownGooseProvider(choice.provider);
+  log(`model: ${choice.provider}/${choice.model} (explicit caller selection)`);
+  return { models, envFrom };
+}
+
+/**
+ * goose provider ids the migration-harness's verbatim name mapping can hit
+ * (CR name lowercased, "-" -> "_"). Advisory only — goose grows providers,
+ * so an unknown id is a warning, never a 400.
+ */
+const KNOWN_GOOSE_PROVIDER_IDS = new Set([
+  "anthropic",
+  "aws_bedrock",
+  "azure_openai",
+  "databricks",
+  "gcp_vertex_ai",
+  "google",
+  "groq",
+  "litellm",
+  "ollama",
+  "openai",
+  "openrouter",
+  "xai",
+]);
+
+/**
+ * The migration-harness maps the LLMProvider CR NAME to a goose provider id
+ * verbatim (lowercased, "-" -> "_") — a CR named "bedrock" does not mean
+ * aws_bedrock. Warn at create time so the misname surfaces here instead of
+ * as a goose startup failure inside the pod.
+ */
+function warnUnknownGooseProvider(providerRef: string): void {
+  const gooseId = providerRef.toLowerCase().replace(/-/g, "_");
+  if (!KNOWN_GOOSE_PROVIDER_IDS.has(gooseId)) {
+    warn(
+      `LLMProvider "${providerRef}" maps to goose provider id "${gooseId}", which is not a ` +
+        `known goose provider — the harness maps CR names verbatim; if goose rejects it, ` +
+        `rename the CR (e.g. "aws-bedrock" -> aws_bedrock)`,
+    );
+  }
+}
+
 /** Validates the POST /api/agentruns body; throws with a client-facing message. */
 function parseCreateRunBody(raw: unknown): CreateRunBody {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -566,11 +833,26 @@ function parseCreateRunBody(raw: unknown): CreateRunBody {
   if (body.applicationRef !== undefined && typeof body.applicationRef !== "string") {
     badRequest("applicationRef must be a string");
   }
+  if (body.targetBranch !== undefined && (typeof body.targetBranch !== "string" || body.targetBranch.trim() === "")) {
+    badRequest("targetBranch must be a non-empty string");
+  }
+  let model: { provider: string; model: string } | undefined;
+  if (body.model !== undefined) {
+    const m = body.model as Record<string, unknown> | null;
+    if (!m || typeof m !== "object" || Array.isArray(m) ||
+        typeof m.provider !== "string" || m.provider.trim() === "" ||
+        typeof m.model !== "string" || m.model.trim() === "") {
+      badRequest('model must be an object: {"provider": "...", "model": "..."}');
+    }
+    model = { provider: (m.provider as string).trim(), model: (m.model as string).trim() };
+  }
   return {
     agentRef: body.agentRef,
     params,
     instructions: body.instructions as string | undefined,
     applicationRef: body.applicationRef as string | undefined,
+    targetBranch: (body.targetBranch as string | undefined)?.trim(),
+    model,
   };
 }
 
@@ -958,14 +1240,33 @@ async function handleApi(
     if (method === "POST") {
       let input: CreateRunBody;
       let sources: ResolvedSources;
+      let agent: Agent | undefined;
+      let hubEnv: EnvVar[];
+      let modelSel: { models: AgentRunModelSelection[]; envFrom: EnvFromSource[] };
       try {
         input = parseCreateRunBody(await readJsonBody(req));
         sources = await resolveSources(input);
+        agent = await fetchAgent(input.agentRef);
+        hubEnv = input.applicationRef
+          ? await hubEnvForRun(input.applicationRef, input.targetBranch)
+          : [];
+        // Explicit selection validates against the agent when it resolves
+        // (an unknown agentRef stays the controller's to report); absent,
+        // the default first-provider/primary-tier policy applies.
+        modelSel = input.model
+          ? await resolveExplicitModel(input.model, agent ? [agent] : [])
+          : await resolveModels(agent, input.agentRef);
       } catch (err) {
         // Only caller faults are 400. resolveSources talks to the apiserver
         // inside this try, and a transport failure there is a 5xx.
         if (!(err instanceof BadRequestError)) throw err;
         return sendError(res, 400, errorMessage(err));
+      }
+      if (input.applicationRef && modelSel.models.length === 0) {
+        warn(
+          `run (${input.agentRef}): no primary model resolved — the migration-harness ` +
+            `hard-requires KONVEYOR_MODEL_PRIMARY_MODEL/PROVIDER and will fail at startup`,
+        );
       }
       const spec: AgentRunSpec = { agentRef: input.agentRef };
       const params = { ...sources.params, ...(input.params ?? {}) };
@@ -973,7 +1274,12 @@ async function handleApi(
         spec.params = Object.entries(params).map(([name, value]) => ({ name, value }));
       }
       if (input.instructions !== undefined) spec.instructions = input.instructions;
-      if (sources.envFrom.length > 0) spec.envFrom = sources.envFrom;
+      if (modelSel.models.length > 0) spec.models = modelSel.models;
+      // Hub coordinates + TARGET_BRANCH ride spec.env; credential Secrets
+      // (application identity, LLM provider) ride envFrom.
+      if (hubEnv.length > 0) spec.env = hubEnv;
+      const envFrom = [...sources.envFrom, ...modelSel.envFrom];
+      if (envFrom.length > 0) spec.envFrom = envFrom;
       const run = await runClient.createAgentRun(spec, { generateName: "ui-" });
       const via = input.applicationRef ? ` via application=${input.applicationRef}` : "";
       log(`created AgentRun ${run.metadata.name} (agentRef=${input.agentRef}${via})`);
