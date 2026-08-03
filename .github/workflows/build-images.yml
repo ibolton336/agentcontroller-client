@@ -99,6 +99,19 @@ jobs:
           tags: ${{ env.REGISTRY }}/agent-java:${{ env.TAG }}-${{ matrix.arch }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
+      # agent-go for the golang-cve-manager workflow (RHDH upgrade demo).
+      - name: Build agent-go
+        uses: docker/build-push-action@v6
+        with:
+          context: controller
+          file: controller/images/agent-go/Containerfile
+          push: true
+          provenance: false
+          build-args: |
+            BASE_IMAGE=${{ env.REGISTRY }}/agent-base:${{ env.TAG }}-${{ matrix.arch }}
+          tags: ${{ env.REGISTRY }}/agent-go:${{ env.TAG }}-${{ matrix.arch }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
   # Stitch the two per-arch tags into the one :tee tag the manifests use.
   manifest:
     needs: build
@@ -114,7 +127,7 @@ jobs:
 
       - name: Create multi-arch manifests
         run: |
-          for img in agent-base agent-java; do
+          for img in agent-base agent-java agent-go; do
             docker buildx imagetools create \
               -t "$REGISTRY/$img:$TAG" \
               "$REGISTRY/$img:$TAG-amd64" \
@@ -123,7 +136,7 @@ jobs:
 
       - name: Show digests
         run: |
-          for img in agent-base agent-java; do
+          for img in agent-base agent-java agent-go; do
             docker buildx imagetools inspect "$REGISTRY/$img:$TAG" | head -5
             echo
           done
