@@ -100,6 +100,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: stage/agent-java
+          file: stage/agent-java/Containerfile
           push: true
           provenance: false
           build-args: |
