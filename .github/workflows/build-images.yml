@@ -15,7 +15,13 @@
 #   tackle2-ui          tackle2-ui repo (feature/agent-runs) root Dockerfile
 name: build-images
 
+# The push trigger (scoped to this file) exists because workflow_dispatch
+# only registers off the default branch — editing this file on any branch
+# starts a build with the default refs.
 on:
+  push:
+    paths:
+      - .github/workflows/build-images.yml
   workflow_dispatch:
     inputs:
       controller_ref:
@@ -51,13 +57,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/agentic-controller
-          ref: ${{ inputs.controller_ref }}
+          ref: ${{ inputs.controller_ref || 'demo/dylan-workload' }}
           path: controller
 
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/tackle2-ui
-          ref: ${{ inputs.tackle2_ui_ref }}
+          ref: ${{ inputs.tackle2_ui_ref || 'feature/agent-runs' }}
           path: ui
 
       - uses: docker/setup-buildx-action@v3
