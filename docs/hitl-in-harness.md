@@ -138,9 +138,21 @@ it) rather than process-scope `GOOSE_MODE`; relay asks with harness-allocated
 **string** ids (`kperm-*`) disjoint from the proxy's verbatim numeric ids;
 enrich with a computed diff (goose emits `ToolCallLocation` but never
 `ToolCallContent::Diff`, and approving an edit you can't see is theater);
-resolve immediately in-goroutine when nobody is attached; on timeout answer
-`allow_once`, **never** `cancelled` — goose reads cancelled as refusal and the
-agent retries, burning MaxTurns (which counts `tool_call` notifications).
+resolve immediately in-goroutine when nobody is attached.
+
+**Timeout policy — REVISED 2026-08-03 (implemented in feat/harness-acp-tee).**
+This doc originally said: on timeout answer `allow_once`, never `cancelled`,
+because goose reads a decline as refusal and the agent retries, burning
+MaxTurns (which counts `tool_call` notifications). Ian rejected that on
+review: an ask that self-approves on a timer is no ask at all — walking away
+mid-approval must not approve the action nobody looked at. The shipped
+policy: **every unanswered path fails closed** (deny via `reject_once`,
+`cancelled` as last resort). The MaxTurns-burn concern is handled by an
+*unresponsive-viewer gate* instead: the first timeout marks viewers
+unresponsive and subsequent asks resolve instantly like the no-viewer path
+(one slow deny, then fast denies); a fresh attach or any kperm frame from a
+viewer — even a late or error answer — marks a human present and resumes
+forwarding. Net: at most one timeout window is ever burned per absence.
 
 ## Sequencing
 
