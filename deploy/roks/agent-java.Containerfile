@@ -5,7 +5,7 @@
 # demo image had them added by an ad-hoc local layer (see
 # docs/quarkus-demo-flow-and-design.md, "Image drifts from Containerfile").
 # This bakes them properly so the cluster image is reproducible from source.
-ARG BASE_IMAGE=image-registry.openshift-image-registry.svc:5000/konveyor-agents/agent-base:demo
+ARG BASE_IMAGE=ghcr.io/ibolton336/agent-base:demo
 FROM ${BASE_IMAGE} AS base
 
 USER root

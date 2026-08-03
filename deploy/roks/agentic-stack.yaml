@@ -77,7 +77,7 @@ spec:
       serviceAccountName: agentic-gateway
       containers:
         - name: gateway
-          image: image-registry.openshift-image-registry.svc:5000/konveyor-agents/agentic-gateway:demo
+          image: ghcr.io/ibolton336/agentic-gateway:demo
           imagePullPolicy: Always
           ports:
             - containerPort: 7080
@@ -142,7 +142,7 @@ spec:
     spec:
       containers:
         - name: ui
-          image: image-registry.openshift-image-registry.svc:5000/konveyor-agents/tackle2-ui:demo
+          image: ghcr.io/ibolton336/tackle2-ui:demo
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

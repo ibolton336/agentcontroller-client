@@ -1,5 +1,11 @@
 # In-cluster deployment (interim, pre-Hub)
 
+> **Deploying to a real OpenShift cluster?** See
+> [roks/README.md](roks/README.md) — the end-to-end guide (prebuilt ghcr.io
+> images, Hub install, controller, gateway + console, demo content) written
+> from the working ROKS deployment. This file covers the minikube-shaped
+> variant.
+
 Runs the browser UI + gateway **on the cluster** — no laptop processes.
 Both components are interim by design: the gateway seat is replaced by the
 real Konveyor Hub passthrough proxy later, and the UI page is absorbed

@@ -13,7 +13,7 @@ metadata:
 data:
   agent-base: |
     {
-      "image": "image-registry.openshift-image-registry.svc:5000/konveyor-agents/agent-base:demo",
+      "image": "ghcr.io/ibolton336/agent-base:demo",
       "displayName": "Agent base",
       "description": "Harness entrypoint, git, goose runtime. No language toolchain.",
       "languages": [],
@@ -21,7 +21,7 @@ data:
     }
   agent-java: |
     {
-      "image": "image-registry.openshift-image-registry.svc:5000/konveyor-agents/agent-java:demo",
+      "image": "ghcr.io/ibolton336/agent-java:demo",
       "displayName": "Java agent",
       "description": "JDK 21, Maven 3.9, Gradle 8. For Java EE / Jakarta / Quarkus migrations.",
       "languages": ["java"],

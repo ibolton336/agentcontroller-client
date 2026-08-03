@@ -2192,7 +2192,7 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /manager
-        image: image-registry.openshift-image-registry.svc:5000/konveyor-agents/agentic-controller:demo
+        image: ghcr.io/ibolton336/agentic-controller:demo
         livenessProbe:
           httpGet:
             path: /healthz

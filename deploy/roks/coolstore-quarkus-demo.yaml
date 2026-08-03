@@ -18,7 +18,7 @@ metadata:
     # harness resolves the identity from the Hub in-pod (RUN_ENV injection).
     konveyor.io/credential-sources: '{"git": "konveyor.io/application-identity"}'
 spec:
-  image: image-registry.openshift-image-registry.svc:5000/konveyor-agents/agent-java:demo   # skills baked at /opt/skills: plan, execute, verify, javaee-to-quarkus, patternfly-migration
+  image: ghcr.io/ibolton336/agent-java:demo   # skills baked at /opt/skills: plan, execute, verify, javaee-to-quarkus, patternfly-migration
   providers:
     - ref: aws-bedrock                     # must match a Ready LLMProvider; validateModels checks membership
   params:
