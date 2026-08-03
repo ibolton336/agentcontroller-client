@@ -1,18 +1,15 @@
-# Build every demo image on GitHub-hosted runners and push multi-arch
-# manifests to ghcr.io — the shareable replacement for the in-cluster
-# OpenShift builds (deploy/roks/build-images.sh).
+# ci/tee-agent-images variant: build ONLY the agent images (where the
+# harness lives) from the ACP-tee branch, tagged :tee so the running
+# :demo stack is untouched. The controller/gateway/ui images must NOT be
+# rebuilt from this ref — upstream main renamed the API to AgentWorkflow
+# while the deployed stack (CRDs, gateway, UI) still speaks AgentWorkload;
+# the tee changes nothing outside harness/, so agent images are the whole
+# delta.
 #
-# Why this works where `docker buildx --platform linux/amd64` on a Mac does
-# not: each arch builds NATIVELY (amd64 on ubuntu-latest, arm64 on
-# ubuntu-24.04-arm), so the emulated-UBI10 `dnf` TLS failure under QEMU never
-# comes up. A final job stitches the per-arch tags into one :demo manifest.
-#
-# Sources mirror build-images.sh:
-#   agent-base          agentic-controller repo (harness + Containerfile)
-#   agent-java          agent-base + 4 controller skills + patternfly skill here
-#   agentic-controller  agentic-controller repo root Dockerfile
-#   agentic-gateway     this repo, deploy/gateway/Dockerfile
-#   tackle2-ui          tackle2-ui repo (feature/agent-runs) root Dockerfile
+# Each arch builds NATIVELY (amd64 on ubuntu-latest, arm64 on
+# ubuntu-24.04-arm), so the emulated-UBI10 `dnf` TLS failure under QEMU
+# never comes up. A final job stitches the per-arch tags into one :tee
+# manifest.
 name: build-images
 
 # The push trigger (scoped to this file) exists because workflow_dispatch
@@ -26,14 +23,14 @@ on:
     inputs:
       controller_ref:
         description: agentic-controller ref to build from
-        default: demo/dylan-workload
-      tackle2_ui_ref:
-        description: tackle2-ui ref to build from
-        default: feature/agent-runs
+        default: feat/harness-acp-tee
+      tag:
+        description: image tag to push
+        default: tee
 
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
-  TAG: demo
+  TAG: ${{ inputs.tag || 'tee' }}
 
 jobs:
   build:
@@ -57,14 +54,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/agentic-controller
-          ref: ${{ inputs.controller_ref || 'demo/dylan-workload' }}
+          ref: ${{ inputs.controller_ref || 'feat/harness-acp-tee' }}
           path: controller
-
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/tackle2-ui
-          ref: ${{ inputs.tackle2_ui_ref || 'feature/agent-runs' }}
-          path: ui
 
       - uses: docker/setup-buildx-action@v3
 
@@ -108,37 +99,7 @@ jobs:
           tags: ${{ env.REGISTRY }}/agent-java:${{ env.TAG }}-${{ matrix.arch }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
-      - name: Build agentic-controller
-        uses: docker/build-push-action@v6
-        with:
-          context: controller
-          file: controller/Dockerfile
-          push: true
-          provenance: false
-          tags: ${{ env.REGISTRY }}/agentic-controller:${{ env.TAG }}-${{ matrix.arch }}
-          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-
-      - name: Build agentic-gateway
-        uses: docker/build-push-action@v6
-        with:
-          context: client
-          file: client/deploy/gateway/Dockerfile
-          push: true
-          provenance: false
-          tags: ${{ env.REGISTRY }}/agentic-gateway:${{ env.TAG }}-${{ matrix.arch }}
-          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-
-      - name: Build tackle2-ui
-        uses: docker/build-push-action@v6
-        with:
-          context: ui
-          file: ui/Dockerfile
-          push: true
-          provenance: false
-          tags: ${{ env.REGISTRY }}/tackle2-ui:${{ env.TAG }}-${{ matrix.arch }}
-          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-
-  # Stitch the two per-arch tags into the one :demo tag the manifests use.
+  # Stitch the two per-arch tags into the one :tee tag the manifests use.
   manifest:
     needs: build
     runs-on: ubuntu-latest
@@ -153,7 +114,7 @@ jobs:
 
       - name: Create multi-arch manifests
         run: |
-          for img in agent-base agent-java agentic-controller agentic-gateway tackle2-ui; do
+          for img in agent-base agent-java; do
             docker buildx imagetools create \
               -t "$REGISTRY/$img:$TAG" \
               "$REGISTRY/$img:$TAG-amd64" \
@@ -162,7 +123,7 @@ jobs:
 
       - name: Show digests
         run: |
-          for img in agent-base agent-java agentic-controller agentic-gateway tackle2-ui; do
+          for img in agent-base agent-java; do
             docker buildx imagetools inspect "$REGISTRY/$img:$TAG" | head -5
             echo
           done
