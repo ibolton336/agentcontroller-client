@@ -95,6 +95,23 @@ harness bridge in front of non-ACP runtimes — extended, not superseded.
   message chunks, thoughts, tool calls with file locations — because of the
   two client behaviors above. That is the acceptance test.
 
+As implemented in `feat/harness-acp-tee` (konveyor PRs #94/#95/#96), the three
+kinds of traffic through the junction — only the dotted one is new:
+
+```mermaid
+flowchart LR
+    V1["viewer 1 — UI"]
+    V2["viewer 2 — attaches mid-run"]
+    TEE["harness tee — pod :4000<br/>auth, pipe, tee, HITL relay"]
+    G["goose serve<br/>loopback 127.0.0.1:4001"]
+    V1 -->|"chat frames, verbatim"| TEE
+    V2 -->|"chat frames, verbatim"| TEE
+    TEE -->|"one pipe per viewer"| G
+    TEE -->|"run connection"| G
+    TEE -.->|"teed session/update copies"| V1
+    TEE -.->|"teed session/update copies"| V2
+```
+
 Operational discipline (from the adversarial review — these are conditions,
 not niceties):
 
@@ -125,6 +142,17 @@ routes responses to per-request channels keyed by id, fans notifications out
 unconditionally (the tee is one subscriber), stamps sequence/timestamp at read
 time, errors loudly on unmatched ids. ~250 LOC with a `-race` test running a
 prompt and a concurrent call. Everything else sits on top of this.
+
+Shipped as konveyor PR #95 — the demux routes each inbound frame by kind:
+
+```mermaid
+flowchart LR
+    WS["WebSocket to goose<br/>one inbound stream"] --> RL["readLoop<br/>sole reader of the socket"]
+    RL -->|"response, matched by id"| PC["per-request channel<br/>unmatched ids warn loudly"]
+    RL -->|"agent-initiated request"| RH["request handler<br/>own goroutine per ask"]
+    RL -->|"notification"| SUB["subscribers<br/>in-flight calls + raw frames"]
+    SUB -.->|"SubscribeRawNotifications"| TEE["ACP tee<br/>fans out to attached viewers"]
+```
 
 ### ⚠ Scope caveat: the local tree is the pre-#53 harness
 

@@ -154,6 +154,18 @@ unresponsive and subsequent asks resolve instantly like the no-viewer path
 viewer — even a late or error answer — marks a human present and resumes
 forwarding. Net: at most one timeout window is ever burned per absence.
 
+The full ask lifecycle as shipped:
+
+```mermaid
+flowchart TD
+    ASK["goose sends session/request_permission<br/>the turn parks on the reply"] --> OFFER["tee offers the ask to attached viewers<br/>string id kperm-‹n›, disjoint from pipe ids"]
+    OFFER -->|"a viewer answers in time"| WIN["first answer wins<br/>relayed to goose verbatim"]
+    OFFER -->|"nobody attached"| NONE["deny immediately, in-goroutine"]
+    OFFER -->|"no answer within HARNESS_HITL_TIMEOUT_SECONDS"| TOUT["fail closed — deny<br/>viewers marked unresponsive"]
+    TOUT --> FAST["follow-up asks fast-deny, no per-ask wait"]
+    FAST -->|"new attach or any kperm frame"| BACK["human present — forwarding resumes"]
+```
+
 ## Sequencing
 
 0. **Comment on #56, cross-ref #55** — this design, as the answer to their open
