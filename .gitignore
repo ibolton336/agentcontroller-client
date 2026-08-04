@@ -6,3 +6,7 @@ dist/
 
 .claude/settings.local.json
 .DS_Store
+
+# Kubeconfigs — credentials, never commit
+.kube/
+kubeconfig*.yaml
