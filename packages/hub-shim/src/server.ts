@@ -1287,6 +1287,18 @@ async function handleApi(
         input = parseCreateRunBody(await readJsonBody(req));
         sources = await resolveSources(input);
         agent = await fetchAgent(input.agentRef);
+        // A konveyor-managed agent's harness hard-requires Hub context
+        // (HUB_BASE_URL / APP_ID / TARGET_BRANCH) and exits at startup
+        // without it: the run would crash-loop before its ACP endpoint
+        // exists and a viewer sees only a DNS error. Refuse to create the
+        // doomed run. (An unknown agentRef stays the controller's to
+        // report — agent is undefined then and the guard does not apply.)
+        if (!input.applicationRef && agent?.metadata?.labels?.[MANAGED_LABEL] === "true") {
+          badRequest(
+            `agent "${input.agentRef}" is konveyor-managed and requires an application — ` +
+              `pass applicationRef (GET /api/applications lists the inventory)`,
+          );
+        }
         hubEnv = input.applicationRef
           ? await hubEnvForRun(input.applicationRef, input.targetBranch)
           : [];
