@@ -140,6 +140,31 @@ enrich with a computed diff (goose emits `ToolCallLocation` but never
 `ToolCallContent::Diff`, and approving an edit you can't see is theater);
 resolve immediately in-goroutine when nobody is attached.
 
+**Redirection — SHIPPED 2026-08-04 (in konveyor #96), and it is not a
+permission dialog.** The stronger form of in-turn HITL turned out to be
+steering, not approving: goose ships `_goose/unstable/session/steer`
+(`{sessionId, expectedRunId, prompt}` → `{runId, messageId}`), which queues a
+real user message into the **active** turn. Source-verified semantics
+(aaif-goose v1.39.0, `agents/agent.rs`): pending steers drain at the top of
+each loop iteration after the first model response; a steer that lands while
+the model is trying to finish **un-exits the turn** (`exit_chat = false`); the
+pickup streams back as `user_message_chunk` with `_meta.goose.steer` and the
+steer's `messageId`; undrained steers are discarded when the run clears. The
+active run id needed for `expectedRunId` is broadcast on the stream as
+`session_info_update` `_meta.goose.activeRunId` at run start (null at end).
+
+Because goose scopes `active_prompt_runs` to the per-connection agent, a steer
+sent down a viewer's own pipe answers "no active run to steer" — so the tee
+intercepts viewer frames naming the run session and relays them on the
+harness's run connection, preserving the viewer's request id: steer relays
+as a call, `session/cancel` relays as a notification (the harness then exits
+**failed** on a cancelled stop reason — a human abort is not a success), and a
+viewer `session/prompt` while the run is active is rejected with goose's own
+"use steer" guidance (two connections prompting one session interleave its
+history). `HARNESS_HITL_STEER=off` keeps the stream watch-only. Proven live
+(`TestSteerRedirectsLiveRun`, goose 1.39 + Bedrock): the steered agent skipped
+its remaining planned tool calls and said so in its final answer.
+
 **Timeout policy — REVISED 2026-08-03 (implemented in feat/harness-acp-tee).**
 This doc originally said: on timeout answer `allow_once`, never `cancelled`,
 because goose reads a decline as refusal and the agent retries, burning
@@ -202,7 +227,9 @@ Nothing goes on savitharaghunathan's branch.
 - **May an outside ACP connection prompt the run's session at all?** The gate
   depends on it. A reviewer's turn runs in the same working dir with the same
   tools, and the watcher will commit and push whatever it writes under the
-  harness's git identity. Probably its own issue.
+  harness's git identity. Probably its own issue. *Partially settled by #96's
+  shipped guard: while the run is active a viewer prompt is rejected and steer
+  is the sanctioned channel; the post-run window and authz remain open.*
 - Authorization: the pod cannot authenticate anyone; first-click-wins is not an
   authz model. Belongs at the Hub — name it out of scope explicitly.
 - issue-22 R2: pod-side :4000 ownership re-opens the fan-out placement settled

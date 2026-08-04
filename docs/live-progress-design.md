@@ -1,9 +1,10 @@
 # Live run progress over ACP — root cause and design
 
-Status: proposal, 2026-07-29. Companion to `harness-mental-model.md` and the
-issue-22 contract docs. Everything cited below was verified against source
-(goose fork `aaif-goose/goose` at `v1.39.0` — the tag `harness-goose/Dockerfile`
-pins — plus this repo), not inferred.
+Status: proposal 2026-07-29; Tier 1 tee + steering SHIPPED 2026-08-04 as
+konveyor #96 (demux #95 and string-id fix #94 merged earlier). Companion to
+`harness-mental-model.md` and the issue-22 contract docs. Everything cited
+below was verified against source (goose fork `aaif-goose/goose` at `v1.39.0`
+— the tag `harness-goose/Dockerfile` pins — plus this repo), not inferred.
 
 ## The problem, restated precisely
 
@@ -204,11 +205,20 @@ ticker, and the transcript grows across poll ticks with no interaction.
   `{type:"diff"}` content. Consume #53's fsnotify watcher via a small callback
   hook rather than adding a second scanner. go-git `Worktree` has no internal
   locking — serialize sampler and `CommitAll` behind one repo mutex.
-- **Steering.** goose's concurrent-prompt rejection points at
-  `_goose/unstable/session/steer` (E5 verifies shape). With the harness owning
-  `:4000`, a viewer's prompt can be forwarded as a steer/cancel-and-reprompt —
-  but whether outside prompts may touch the run session at all is a security
-  decision to put to maintainers, not a default.
+- **Steering — SHIPPED in #96 (E5 answered from source, then proven live).**
+  `_goose/unstable/session/steer` takes `{sessionId, expectedRunId, prompt}`
+  and returns `{runId, messageId}`; goose queues the message into the active
+  turn, drains it at the next loop iteration, streams the pickup as
+  `user_message_chunk` with `_meta.goose.steer`, and a steer landing while
+  the model wraps up keeps the turn alive. `expectedRunId` comes off the teed
+  stream (`session_info_update` `_meta.goose.activeRunId`). goose scopes the
+  active run to the connection that started it, so the tee relays viewer
+  steer/cancel frames naming the run session onto the run connection
+  (viewer request id preserved) and rejects viewer `session/prompt` while
+  the run is active, with goose's own use-steer wording. Kill switch
+  `HARNESS_HITL_STEER=off`. The "may outsiders touch the run session"
+  question is answered as: prompt no (while active), steer yes (gated),
+  authz still the Hub's problem.
 
 ## Sequencing upstream
 
@@ -234,6 +244,6 @@ ticker, and the transcript grows across poll ticks with no interaction.
 | E1 | Does goose ever attach `locations[]` / diff content in our config? | capture transcript during a text_editor-heavy prompt |
 | E3 | Does `goose serve` without `--host` bind loopback or 0.0.0.0? | `lsof -nP -iTCP:4001 -sTCP:LISTEN` |
 | E4 | Both auth carriers accepted? String vs int `protocolVersion`? | `websocat` matrix |
-| E5 | `_goose/unstable/session/steer` request/response shape? | send during active prompt |
+| E5 | ~~`_goose/unstable/session/steer` request/response shape?~~ **ANSWERED 2026-08-04**: `{sessionId, expectedRunId, prompt[]}` → `{runId, messageId}` (goose-sdk-types `custom_requests.rs`); verified live via `TestSteerRedirectsLiveRun` | ~~send during active prompt~~ source + live probe |
 | E6 | What seams exist in the #53 harness tree? | `gh pr checkout 53` scratch worktree, read |
 | E7 | go-git `Status()` p95 on coolstore-sized repo? | 20-line benchmark |
