@@ -7,7 +7,7 @@
  *
  * Asserts the seed-plan contract:
  *   1. dryRun=true is pure computation — statuses come back, nothing is written
- *   2. the real seed binds agents to the cluster's actual LLMProvider and to
+ *   2. the real seed binds agents to the cluster's actual Gateway and to
  *      catalog-resolved images (never the retired gcp-vertex-ai / inline set)
  *   3. sets the cluster can't supply surface as "skipped" with a reason
  *   4. re-seeding is idempotent (create-only: everything reports "exists")
@@ -48,7 +48,7 @@ interface SeedResponse {
   existed: number;
   skipped: number;
   dryRun: boolean;
-  provider: { name: string; source: "env" | "discovered"; ready: boolean } | null;
+  gateway: { name: string; source: "env" | "discovered"; ready: boolean } | null;
   results: SeedEntry[];
 }
 interface NamedCR {
@@ -87,9 +87,9 @@ async function main(): Promise<void> {
   if (!health.ok) fail("healthz", `HTTP ${health.status}`);
   pass("healthz");
 
-  const providers = await get<NamedCR[]>("/api/llmproviders");
-  pass("providers listed", `${providers.length} in namespace`);
-  const expectSkipAll = providers.length === 0;
+  const gateways = await get<NamedCR[]>("/api/gateways");
+  pass("gateways listed", `${gateways.length} in namespace`);
+  const expectSkipAll = gateways.length === 0;
 
   const images = await get<{ name: string; image: string }[]>("/api/images");
   const catalogImage = (name: string) => images.find((i) => i.name === name)?.image;
@@ -98,7 +98,7 @@ async function main(): Promise<void> {
   const before = {
     agents: names(await get<NamedCR[]>("/api/agents")),
     skills: names(await get<NamedCR[]>("/api/skillcards")),
-    workloads: names(await get<NamedCR[]>("/api/agentworkloads")),
+    workflows: names(await get<NamedCR[]>("/api/agentworkflows")),
   };
 
   // -- 1. dry run: full plan, zero writes
@@ -108,33 +108,33 @@ async function main(): Promise<void> {
     fail("dryRun counts", `seeded+existed+skipped != results.length in ${JSON.stringify(dry)}`);
   }
   if (expectSkipAll) {
-    if (dry.provider !== null) fail("dryRun provider", "expected null with no providers");
-  } else if (!dry.provider?.name) {
-    fail("dryRun provider", `no provider resolved despite ${providers.length} existing`);
+    if (dry.gateway !== null) fail("dryRun gateway", "expected null with no gateways");
+  } else if (!dry.gateway?.name) {
+    fail("dryRun gateway", `no gateway resolved despite ${gateways.length} existing`);
   }
   for (const r of dry.results) {
-    if (r.kind === "LLMProvider" || RETIRED.has(r.name)) {
+    if (r.kind === "LLMProvider" || r.kind === "Gateway" || RETIRED.has(r.name)) {
       fail("retired resources", `${r.kind}/${r.name} is back in the plan`);
     }
     if (r.status === "skipped" && !r.reason) fail("skip reason", `${r.kind}/${r.name} has none`);
   }
   pass(
     "dryRun plan",
-    `provider=${dry.provider?.name ?? "none"}(${dry.provider?.source ?? "-"}) ` +
+    `gateway=${dry.gateway?.name ?? "none"}(${dry.gateway?.source ?? "-"}) ` +
       `create=${dry.seeded} exist=${dry.existed} skip=${dry.skipped}`,
   );
 
   const after = {
     agents: names(await get<NamedCR[]>("/api/agents")),
     skills: names(await get<NamedCR[]>("/api/skillcards")),
-    workloads: names(await get<NamedCR[]>("/api/agentworkloads")),
+    workflows: names(await get<NamedCR[]>("/api/agentworkflows")),
   };
   if (JSON.stringify(before) !== JSON.stringify(after)) {
     fail("dryRun purity", `cluster changed: ${JSON.stringify({ before, after })}`);
   }
   const wouldCreate = dry.results.find((r) => r.status === "created" && r.kind !== "ConfigMap");
   if (wouldCreate) {
-    const plural = wouldCreate.kind === "Agent" ? "agents" : wouldCreate.kind === "SkillCard" ? "skillcards" : "agentworkloads";
+    const plural = wouldCreate.kind === "Agent" ? "agents" : wouldCreate.kind === "SkillCard" ? "skillcards" : "agentworkflows";
     const code = await getStatus(`/api/${plural}/${wouldCreate.name}`);
     if (code !== 404) {
       fail("dryRun purity", `${wouldCreate.kind}/${wouldCreate.name} exists after dry run (HTTP ${code})`);
@@ -152,11 +152,11 @@ async function main(): Promise<void> {
   }
   pass("seed applied", `created=${seed.seeded} existed=${seed.existed} skipped=${seed.skipped}`);
 
-  // -- 3. seeded agents bind to the real provider + catalog image
-  const seededSets: { agent: string; catalogKey: string; workload: string }[] = [];
+  // -- 3. seeded agents bind to the real gateway + catalog image
+  const seededSets: { agent: string; catalogKey: string; workflow: string }[] = [];
   for (const set of [
-    { agent: "java-migration-analyzer", catalogKey: "agent-java", workload: "javaee-to-quarkus" },
-    { agent: "pf-migration-analyzer", catalogKey: "agent-nodejs", workload: "patternfly-migration" },
+    { agent: "java-migration-analyzer", catalogKey: "agent-java", workflow: "javaee-to-quarkus" },
+    { agent: "pf-migration-analyzer", catalogKey: "agent-nodejs", workflow: "patternfly-migration" },
   ]) {
     const entry = seed.results.find((r) => r.kind === "Agent" && r.name === set.agent);
     if (!entry) fail("plan coverage", `no entry for Agent/${set.agent}`);
@@ -166,20 +166,20 @@ async function main(): Promise<void> {
     }
     seededSets.push(set);
     const agent = await get<NamedCR>(`/api/agents/${set.agent}`);
-    const provRef = (agent.spec?.providers as { ref?: string }[] | undefined)?.[0]?.ref;
-    if (provRef !== seed.provider?.name) {
-      fail("agent provider", `${set.agent} references "${provRef}", expected "${seed.provider?.name}"`);
+    const gwRef = (agent.spec?.gateways as { ref?: string }[] | undefined)?.[0]?.ref;
+    if (gwRef !== seed.gateway?.name) {
+      fail("agent gateway", `${set.agent} references "${gwRef}", expected "${seed.gateway?.name}"`);
     }
     const expectImage = catalogImage(set.catalogKey);
     if (agent.spec?.image !== expectImage) {
       fail("agent image", `${set.agent} runs "${agent.spec?.image}", catalog says "${expectImage}"`);
     }
-    const pbStatus = await getStatus(`/api/agentworkloads/${set.workload}`);
-    if (pbStatus !== 200) fail("workload", `${set.workload} -> HTTP ${pbStatus}`);
-    pass(`set ${set.catalogKey} seeded`, `provider=${provRef} image=${expectImage}`);
+    const wfStatus = await getStatus(`/api/agentworkflows/${set.workflow}`);
+    if (wfStatus !== 200) fail("workflow", `${set.workflow} -> HTTP ${wfStatus}`);
+    pass(`set ${set.catalogKey} seeded`, `gateway=${gwRef} image=${expectImage}`);
   }
   if (expectSkipAll && seededSets.length > 0) {
-    fail("skip-all", "agents were seeded with no provider on the cluster");
+    fail("skip-all", "agents were seeded with no gateway on the cluster");
   }
 
   // -- 4. idempotent re-seed

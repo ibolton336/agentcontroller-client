@@ -1,21 +1,20 @@
-# AgentWorkloadRun for the ROKS cluster `demo-agentic-controller` ONLY.
+# AgentWorkflowRun for the ROKS cluster `demo-agentic-controller` ONLY.
 # On its Hub, coolstore is application id 1. Dylan-mta uses
 # runs/coolstore-run-dylan-mta.yaml (app id 2, different branch).
-# Spec is immutable; models + env are copied to ALL stages. Fresh run =
+# Spec is immutable; gateway + env are copied to ALL stages. Fresh run =
 # new metadata.name + new TARGET_BRANCH.
 apiVersion: konveyor.io/v1alpha1
-kind: AgentWorkloadRun
+kind: AgentWorkflowRun
 metadata:
   name: coolstore-quarkus-roks-1
   namespace: konveyor-agents
   labels:
     konveyor.io/managed: "true"
 spec:
-  workloadRef: coolstore-quarkus-demo
-  models:                                  # REQUIRED by hand — no controller defaults these
-    - role: primary
-      provider: aws-bedrock
-      model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  workflowRef: coolstore-quarkus-demo
+  # gateway may be omitted (the stage Agent declares exactly one and the
+  # controller defaults to it); explicit here to make the model visible.
+  gateway: bedrock-sonnet
   params:
     - name: max_turns
       value: "150"                         # declared on the (single) Agent, so valid for every stage

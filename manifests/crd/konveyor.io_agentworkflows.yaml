@@ -4,16 +4,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: agentworkloads.konveyor.io
+  name: agentworkflows.konveyor.io
 spec:
   group: konveyor.io
   names:
-    kind: AgentWorkload
-    listKind: AgentWorkloadList
-    plural: agentworkloads
+    kind: AgentWorkflow
+    listKind: AgentWorkflowList
+    plural: agentworkflows
     shortNames:
-    - ap
-    singular: agentworkload
+    - aw
+    singular: agentworkflow
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -27,9 +27,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          AgentWorkload is a reusable workload combining a high-level guide with an
+          AgentWorkflow is a reusable workflow combining a high-level guide with an
           ordered sequence of stages. Each stage references an Agent and carries
-          instructions. An AgentWorkload is a template — creating one does not
+          instructions. An AgentWorkflow is a template — creating one does not
           execute anything.
         properties:
           apiVersion:
@@ -50,7 +50,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: AgentWorkloadSpec defines the desired state of an AgentWorkload.
+            description: AgentWorkflowSpec defines the desired state of an AgentWorkflow.
             properties:
               guide:
                 description: |-
@@ -66,7 +66,7 @@ spec:
                   handoff files.
                 items:
                   description: |-
-                    AgentWorkloadStage defines one stage in a workload.
+                    AgentWorkflowStage defines one stage in a workflow.
                     Each stage references an Agent and carries instructions.
                   properties:
                     agentRef:
@@ -80,8 +80,14 @@ spec:
                         Composed with the Agent's prompt at execution time.
                       type: string
                     name:
-                      description: Name is the stage name, unique within the workload.
+                      description: |-
+                        Name is the stage name, unique within the workflow.
+                        Must be a valid Kubernetes label value (lowercase alphanumeric,
+                        hyphens, dots, max 63 chars) since it is used in labels on
+                        child AgentRun resources.
+                      maxLength: 63
                       minLength: 1
+                      pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
                       type: string
                   required:
                   - agentRef
@@ -96,12 +102,12 @@ spec:
             - stages
             type: object
           status:
-            description: AgentWorkloadStatus defines the observed state of an AgentWorkload.
+            description: AgentWorkflowStatus defines the observed state of an AgentWorkflow.
             properties:
               conditions:
                 description: |-
                   Conditions represent the latest available observations of the
-                  AgentWorkload's state.
+                  AgentWorkflow's state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

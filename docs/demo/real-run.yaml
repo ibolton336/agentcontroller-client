@@ -10,13 +10,9 @@ spec:
     value: https://github.com/konveyor-ecosystem/coolstore
   - name: branch
     value: main
-  models:
-  - role: primary
-    provider: bedrock
-    model: "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+  # No gateway: the agent declares exactly one (bedrock-sonnet) and the
+  # controller defaults to it. To pin a different model, declare that
+  # Gateway on the agent and set spec.gateway here.
   env:
   - name: GOOSE_MODE
     value: auto
-  envFrom:
-  - secretRef:
-      name: aws-bedrock-creds

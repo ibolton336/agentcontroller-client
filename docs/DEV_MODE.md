@@ -40,7 +40,7 @@ minikube start
 #    agentic-controller PR #2 merges)
 kubectl apply -f manifests/crd/
 
-# 3. Namespace + sample Agent/LLMProvider
+# 3. Namespace + sample Agent/Gateway
 kubectl create namespace konveyor-agents
 kubectl apply -f manifests/samples.yaml
 

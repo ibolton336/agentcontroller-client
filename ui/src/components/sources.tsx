@@ -10,10 +10,9 @@ import {
 import type {
   AgentImage,
   AgentParam,
-  AgentRunModelSelection,
   Application,
   Condition,
-  LLMProvider,
+  Gateway,
 } from "@konveyor/agentic-client/contract";
 import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
 
@@ -35,25 +34,25 @@ export function skillCount(spec: { skillCards?: { ref: string }[]; skillCollecti
   return (spec.skillCards?.length ?? 0) + (spec.skillCollections?.length ?? 0);
 }
 
-export function useProviders(api: ShimClient): {
-  providers: LLMProvider[];
+export function useGateways(api: ShimClient): {
+  gateways: Gateway[];
   loading: boolean;
   error: string | null;
 } {
-  const [providers, setProviders] = useState<LLMProvider[]>([]);
+  const [gateways, setGateways] = useState<Gateway[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let disposed = false;
     api
-      .listProviders()
-      .then((list) => { if (!disposed) { setProviders(list); setLoading(false); } })
+      .listGateways()
+      .then((list) => { if (!disposed) { setGateways(list); setLoading(false); } })
       .catch((err) => { if (!disposed) { setError(err instanceof Error ? err.message : String(err)); setLoading(false); } });
     return () => { disposed = true; };
   }, [api]);
 
-  return { providers, loading, error };
+  return { gateways, loading, error };
 }
 
 export function useImageCatalog(api: ShimClient): {
@@ -102,56 +101,51 @@ export function useApplicationInventory(api: ShimClient) {
   return { applications, inventorySource, inventoryEndpoint, error, reloading, reload: load };
 }
 
-export function defaultModelFor(
-  providers: LLMProvider[],
-  agentProviderRefs: { ref: string }[],
-): AgentRunModelSelection | undefined {
-  if (!agentProviderRefs.length || !providers.length) return undefined;
-  const first = providers.find((p) => p.metadata.name === agentProviderRefs[0]?.ref);
-  if (!first || !first.spec.models.length) return undefined;
-  const primary = first.spec.models.find((m) => m.tier === "primary") ?? first.spec.models[0]!;
-  return { role: "primary", provider: first.metadata.name!, model: primary.name };
+/**
+ * Default gateway selection for a run: none when the Agent declares at most
+ * one (the controller defaults a single-gateway Agent itself); the first
+ * declared gateway when there are several (an unselected multi-gateway run
+ * fails validation).
+ */
+export function defaultGatewayFor(
+  agentGatewayRefs: { ref: string }[],
+): string | undefined {
+  if (agentGatewayRefs.length <= 1) return undefined;
+  return agentGatewayRefs[0]?.ref;
 }
 
-export function ModelPicker({
-  providers,
-  agentProviderRefs,
+/** One gateway = one model: the "pick a model" dropdown lists Gateways. */
+export function GatewayPicker({
+  gateways,
+  agentGatewayRefs,
   value,
   onChange,
 }: {
-  providers: LLMProvider[];
-  agentProviderRefs: { ref: string }[];
-  value: AgentRunModelSelection | undefined;
-  onChange: (m: AgentRunModelSelection | undefined) => void;
+  gateways: Gateway[];
+  agentGatewayRefs: { ref: string }[];
+  value: string | undefined;
+  onChange: (gateway: string | undefined) => void;
 }) {
-  const options: { label: string; provider: string; model: string }[] = [];
-  for (const ref of agentProviderRefs) {
-    const prov = providers.find((p) => p.metadata.name === ref.ref);
-    if (!prov) continue;
-    for (const m of prov.spec.models) {
-      options.push({
-        label: `${prov.metadata.name}/${m.name}${m.tier ? ` (${m.tier})` : ""}`,
-        provider: prov.metadata.name!,
-        model: m.name,
-      });
-    }
-  }
-  const selected = value ? `${value.provider}/${value.model}` : "";
+  const options: { name: string; label: string }[] = agentGatewayRefs.map(({ ref }) => {
+    const gw = gateways.find((g) => g.metadata.name === ref);
+    return {
+      name: ref,
+      label: gw
+        ? `${ref} — ${gw.spec.model.name} (${gw.spec.provider})`
+        : `${ref} (Gateway not found)`,
+    };
+  });
 
   return (
-    <FormGroup label="Model" fieldId="model-picker">
+    <FormGroup label="Model" fieldId="gateway-picker">
       <FormSelect
-        id="model-picker"
-        value={selected}
-        onChange={(_e, v) => {
-          if (!v) { onChange(undefined); return; }
-          const opt = options.find((o) => `${o.provider}/${o.model}` === v);
-          if (opt) onChange({ role: "primary", provider: opt.provider, model: opt.model });
-        }}
+        id="gateway-picker"
+        value={value ?? ""}
+        onChange={(_e, v) => onChange(v || undefined)}
       >
-        <FormSelectOption value="" label="Default (shim policy)" />
+        <FormSelectOption value="" label="Default (controller policy)" />
         {options.map((o) => (
-          <FormSelectOption key={`${o.provider}/${o.model}`} value={`${o.provider}/${o.model}`} label={o.label} />
+          <FormSelectOption key={o.name} value={o.name} label={o.label} />
         ))}
       </FormSelect>
     </FormGroup>

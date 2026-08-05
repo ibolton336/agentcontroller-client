@@ -1,8 +1,8 @@
-# NOTE (2026-07-30): the AgentWorkloadRun that used to live here moved to
+# NOTE (2026-07-30): the AgentWorkflowRun that used to live here moved to
 # deploy/roks/runs/ — one file per cluster. TWO clusters share this tree and
 # their Hubs disagree on the coolstore app id (ROKS: 1, dylan-mta: 2), and
 # each attempt needs its own TARGET_BRANCH on the shared GitHub fork.
-# Apply THIS file (Agent + AgentWorkload, identical on both clusters), then
+# Apply THIS file (Agent + AgentWorkflow, identical on both clusters), then
 # the run file for your cluster.
 # 1. Agent — one agent drives all three stages; skills are baked in the image
 apiVersion: konveyor.io/v1alpha1
@@ -19,8 +19,8 @@ metadata:
     konveyor.io/credential-sources: '{"git": "konveyor.io/application-identity"}'
 spec:
   image: ghcr.io/ibolton336/agent-java:demo   # skills baked at /opt/skills: plan, execute, verify, javaee-to-quarkus, patternfly-migration
-  providers:
-    - ref: aws-bedrock                     # must match a Ready LLMProvider; validateModels checks membership
+  gateways:
+    - ref: bedrock-sonnet                  # must match a Ready Gateway; validateGateway checks membership
   params:
     - name: max_turns
       type: number
@@ -31,9 +31,9 @@ spec:
     Quarkus 3 migration. Work only inside the workspace repository. Never run git
     commands yourself; the harness commits and pushes your file writes automatically.
 ---
-# 2. AgentWorkload — guide becomes KONVEYOR_WORKLOAD_INSTRUCTIONS in every stage
+# 2. AgentWorkflow — guide becomes KONVEYOR_WORKFLOW_GUIDE in every stage
 apiVersion: konveyor.io/v1alpha1
-kind: AgentWorkload
+kind: AgentWorkflow
 metadata:
   name: coolstore-quarkus-demo
   namespace: konveyor-agents

@@ -25,16 +25,16 @@ The UI's **Load defaults** button (toolbar) calls `POST /api/defaults`,
 which plans a seed set against what the cluster actually has and applies
 it create-only (re-seeding never clobbers edits):
 
-- **Java EE → Quarkus set**: 1 SkillCard, 3 Agents on `agent-java`, 1 AgentWorkload
-- **PatternFly 5→6 set**: 1 SkillCard, 3 Agents on `agent-nodejs`, 1 AgentWorkload
+- **Java EE → Quarkus set**: 1 SkillCard, 3 Agents on `agent-java`, 1 AgentWorkflow
+- **PatternFly 5→6 set**: 1 SkillCard, 3 Agents on `agent-nodejs`, 1 AgentWorkflow
 - **Image catalog**: `agent-image-catalog` ConfigMap (PR #53 hierarchy)
 
-Seeded agents bind to the cluster's real LLMProvider (`SEED_PROVIDER`
-env pins one; unset = discover, preferring Ready) and take images from
+Seeded agents bind to the cluster's real Gateway (`SEED_GATEWAY` env
+pins one; unset = discover, preferring Ready) and take images from
 the resolved catalog (`AGENT_IMAGE_PREFIX`/`AGENT_IMAGE_TAG` point the
 builtin refs at a pullable registry; a cluster-authored ConfigMap wins).
-No LLMProvider is ever seeded — providers need real credentials and are
-install-time infrastructure. A set whose provider or image the cluster
+No Gateway is ever seeded — gateways need real credentials and are
+install-time infrastructure. A set whose gateway or image the cluster
 can't supply is reported `skipped` with a reason instead of being
 created broken. `?dryRun=true` returns the same plan without writing.
 
@@ -83,8 +83,8 @@ from the kebab (cascade: Sandbox, pod, Service, secret all GC).
 
 ## Beat 2 — the real agent (goose + Bedrock) (4 min)
 
-The UI's create form doesn't yet set `models:`/`envFrom:` (known gap), so
-create the real run via the API — which is the point: same CR, any client:
+The real run is just as easy via the API — which is the point: same CR,
+any client (the create form's model dropdown now picks a Gateway too):
 
 ```sh
 kubectl create -f docs/demo/real-run.yaml

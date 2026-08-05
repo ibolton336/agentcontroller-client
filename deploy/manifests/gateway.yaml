@@ -14,10 +14,13 @@ metadata:
   namespace: konveyor-agents
 rules:
   - apiGroups: ["konveyor.io"]
-    resources: ["agentruns"]
+    resources: ["agentruns", "agentworkflowruns"]
     verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: ["konveyor.io"]
-    resources: ["agents", "llmproviders"]
+    resources: ["agents", "agentworkflows", "skillcards", "skillcollections"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["konveyor.io"]
+    resources: ["gateways"]
     verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["secrets"]

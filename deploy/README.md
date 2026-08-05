@@ -43,18 +43,18 @@ kubectl -n konveyor-agents rollout status deploy/agentic-gateway deploy/agentic-
 
 Prereqs already on the cluster: the agentic-controller
 (`manifests/controller/install.yaml`), Agent Sandbox, and the sample
-Agents/LLMProviders (`hack/demo-up.sh` converges all of that).
+Agents/Gateways (`hack/demo-up.sh` converges all of that).
 
 ### Gateway env knobs (seeding)
 
 `POST /api/defaults` plans against what the cluster actually has — it
-binds seeded agents to a real LLMProvider and to catalog images, and
+binds seeded agents to a real Gateway and to catalog images, and
 reports anything the cluster can't supply as `skipped` instead of
 creating broken resources. Tune per cluster on the gateway Deployment:
 
 | env | default | meaning |
 | --- | --- | --- |
-| `SEED_PROVIDER` | *(discover)* | LLMProvider name seeded agents bind to. Unset = prefer a Ready provider in the namespace. |
+| `SEED_GATEWAY` | *(discover)* | Gateway name seeded agents bind to. Unset = prefer a Ready gateway in the namespace. (`SEED_PROVIDER` is a legacy alias.) |
 | `AGENT_IMAGE_PREFIX` | `quay.io/konveyor` | Registry/namespace prefix for builtin catalog + skill image refs. On OpenShift with in-cluster builds: `image-registry.openshift-image-registry.svc:5000/konveyor-agents`. |
 | `AGENT_IMAGE_TAG` | `dev` | Tag for those refs (e.g. `demo` for the ROKS BuildConfig outputs). |
 

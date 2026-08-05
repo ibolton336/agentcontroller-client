@@ -186,15 +186,11 @@ export function RunDetailPage({ api, runName, onBack, onOpenRun }: RunDetailPage
                   </DescriptionListDescription>
                 </DescriptionListGroup>
               )}
-              {(run.spec.models ?? []).length > 0 && (
+              {run.spec.gateway && (
                 <DescriptionListGroup>
-                  <DescriptionListTerm>Models</DescriptionListTerm>
+                  <DescriptionListTerm>Gateway</DescriptionListTerm>
                   <DescriptionListDescription>
-                    {run.spec.models!.map((m) => (
-                      <Label key={m.role} isCompact style={{ marginRight: "0.25rem" }}>
-                        {m.role}: {m.provider}/{m.model}
-                      </Label>
-                    ))}
+                    <Label isCompact>{run.spec.gateway}</Label>
                   </DescriptionListDescription>
                 </DescriptionListGroup>
               )}

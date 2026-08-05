@@ -16,17 +16,17 @@
  */
 import type {
   AgentImage,
-  AgentWorkload,
-  AgentWorkloadRun,
-  AgentWorkloadSpec,
+  AgentWorkflow,
+  AgentWorkflowRun,
+  AgentWorkflowSpec,
   AgentResource,
   AgentResourceSpec,
   AgentRun,
   Application,
   CatalogApi,
-  CreateWorkloadRunInput,
+  CreateWorkflowRunInput,
   CreateRunInput,
-  LLMProvider,
+  Gateway,
   RunApi,
   SkillCard,
   SkillCardSpec,
@@ -119,36 +119,36 @@ export class ShimClient implements RunApi, CatalogApi {
     await this.send("DELETE", `/api/agentruns/${encodeURIComponent(name)}`);
   }
 
-  // ----------------------------------------------------- RunApi: workloads
+  // ----------------------------------------------------- RunApi: workflows
 
-  listWorkloads(): Promise<AgentWorkload[]> {
-    return this.json<AgentWorkload[]>("GET", "/api/agentworkloads");
+  listWorkflows(): Promise<AgentWorkflow[]> {
+    return this.json<AgentWorkflow[]>("GET", "/api/agentworkflows");
   }
 
-  listWorkloadRuns(): Promise<AgentWorkloadRun[]> {
-    return this.json<AgentWorkloadRun[]>("GET", "/api/agentworkloadruns");
+  listWorkflowRuns(): Promise<AgentWorkflowRun[]> {
+    return this.json<AgentWorkflowRun[]>("GET", "/api/agentworkflowruns");
   }
 
-  getWorkloadRun(name: string): Promise<AgentWorkloadRun> {
-    return this.json<AgentWorkloadRun>("GET", `/api/agentworkloadruns/${encodeURIComponent(name)}`);
+  getWorkflowRun(name: string): Promise<AgentWorkflowRun> {
+    return this.json<AgentWorkflowRun>("GET", `/api/agentworkflowruns/${encodeURIComponent(name)}`);
   }
 
-  createWorkloadRun(input: CreateWorkloadRunInput): Promise<AgentWorkloadRun> {
-    return this.json<AgentWorkloadRun>("POST", "/api/agentworkloadruns", input);
+  createWorkflowRun(input: CreateWorkflowRunInput): Promise<AgentWorkflowRun> {
+    return this.json<AgentWorkflowRun>("POST", "/api/agentworkflowruns", input);
   }
 
-  async deleteWorkloadRun(name: string): Promise<void> {
-    await this.send("DELETE", `/api/agentworkloadruns/${encodeURIComponent(name)}`);
+  async deleteWorkflowRun(name: string): Promise<void> {
+    await this.send("DELETE", `/api/agentworkflowruns/${encodeURIComponent(name)}`);
   }
 
-  // --------------------------------------------------- CatalogApi: providers
+  // --------------------------------------------------- CatalogApi: gateways
 
-  listProviders(): Promise<LLMProvider[]> {
-    return this.json<LLMProvider[]>("GET", "/api/llmproviders");
+  listGateways(): Promise<Gateway[]> {
+    return this.json<Gateway[]>("GET", "/api/gateways");
   }
 
-  getProvider(name: string): Promise<LLMProvider> {
-    return this.json<LLMProvider>("GET", `/api/llmproviders/${encodeURIComponent(name)}`);
+  getGateway(name: string): Promise<Gateway> {
+    return this.json<Gateway>("GET", `/api/gateways/${encodeURIComponent(name)}`);
   }
 
   // ------------------------------------------------- CatalogApi: skillcards
@@ -209,22 +209,22 @@ export class ShimClient implements RunApi, CatalogApi {
     await this.send("DELETE", `/api/agents/${encodeURIComponent(name)}`);
   }
 
-  // ------------------------------------------------ CatalogApi: workloads
+  // ------------------------------------------------ CatalogApi: workflows
 
-  getWorkload(name: string): Promise<AgentWorkload> {
-    return this.json<AgentWorkload>("GET", `/api/agentworkloads/${encodeURIComponent(name)}`);
+  getWorkflow(name: string): Promise<AgentWorkflow> {
+    return this.json<AgentWorkflow>("GET", `/api/agentworkflows/${encodeURIComponent(name)}`);
   }
 
-  createWorkload(name: string, spec: AgentWorkloadSpec): Promise<AgentWorkload> {
-    return this.json<AgentWorkload>("POST", "/api/agentworkloads", { name, spec });
+  createWorkflow(name: string, spec: AgentWorkflowSpec): Promise<AgentWorkflow> {
+    return this.json<AgentWorkflow>("POST", "/api/agentworkflows", { name, spec });
   }
 
-  updateWorkload(name: string, spec: AgentWorkloadSpec): Promise<AgentWorkload> {
-    return this.json<AgentWorkload>("PUT", `/api/agentworkloads/${encodeURIComponent(name)}`, { spec });
+  updateWorkflow(name: string, spec: AgentWorkflowSpec): Promise<AgentWorkflow> {
+    return this.json<AgentWorkflow>("PUT", `/api/agentworkflows/${encodeURIComponent(name)}`, { spec });
   }
 
-  async deleteWorkload(name: string): Promise<void> {
-    await this.send("DELETE", `/api/agentworkloads/${encodeURIComponent(name)}`);
+  async deleteWorkflow(name: string): Promise<void> {
+    await this.send("DELETE", `/api/agentworkflows/${encodeURIComponent(name)}`);
   }
 
   // --------------------------------------------------------------- ACP URL

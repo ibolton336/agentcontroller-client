@@ -16,7 +16,7 @@
  */
 import * as crypto from "node:crypto";
 import * as k8s from "@kubernetes/client-node";
-import { GROUP, VERSION, PLURALS, type Agent, type AgentRun, type LLMProvider } from "../src/types.js";
+import { GROUP, VERSION, PLURALS, type Agent, type AgentRun, type Gateway } from "../src/types.js";
 
 const NAMESPACE = process.env.NAMESPACE ?? "konveyor-agents";
 const HARNESS_IMAGE = process.env.HARNESS_IMAGE ?? "acp-mock-harness:dev";
@@ -122,25 +122,37 @@ async function provision(run: AgentRun) {
     ...((run.spec.envFrom as k8s.V1EnvFromSource[] | undefined) ?? []),
   ];
 
-  // Model selection -> harness runtime config. The real harness maps the
-  // run's provider/model roles onto goose env; we do the same: resolve the
-  // LLMProvider CR, mount its credential secret, and set GOOSE_PROVIDER /
-  // GOOSE_MODEL for the "primary" role.
-  const selection = run.spec.models?.find((m) => m.role === "primary") ?? run.spec.models?.[0];
-  if (selection) {
-    const provider = (await custom.getNamespacedCustomObject({
+  // Gateway -> harness runtime config. Mirrors the real controller
+  // (buildEnvVars): resolve the run's Gateway — defaulting to the Agent's
+  // only gateway when exactly one is declared, as validateGateway does —
+  // inject KONVEYOR_LLM_*, and mount the credential Secret (single-key ->
+  // KONVEYOR_LLM_API_KEY, keyless -> whole Secret via envFrom). GOOSE_*
+  // is additionally set because the mock harness has no entrypoint doing
+  // the KONVEYOR_LLM_* -> goose mapping.
+  const gatewayName =
+    run.spec.gateway ?? (agent.spec.gateways.length === 1 ? agent.spec.gateways[0].ref : undefined);
+  if (gatewayName) {
+    const gateway = (await custom.getNamespacedCustomObject({
       group: GROUP,
       version: VERSION,
       namespace: NAMESPACE,
-      plural: PLURALS.LLMProvider,
-      name: selection.provider,
-    })) as LLMProvider;
-    const gooseProvider =
-      (provider.metadata.annotations?.["konveyor.io/goose-provider"] as string | undefined) ??
-      (provider.spec.endpoint.includes("bedrock") ? "aws_bedrock" : "openai");
-    env.push({ name: "GOOSE_PROVIDER", value: gooseProvider });
-    env.push({ name: "GOOSE_MODEL", value: selection.model });
-    envFrom.push({ secretRef: { name: provider.spec.credentialRef.secretName } });
+      plural: PLURALS.Gateway,
+      name: gatewayName,
+    })) as Gateway;
+    env.push({ name: "KONVEYOR_LLM_PROVIDER", value: gateway.spec.provider });
+    env.push({ name: "KONVEYOR_LLM_ENDPOINT", value: gateway.spec.endpoint });
+    env.push({ name: "KONVEYOR_LLM_MODEL", value: gateway.spec.model.name });
+    env.push({ name: "GOOSE_PROVIDER", value: gateway.spec.provider === "aws-bedrock" ? "aws_bedrock" : gateway.spec.provider });
+    env.push({ name: "GOOSE_MODEL", value: gateway.spec.model.name });
+    const cred = gateway.spec.credentialRef;
+    if (cred.key) {
+      env.push({
+        name: "KONVEYOR_LLM_API_KEY",
+        valueFrom: { secretKeyRef: { name: cred.secretName, key: cred.key } },
+      });
+    } else {
+      envFrom.push({ secretRef: { name: cred.secretName } });
+    }
   }
 
   // Workspace: the harness clones the target repo before the agent starts
