@@ -38,6 +38,43 @@ Agents that Konveyor UIs know how to drive carry
 (`GET /api/agents` in SHIM API v1 does); unlabeled Agents remain usable by
 other consumers and invisible to Konveyor UIs.
 
+**Runs carry a second platform label: `konveyor.io/application: "<hub id>"`**,
+written at create time on both AgentRun and AgentWorkflowRun whenever the
+caller supplies an application, so per-application run views are a label
+selector instead of a scan. Same reasoning as the managed label — a
+namespaced label the platform owns, no CRD schema involvement.
+
+This is **additive to `APP_ID` in `spec.env`, not a replacement**. The two
+serve different consumers and neither can do the other's job:
+
+| | carrier | consumer | why it can't be the other |
+|---|---|---|---|
+| `APP_ID` | `spec.env` | the **pod** — the harness resolves the application from Hub at runtime | env vars are not indexable; answering "runs for app 42" means fetching every run and parsing `spec.env` |
+| `konveyor.io/application` | `metadata.labels` | the **API** — `?application=<id>` becomes a `client.List()` label selector | a label is not visible inside the container |
+
+Consequences, all verified in the shim prototype:
+
+- Hub application ids must parse as a uint64 (`hub.ParseAppID` requires
+  it), capping them at 20 digits — inside the apiserver's 63-character
+  label-value limit, in a label-safe alphabet. One uint64-bounded check
+  covers both concerns: a run the harness would reject at startup, and a
+  create the apiserver would reject outright. A plain digits regex is not
+  that check — a 21-digit id passes it and overflows `ParseUint` anyway.
+- Runs created before the label are invisible to the selector. A filtered
+  list is "runs we can prove belong to 42", not "every run that ever
+  touched 42". Callers needing the old runs keep a `spec.env` fallback for
+  one release.
+- **Workflow stage runs do not inherit it.** The controller builds each
+  stage AgentRun's labels from scratch, so filtering `agentruns` finds
+  single runs only. Propagating parent labels to stage runs is an upstream
+  controller change, tracked separately.
+
+Status upstream: konveyor/agentic-controller ADR 0006 currently specifies
+the opposite — "the application ID goes directly on the CR as an env var"
+and "other resource types are listed unfiltered". That ADR is *proposed*;
+this section is the amendment being taken to it. Until it lands, the label
+exists only in the shim.
+
 ### (b) Param sources: generic field, namespaced values, no enum
 
 A param may declare a **source identifier** — a free-form, namespaced

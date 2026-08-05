@@ -100,13 +100,18 @@ passthrough proxy is expected to expose:
 | GET | `/api/applications` | 200 `Application[]` — the platform's application inventory (mocked in the shim; Hub serves its real records). Source of truth for resolved params/credentials, see ADR 0010. |
 | GET | `/api/agents` | 200 `AgentResource[]` (full CRs, metadata+spec), **filtered to `konveyor.io/managed=true`** |
 | GET | `/api/agents/:name` | 200 `AgentResource` \| 404 (never label-filtered) |
-| GET | `/api/llmproviders[/:name]` | 200 `LLMProvider[]` \| `LLMProvider` \| 404 |
+| GET | `/api/gateways[/:name]` | 200 `Gateway[]` \| `Gateway` \| 404 (was `/api/llmproviders` before the #100 rename) |
 | GET | `/api/skillcards[/:name]` | 200 `SkillCard[]` \| `SkillCard` \| 404 |
 | GET | `/api/skillcollections[/:name]` | 200 `SkillCollection[]` \| `SkillCollection` \| 404 |
-| GET | `/api/agentruns` | 200 `AgentRun[]` (full CRs) |
-| POST | `/api/agentruns` (body `{agentRef, params?: Record<string,string>, instructions?, applicationRef?}`) | 201 `AgentRun` (generateName `ui-`, params mapped to `[{name,value}]`). When `applicationRef` is set, the platform resolves the Agent's declared param/credential sources from that application (ADR 0010): resolved params merge under caller-supplied ones, credentials become `spec.envFrom`. 400 on unknown `applicationRef`, or a required param with a recognized source the application cannot supply. |
+| GET | `/api/agentruns[?application=<hub id>]` | 200 `AgentRun[]` (full CRs). `application` filters by the `konveyor.io/application` label (ADR 0010) — a `client.List()` label selector, never a client-side scan. Runs predating the label are not selected. 400 on a non-numeric id; 400 on any resource that cannot honour the filter, never a silent unfiltered list. |
+| POST | `/api/agentruns` (body `{agentRef, params?: Record<string,string>, instructions?, applicationRef?, targetBranch?, gateway?}`) | 201 `AgentRun` (generateName `ui-`, params mapped to `[{name,value}]`). When `applicationRef` is set, the platform resolves the Agent's declared param/credential sources from that application (ADR 0010): resolved params merge under caller-supplied ones, credentials become `spec.envFrom`, and the run is stamped `konveyor.io/application: "<id>"`. 400 on unknown `applicationRef`, or a required param with a recognized source the application cannot supply. |
 | GET | `/api/agentruns/:name` | 200 `AgentRun` \| 404 |
 | DELETE | `/api/agentruns/:name` | 204 |
+| GET | `/api/agentworkflows[/:name]` | 200 `AgentWorkflow[]` \| `AgentWorkflow` \| 404 (list **filtered to `konveyor.io/managed=true`**) |
+| GET | `/api/agentworkflowruns[?application=<hub id>]` | 200 `AgentWorkflowRun[]`. Same `application` semantics as `/api/agentruns`; composes with the managed filter as one selector. **Stage runs do not carry the parent's application label** — the controller builds their labels from scratch — so filtering `agentruns` finds single runs only. |
+| GET | `/api/agentworkflowruns/:name` | 200 `AgentWorkflowRun` \| 404 |
+| POST | `/api/agentworkflowruns` (body `{workflowRef, params?, applicationRef?, targetBranch?, gateway?}`) | 201 `AgentWorkflowRun` (generateName `ui-`), labelled `konveyor.io/managed` plus `konveyor.io/application` when scoped. |
+| DELETE | `/api/agentworkflowruns/:name` | 204 |
 | WS | `/api/agentruns/:name/acp` | Resolves the run's ACP endpoint (waitForAcpEndpoint semantics, 60s), opens a port-forward tunnel to the pod, dials `ws://127.0.0.1:<tunnel>/acp` upstream WITH `X-Secret-Key` (key read from the run's Secret), then pipes frames bidirectionally. Client close → close upstream + tunnel; upstream close/error → close client 1011 with reason. |
 
 The shim itself is unauthenticated (localhost dev tool) and serves
