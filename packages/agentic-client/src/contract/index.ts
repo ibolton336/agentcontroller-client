@@ -204,6 +204,18 @@ function decodeBase64Utf8(b64: string, keyName: string): string {
 export const MANAGED_LABEL = "konveyor.io/managed";
 
 /**
+ * Label stamping a run with the Hub application it works on, so "which runs
+ * belong to application 42?" is a server-side label selector rather than a
+ * fetch-everything-and-scan-spec.env walk. Written at create time on both
+ * AgentRun and AgentWorkflowRun; the value is the Hub application id.
+ *
+ * Runs created before this label existed do not carry it and are invisible
+ * to the selector — a filtered list is "runs we can prove belong to 42",
+ * not "every run that ever touched 42".
+ */
+export const APPLICATION_LABEL = "konveyor.io/application";
+
+/**
  * Agent annotation mapping param name -> source identifier, e.g.
  * {"repository": "konveyor.io/application-repository-url"}. A param with a
  * source is resolved by the platform (Hub / hub-shim) at run creation;
@@ -439,6 +451,20 @@ export function invalidTargetBranchReason(branch: string): string | undefined {
     return "Branch name cannot contain ~, ^, or :";
   if (branch.startsWith("/") || branch.endsWith("/") || branch.endsWith(".lock"))
     return "Invalid branch name";
+  return undefined;
+}
+
+/**
+ * Why this application id cannot be used for a run, or undefined when it
+ * can. Hub ids are numeric and the harness's APP_ID parser requires a uint,
+ * so a non-numeric id is a run that dies at startup — and, since the id is
+ * also stamped as the {@link APPLICATION_LABEL} value, a create the
+ * apiserver would reject outright. One check covers both.
+ */
+export function invalidApplicationIdReason(id: string): string | undefined {
+  if (!/^\d+$/.test(id)) {
+    return `application id "${id}" is not numeric — the harness's APP_ID parser requires a uint Hub id`;
+  }
   return undefined;
 }
 

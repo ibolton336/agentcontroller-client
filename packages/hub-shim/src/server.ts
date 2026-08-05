@@ -29,6 +29,13 @@
  *   GET    /api/agentruns/:name         -> 200 AgentRun | 404
  *   DELETE /api/agentruns/:name         -> 204 | 404
  *   WS     /api/agentruns/:name/acp     -> bidirectional pipe to the pod
+ *   GET    /api/agentworkflowruns[/:name]-> 200 AgentWorkflowRun[] | AgentWorkflowRun | 404
+ *   POST   /api/agentworkflowruns       -> 201 AgentWorkflowRun
+ *   DELETE /api/agentworkflowruns/:name -> 204 | 404
+ *
+ * Both run lists take `?application=<hub id>`, answered by the
+ * konveyor.io/application label stamped at create time — runs predating the
+ * label are not selected. The filter is a 400 on any other resource.
  *
  * No auth on the shim itself — localhost dev tool only. CORS `*` on /api/*.
  */
@@ -54,6 +61,7 @@ import {
   type Gateway,
 } from "../../agentrun-client/src/types.js";
 import {
+  APPLICATION_LABEL,
   CREDENTIAL_SOURCES_ANNOTATION,
   MANAGED_LABEL,
   PARAM_SOURCES_ANNOTATION,
@@ -62,6 +70,7 @@ import {
   SOURCE_APPLICATION_REPOSITORY_BRANCH,
   SOURCE_APPLICATION_REPOSITORY_URL,
   defaultTargetBranch,
+  invalidApplicationIdReason,
   invalidTargetBranchReason,
   parseSourcesAnnotation,
   type AgentImage,
@@ -149,6 +158,32 @@ const LIST_LABEL_SELECTORS: Record<string, string> = {
   [PLURALS.SkillCollection]: `${MANAGED_LABEL}=true`,
   [PLURALS.AgentWorkflow]: `${MANAGED_LABEL}=true`,
 };
+
+/** Run kinds whose list endpoint answers `?application=<id>`. */
+const APPLICATION_FILTERABLE: readonly string[] = [PLURALS.AgentRun, PLURALS.AgentWorkflowRun];
+
+/**
+ * Translates `?application=42` into the label selector that answers it in
+ * the apiserver, or undefined when the caller did not ask to filter.
+ *
+ * A filter this endpoint cannot honour is a 400, never a silent pass: the
+ * unfiltered response is every run in the namespace, which a caller that
+ * asked for one application's runs would render as exactly that.
+ */
+function applicationSelector(req: http.IncomingMessage, plural: string): string | undefined {
+  const raw = new URL(req.url ?? "/", "http://localhost").searchParams.get("application");
+  if (raw === null) return undefined;
+  if (!APPLICATION_FILTERABLE.includes(plural)) {
+    badRequest(
+      `?application= filters runs only — supported on ${APPLICATION_FILTERABLE.map((p) => `/api/${p}`).join(", ")}`,
+    );
+  }
+  const id = raw.trim();
+  if (!id) badRequest("?application= needs an application id (GET /api/applications lists the inventory)");
+  const problem = invalidApplicationIdReason(id);
+  if (problem) badRequest(problem);
+  return `${APPLICATION_LABEL}=${id}`;
+}
 
 /**
  * Real Konveyor Hub REST base. In-cluster this is the Hub service DNS
@@ -585,12 +620,8 @@ async function hubEnvForRun(
       `unknown applicationRef "${applicationRef}" — GET /api/applications lists the inventory`,
     );
   }
-  if (!/^\d+$/.test(app.id)) {
-    badRequest(
-      `application id "${app.id}" is not numeric — the harness's APP_ID parser requires a ` +
-        `uint Hub id`,
-    );
-  }
+  const idProblem = invalidApplicationIdReason(app.id);
+  if (idProblem) badRequest(idProblem);
   if (!app.repository?.url) {
     badRequest(
       `application "${app.id}" has no repository URL — the harness clones from the Hub ` +
@@ -1112,6 +1143,11 @@ async function handleApi(
         if (inv.source === "stub" || !inv.endpoint) {
           return sendError(res, 400, "applicationRef needs a real Hub inventory (current source is the built-in stub) — the run's stages resolve the repo from the Hub");
         }
+        // Same guard the single-run path applies via hubEnvForRun: a
+        // non-numeric id is a stage harness that dies on APP_ID, and an
+        // application label the apiserver would reject on create.
+        const idProblem = invalidApplicationIdReason(app.id);
+        if (idProblem) return sendError(res, 400, idProblem);
         env.push(
           { name: "HUB_BASE_URL", value: inv.endpoint },
           { name: "APP_ID", value: app.id },
@@ -1138,7 +1174,14 @@ async function handleApi(
           metadata: {
             generateName: "ui-",
             namespace: NAMESPACE,
-            labels: { [MANAGED_LABEL]: "true" },
+            labels: {
+              [MANAGED_LABEL]: "true",
+              // Queryable application link. NOTE: the controller builds each
+              // stage AgentRun's labels from scratch rather than inheriting
+              // the parent's, so stage runs do NOT carry this — filtering
+              // /api/agentruns finds single runs, not workflow stages.
+              ...(input.applicationRef ? { [APPLICATION_LABEL]: input.applicationRef } : {}),
+            },
           },
           spec,
         },
@@ -1172,7 +1215,12 @@ async function handleApi(
     const plural = apiMatch[1];
     const kind = READ_ONLY[plural]!;
     if (!apiMatch[2]) {
-      return sendJson(res, 200, await listCustom(plural, kind, LIST_LABEL_SELECTORS[plural]));
+      // Requirements AND: a managed-catalog filter and an application filter
+      // compose into one selector the apiserver evaluates.
+      const selector = [LIST_LABEL_SELECTORS[plural], applicationSelector(req, plural)]
+        .filter(Boolean)
+        .join(",");
+      return sendJson(res, 200, await listCustom(plural, kind, selector || undefined));
     }
     const name = decodeURIComponent(apiMatch[2]);
     try {
@@ -1185,7 +1233,8 @@ async function handleApi(
 
   if (pathname === "/api/agentruns") {
     if (method === "GET") {
-      return sendJson(res, 200, await listCustom<AgentRun>(PLURALS.AgentRun, "AgentRun"));
+      const selector = applicationSelector(req, PLURALS.AgentRun);
+      return sendJson(res, 200, await listCustom<AgentRun>(PLURALS.AgentRun, "AgentRun", selector));
     }
     if (method === "POST") {
       let input: CreateRunBody;
@@ -1234,7 +1283,13 @@ async function handleApi(
       // LLM credential itself since #100).
       if (hubEnv.length > 0) spec.env = hubEnv;
       if (sources.envFrom.length > 0) spec.envFrom = sources.envFrom;
-      const run = await runClient.createAgentRun(spec, { generateName: "ui-" });
+      // The application also rides a label so per-application views are a
+      // selector instead of a scan of every run's spec.env. applicationRef
+      // is the id hubEnvForRun just matched and validated as numeric.
+      const run = await runClient.createAgentRun(spec, {
+        generateName: "ui-",
+        labels: input.applicationRef ? { [APPLICATION_LABEL]: input.applicationRef } : undefined,
+      });
       const via = input.applicationRef ? ` via application=${input.applicationRef}` : "";
       log(`created AgentRun ${run.metadata.name} (agentRef=${input.agentRef}${via})`);
       return sendJson(res, 201, run);
@@ -1297,8 +1352,10 @@ const server = http.createServer((req, res) => {
   }
 
   handleApi(req, res, pathname).catch((err: unknown) => {
-    const status = k8sStatusCode(err) ?? 500;
-    warn(`${req.method} ${pathname} failed: ${errorMessage(err)}`);
+    // Handlers that validate inline own their own 400s; a BadRequestError
+    // thrown past them is still a caller fault, not a 500.
+    const status = err instanceof BadRequestError ? 400 : (k8sStatusCode(err) ?? 500);
+    warn(`${req.method} ${pathname} ${status === 400 ? "rejected" : "failed"}: ${errorMessage(err)}`);
     if (!res.headersSent) sendError(res, status, errorMessage(err));
     else res.end();
   });

@@ -8,7 +8,8 @@
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "smoke": "tsx dev/browser-smoke.ts",
-    "smoke:defaults": "tsx dev/defaults-smoke.ts"
+    "smoke:defaults": "tsx dev/defaults-smoke.ts",
+    "smoke:appfilter": "tsx dev/application-filter-smoke.ts"
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.4.0",
