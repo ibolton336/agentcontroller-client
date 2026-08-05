@@ -54,10 +54,12 @@ serve different consumers and neither can do the other's job:
 
 Consequences, all verified in the shim prototype:
 
-- Hub application ids are numeric (the harness's `APP_ID` parser requires a
-  uint), which makes them valid label values with no sanitization. One
-  numeric check covers both concerns: a run the harness would reject at
-  startup, and a create the apiserver would reject outright.
+- Hub application ids must parse as a uint64 (`hub.ParseAppID` requires
+  it), capping them at 20 digits — inside the apiserver's 63-character
+  label-value limit, in a label-safe alphabet. One uint64-bounded check
+  covers both concerns: a run the harness would reject at startup, and a
+  create the apiserver would reject outright. A plain digits regex is not
+  that check — a 21-digit id passes it and overflows `ParseUint` anyway.
 - Runs created before the label are invisible to the selector. A filtered
   list is "runs we can prove belong to 42", not "every run that ever
   touched 42". Callers needing the old runs keep a `spec.env` fallback for

@@ -461,9 +461,18 @@ export function invalidTargetBranchReason(branch: string): string | undefined {
  * also stamped as the {@link APPLICATION_LABEL} value, a create the
  * apiserver would reject outright. One check covers both.
  */
+/** What hub.ParseAppID accepts: strconv.ParseUint(s, 10, 64). */
+const UINT64_MAX = 18446744073709551615n;
+
 export function invalidApplicationIdReason(id: string): string | undefined {
   if (!/^\d+$/.test(id)) {
     return `application id "${id}" is not numeric — the harness's APP_ID parser requires a uint Hub id`;
+  }
+  // Digits alone are not enough: a 21-digit id passes the regex, then
+  // overflows the harness's ParseUint at startup. uint64 also caps ids at
+  // 20 characters, inside the apiserver's 63-char label-value limit.
+  if (BigInt(id) > UINT64_MAX) {
+    return `application id "${id}" overflows uint64 — the harness's APP_ID parser rejects it`;
   }
   return undefined;
 }

@@ -211,6 +211,9 @@ async function main(): Promise<void> {
       ["non-run resource", "/api/agents?application=" + appA.id],
       ["empty value", "/api/agentruns?application="],
       ["non-numeric id", "/api/agentruns?application=not-a-number"],
+      // Digits alone must not pass: 21 nines overflows the harness's
+      // uint64 APP_ID parse, so the filter rejects what the harness would.
+      ["uint64 overflow", "/api/agentruns?application=999999999999999999999"],
     ];
     for (const [label, path] of rejects) {
       const res = await call("GET", path);
