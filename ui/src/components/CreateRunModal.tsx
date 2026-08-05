@@ -27,15 +27,15 @@ import {
   invalidTargetBranchReason,
   parseSourcesAnnotation,
 } from "@konveyor/agentic-client/contract";
-import type { AgentImage, AgentParam, AgentResource, AgentRunModelSelection, Application } from "@konveyor/agentic-client/contract";
+import type { AgentImage, AgentParam, AgentResource, Application } from "@konveyor/agentic-client/contract";
 import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
 import { errorMessage, truncate } from "../format";
 import { useImageCatalog } from "../hooks/useImageCatalog";
-import { ModelPicker, ParamValueField, defaultModelFor, paramHelperText as paramHelper, useProviders } from "./sources";
+import { GatewayPicker, ParamValueField, defaultGatewayFor, paramHelperText as paramHelper, useGateways } from "./sources";
 
 /**
  * Human names for the source identifiers this UI recognizes. Membership IS
- * the recognition test (ADR 0005 fail-open): a param whose source is absent
+ * the recognition test (ADR 0010 fail-open): a param whose source is absent
  * here is treated as caller-supplied and gets a form field, so a newer agent
  * stays usable from an older UI.
  *
@@ -102,7 +102,7 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
   const [agents, setAgents] = useState<AgentResource[] | null>(null);
   const [agentsError, setAgentsError] = useState<string | null>(null);
   const { findByImage } = useImageCatalog(api);
-  const { providers } = useProviders(api);
+  const { gateways } = useGateways(api);
   const [agentName, setAgentName] = useState("");
   const [applications, setApplications] = useState<Application[]>([]);
   const [applicationsError, setApplicationsError] = useState<string | null>(null);
@@ -113,7 +113,7 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [instructions, setInstructions] = useState("");
   const [targetBranch, setTargetBranch] = useState(defaultTargetBranch());
-  const [model, setModel] = useState<AgentRunModelSelection | undefined>(undefined);
+  const [gateway, setGateway] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -175,12 +175,12 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
     setAgentName(name);
     const agent = agents?.find((a) => a.metadata.name === name);
     setParamValues(defaultsFor(agent));
-    setModel(defaultModelFor(providers, agent?.spec.providers ?? []));
+    setGateway(defaultGatewayFor(agent?.spec.gateways ?? []));
   };
 
   // Partition params: those with a RECOGNIZED source are the platform's job
   // (given an application); everything else — including params whose source
-  // this UI does not understand — is a user form field (ADR 0005 fail-open).
+  // this UI does not understand — is a user form field (ADR 0010 fail-open).
   const paramSources = parseSourcesAnnotation(selected);
   const credentialSources = parseSourcesAnnotation(selected, CREDENTIAL_SOURCES_ANNOTATION);
   const allParams = selected?.spec.params ?? [];
@@ -227,7 +227,7 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
         instructions: instructions.trim() || undefined,
         applicationRef: needsApplication ? application?.id : undefined,
         targetBranch: applicationId ? targetBranch : undefined,
-        model: model ? { provider: model.provider, model: model.model } : undefined,
+        gateway,
       });
       const name = created.metadata.name;
       if (!name) throw new Error("shim returned a created run without metadata.name");
@@ -445,9 +445,9 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
               </FormGroup>
             )}
 
-            {selected && (selected.spec.providers ?? []).length > 0 && providers.length > 0 && (
-              <ModelPicker providers={providers} agentProviderRefs={selected.spec.providers ?? []}
-                value={model} onChange={setModel} />
+            {selected && (selected.spec.gateways ?? []).length > 0 && (
+              <GatewayPicker gateways={gateways} agentGatewayRefs={selected.spec.gateways ?? []}
+                value={gateway} onChange={setGateway} />
             )}
 
             {userParams.map((p) => {

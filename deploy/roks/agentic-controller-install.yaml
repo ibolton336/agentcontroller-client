@@ -1,7 +1,9 @@
-# Generated from ~/Development/agentic-controller (branch rename/agent-workload)
-# via "oc kustomize config/default", image repointed to the internal registry :demo
-# and imagePullPolicy Always (moving tag). CRDs and RBAC come from the SAME tree
-# as the binary (see build-images.sh header).
+# Generated from konveyor/agentic-controller UPSTREAM main @ 059b6f60
+# (post-#100 Gateway rename, post-#80 Workflow rename) via "kubectl kustomize"
+# on config/default, image repointed to ghcr.io/ibolton336/agentic-controller:demo
+# and imagePullPolicy Always (moving tag). CRDs and RBAC come from the SAME
+# tree as the binary — rebuild + push the :demo image from the same commit
+# before applying (see build-images.sh header).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -47,8 +49,8 @@ spec:
       openAPIV3Schema:
         description: |-
           AgentRun is a request to execute a single Agent with specific selections.
-          It references an Agent, selects providers and models, carries instructions
-          and key-value parameters (injected as env vars into the Sandbox). The
+          It references an Agent, selects a gateway, carries instructions and
+          key-value parameters (injected as env vars into the Sandbox). The
           controller validates, resolves skills to ImageVolumes, creates a Sandbox,
           and tracks status to completion.
         properties:
@@ -286,49 +288,17 @@ spec:
                       x-kubernetes-map-type: atomic
                   type: object
                 type: array
+              gateway:
+                description: |-
+                  Gateway selects the Gateway (provider/model combination) for this
+                  run. Must be one of the gateways declared on the referenced Agent.
+                minLength: 1
+                type: string
               instructions:
                 description: |-
                   Instructions are task-specific instructions for this run.
                   Composed with the Agent's prompt at execution time.
                 type: string
-              models:
-                description: |-
-                  Models selects specific provider/model combinations for this run.
-                  Each entry maps a role to a provider and model from the Agent's
-                  available set.
-                items:
-                  description: AgentRunModelSelection selects a specific provider
-                    and model for this run.
-                  properties:
-                    model:
-                      description: |-
-                        Model is the model identifier. Must be declared on the referenced
-                        LLMProvider.
-                      minLength: 1
-                      type: string
-                    provider:
-                      description: |-
-                        Provider is the name of an LLMProvider CR. Must be in the Agent's
-                        providers list.
-                      minLength: 1
-                      type: string
-                    role:
-                      description: |-
-                        Role is the purpose of this model in the run (e.g. "primary", "efficient").
-                        The harness maps roles to runtime-specific configuration.
-                        Must be a valid env var identifier (used in KONVEYOR_MODEL_{ROLE}_*).
-                      minLength: 1
-                      pattern: ^[a-zA-Z_][a-zA-Z0-9_]*$
-                      type: string
-                  required:
-                  - model
-                  - provider
-                  - role
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - role
-                x-kubernetes-list-type: map
               params:
                 description: |-
                   Params supplies values for the Agent's declared parameters.
@@ -511,9 +481,9 @@ spec:
       openAPIV3Schema:
         description: |-
           Agent is a capability definition declaring what is available for execution.
-          It references SkillCards, SkillCollections, LLMProviders, a container image,
+          It references SkillCards, SkillCollections, Gateways, a container image,
           a prompt, and typed parameters. An Agent does not select a specific model —
-          model selection happens at execution time via AgentRun.
+          gateway selection happens at execution time via AgentRun.
         properties:
           apiVersion:
             description: |-
@@ -535,6 +505,25 @@ spec:
           spec:
             description: AgentSpec defines the desired state of an Agent.
             properties:
+              gateways:
+                description: |-
+                  Gateways is the set of gateways (provider/model combinations)
+                  available for runs. At least one gateway must be specified.
+                items:
+                  description: AgentGatewayRef references a Gateway by name.
+                  properties:
+                    ref:
+                      description: Ref is the name of a Gateway CR in the same namespace.
+                      minLength: 1
+                      type: string
+                  required:
+                  - ref
+                  type: object
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - ref
+                x-kubernetes-list-type: map
               image:
                 description: Image is the container image carrying the agent runtime
                   and toolchains.
@@ -591,26 +580,6 @@ spec:
                   Prompt is the standing instructions for how the agent operates.
                   Composed with AgentRun instructions at execution time.
                 type: string
-              providers:
-                description: |-
-                  Providers is the set of LLM providers and models available for runs.
-                  At least one provider must be specified.
-                items:
-                  description: AgentProviderRef references an LLMProvider by name.
-                  properties:
-                    ref:
-                      description: Ref is the name of an LLMProvider CR in the same
-                        namespace.
-                      minLength: 1
-                      type: string
-                  required:
-                  - ref
-                  type: object
-                minItems: 1
-                type: array
-                x-kubernetes-list-map-keys:
-                - ref
-                x-kubernetes-list-type: map
               skillCards:
                 description: SkillCards references individual SkillCard CRs.
                 items:
@@ -646,8 +615,8 @@ spec:
                 - ref
                 x-kubernetes-list-type: map
             required:
+            - gateways
             - image
-            - providers
             type: object
           status:
             description: AgentStatus defines the observed state of an Agent.
@@ -731,21 +700,21 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: agentworkloadruns.konveyor.io
+  name: agentworkflowruns.konveyor.io
 spec:
   group: konveyor.io
   names:
-    kind: AgentWorkloadRun
-    listKind: AgentWorkloadRunList
-    plural: agentworkloadruns
+    kind: AgentWorkflowRun
+    listKind: AgentWorkflowRunList
+    plural: agentworkflowruns
     shortNames:
     - awr
-    singular: agentworkloadrun
+    singular: agentworkflowrun
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.workloadRef
-      name: Workload
+    - jsonPath: .spec.workflowRef
+      name: Workflow
       type: string
     - jsonPath: .status.phase
       name: Phase
@@ -760,8 +729,8 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          AgentWorkloadRun is a request to execute an AgentWorkload. It references
-          an AgentWorkload and carries generic parameters. The controller orchestrates
+          AgentWorkflowRun is a request to execute an AgentWorkflow. It references
+          an AgentWorkflow and carries generic parameters. The controller orchestrates
           execution: creates an AgentRun per stage, manages cross-stage handoff via
           committed files on a shared target branch.
         properties:
@@ -784,7 +753,7 @@ spec:
             type: object
           spec:
             description: |-
-              AgentWorkloadRunSpec defines the desired state of an AgentWorkloadRun.
+              AgentWorkflowRunSpec defines the desired state of an AgentWorkflowRun.
               The spec is immutable once created — delete and recreate to change values.
             properties:
               env:
@@ -995,43 +964,12 @@ spec:
                       x-kubernetes-map-type: atomic
                   type: object
                 type: array
-              models:
+              gateway:
                 description: |-
-                  Models selects specific provider/model combinations for all stages.
-                  Individual stages may override these selections in the future.
-                items:
-                  description: AgentRunModelSelection selects a specific provider
-                    and model for this run.
-                  properties:
-                    model:
-                      description: |-
-                        Model is the model identifier. Must be declared on the referenced
-                        LLMProvider.
-                      minLength: 1
-                      type: string
-                    provider:
-                      description: |-
-                        Provider is the name of an LLMProvider CR. Must be in the Agent's
-                        providers list.
-                      minLength: 1
-                      type: string
-                    role:
-                      description: |-
-                        Role is the purpose of this model in the run (e.g. "primary", "efficient").
-                        The harness maps roles to runtime-specific configuration.
-                        Must be a valid env var identifier (used in KONVEYOR_MODEL_{ROLE}_*).
-                      minLength: 1
-                      pattern: ^[a-zA-Z_][a-zA-Z0-9_]*$
-                      type: string
-                  required:
-                  - model
-                  - provider
-                  - role
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - role
-                x-kubernetes-list-type: map
+                  Gateway selects the Gateway (provider/model combination) for all
+                  stages. Individual stages may override this selection in the future.
+                minLength: 1
+                type: string
               params:
                 description: Params supplies values for Agent parameters across all
                   stages.
@@ -1055,27 +993,27 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
-              workloadRef:
-                description: WorkloadRef is the name of the AgentWorkload CR to execute.
+              workflowRef:
+                description: WorkflowRef is the name of the AgentWorkflow CR to execute.
                 minLength: 1
                 type: string
             required:
-            - workloadRef
+            - workflowRef
             type: object
             x-kubernetes-validations:
             - message: spec is immutable
               rule: self == oldSelf
           status:
-            description: AgentWorkloadRunStatus defines the observed state of an AgentWorkloadRun.
+            description: AgentWorkflowRunStatus defines the observed state of an AgentWorkflowRun.
             properties:
               completionTime:
-                description: CompletionTime is the time the workload run finished.
+                description: CompletionTime is the time the workflow run finished.
                 format: date-time
                 type: string
               conditions:
                 description: |-
                   Conditions represent the latest available observations of the
-                  AgentWorkloadRun's state.
+                  AgentWorkflowRun's state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -1144,7 +1082,7 @@ spec:
                 type: integer
               phase:
                 default: Pending
-                description: Phase is the current phase of the overall workload run.
+                description: Phase is the current phase of the overall workflow run.
                 enum:
                 - Pending
                 - Running
@@ -1155,8 +1093,8 @@ spec:
                 description: Stages tracks the status of each stage.
                 items:
                   description: |-
-                    AgentWorkloadRunStageStatus tracks the status of a single stage within
-                    a workload run.
+                    AgentWorkflowRunStageStatus tracks the status of a single stage within
+                    a workflow run.
                   properties:
                     agentRunName:
                       description: AgentRunName is the name of the AgentRun CR created
@@ -1164,7 +1102,7 @@ spec:
                       type: string
                     name:
                       description: Name is the stage name, matching a stage in the
-                        AgentWorkload.
+                        AgentWorkflow.
                       type: string
                     phase:
                       description: Phase is the current phase of this stage.
@@ -1183,7 +1121,7 @@ spec:
                 - name
                 x-kubernetes-list-type: map
               startTime:
-                description: StartTime is the time the workload run started.
+                description: StartTime is the time the workflow run started.
                 format: date-time
                 type: string
             type: object
@@ -1198,16 +1136,16 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: agentworkloads.konveyor.io
+  name: agentworkflows.konveyor.io
 spec:
   group: konveyor.io
   names:
-    kind: AgentWorkload
-    listKind: AgentWorkloadList
-    plural: agentworkloads
+    kind: AgentWorkflow
+    listKind: AgentWorkflowList
+    plural: agentworkflows
     shortNames:
     - aw
-    singular: agentworkload
+    singular: agentworkflow
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -1221,9 +1159,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          AgentWorkload is a reusable workload combining a high-level guide with an
+          AgentWorkflow is a reusable workflow combining a high-level guide with an
           ordered sequence of stages. Each stage references an Agent and carries
-          instructions. An AgentWorkload is a template — creating one does not
+          instructions. An AgentWorkflow is a template — creating one does not
           execute anything.
         properties:
           apiVersion:
@@ -1244,7 +1182,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: AgentWorkloadSpec defines the desired state of an AgentWorkload.
+            description: AgentWorkflowSpec defines the desired state of an AgentWorkflow.
             properties:
               guide:
                 description: |-
@@ -1260,7 +1198,7 @@ spec:
                   handoff files.
                 items:
                   description: |-
-                    AgentWorkloadStage defines one stage in a workload.
+                    AgentWorkflowStage defines one stage in a workflow.
                     Each stage references an Agent and carries instructions.
                   properties:
                     agentRef:
@@ -1275,7 +1213,7 @@ spec:
                       type: string
                     name:
                       description: |-
-                        Name is the stage name, unique within the workload.
+                        Name is the stage name, unique within the workflow.
                         Must be a valid Kubernetes label value (lowercase alphanumeric,
                         hyphens, dots, max 63 chars) since it is used in labels on
                         child AgentRun resources.
@@ -1296,12 +1234,12 @@ spec:
             - stages
             type: object
           status:
-            description: AgentWorkloadStatus defines the observed state of an AgentWorkload.
+            description: AgentWorkflowStatus defines the observed state of an AgentWorkflow.
             properties:
               conditions:
                 description: |-
                   Conditions represent the latest available observations of the
-                  AgentWorkload's state.
+                  AgentWorkflow's state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -1377,21 +1315,24 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: llmproviders.konveyor.io
+  name: gateways.konveyor.io
 spec:
   group: konveyor.io
   names:
-    kind: LLMProvider
-    listKind: LLMProviderList
-    plural: llmproviders
+    kind: Gateway
+    listKind: GatewayList
+    plural: gateways
     shortNames:
-    - llm
-    singular: llmprovider
+    - gw
+    singular: gateway
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .spec.endpoint
       name: Endpoint
+      type: string
+    - jsonPath: .spec.model.name
+      name: Model
       type: string
     - jsonPath: .status.connectionVerified
       name: Verified
@@ -1406,9 +1347,10 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          LLMProvider is an LLM service endpoint with credentials and the set of
-          models it serves. Each model declares its context window size and an
-          optional tier label. The controller verifies connectivity on create/update.
+          Gateway is an LLM service endpoint serving exactly one provider/model
+          combination. Each Gateway has credentials and a single model declaration.
+          This mirrors the OpenShell gateway model where one gateway = one model.
+          The controller verifies connectivity on create/update.
         properties:
           apiVersion:
             description: |-
@@ -1428,7 +1370,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: LLMProviderSpec defines the desired state of an LLMProvider.
+            description: GatewaySpec defines the desired state of a Gateway.
             properties:
               credentialRef:
                 description: CredentialRef references a Secret containing the API
@@ -1438,7 +1380,7 @@ spec:
                     description: |-
                       Key is the key within the Secret that contains the credential value.
                       When set, the credential is a single value (e.g. a bearer token) and
-                      is injected into sandbox containers as KONVEYOR_MODEL_<ROLE>_API_KEY.
+                      is injected into sandbox containers as KONVEYOR_LLM_API_KEY.
                       When omitted, the credential spans multiple environment variables
                       (e.g. AWS SigV4: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY,
                       AWS_REGION) and the whole Secret is exposed to the sandbox container
@@ -1457,50 +1399,56 @@ spec:
                 description: Endpoint is the base URL of the LLM service.
                 minLength: 1
                 type: string
-              models:
-                description: Models is the list of models available through this provider.
-                items:
-                  description: LLMProviderModel declares a model available through
-                    this provider.
-                  properties:
-                    contextWindow:
-                      description: |-
-                        ContextWindow is the maximum context window size in tokens.
-                        Used to validate that an Agent's always-loaded rules fit within budget.
-                      format: int64
-                      minimum: 1
-                      type: integer
-                    name:
-                      description: Name is the model identifier (e.g. "claude-sonnet-4-20250514",
-                        "gpt-4o").
-                      minLength: 1
-                      type: string
-                    tier:
-                      description: |-
-                        Tier is an optional label for the model's capability tier
-                        (e.g. "premium", "efficient").
-                      type: string
-                  required:
-                  - contextWindow
-                  - name
-                  type: object
-                minItems: 1
-                type: array
-                x-kubernetes-list-map-keys:
+              model:
+                description: |-
+                  Model is the model served by this gateway. Each Gateway serves
+                  exactly one provider/model combination, mirroring the OpenShell
+                  gateway model where one gateway = one model.
+                properties:
+                  contextWindow:
+                    description: |-
+                      ContextWindow is the maximum context window size in tokens.
+                      Used to validate that an Agent's always-loaded rules fit within budget.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  name:
+                    description: Name is the model identifier (e.g. "claude-sonnet-4-20250514",
+                      "gpt-4o").
+                    minLength: 1
+                    type: string
+                  tier:
+                    description: |-
+                      Tier is an optional label for the model's capability tier
+                      (e.g. "premium", "efficient").
+                    type: string
+                required:
+                - contextWindow
                 - name
-                x-kubernetes-list-type: map
+                type: object
+              provider:
+                description: |-
+                  Provider is the runtime provider identifier (e.g. "anthropic",
+                  "openai", "gcp-vertex-ai"). Injected as KONVEYOR_LLM_PROVIDER
+                  so the harness can map credentials to provider-specific env vars.
+                  This is a pre-OpenShell shim — when OpenShell is integrated,
+                  inference.local eliminates the need for provider-specific
+                  credential mapping and this field is removed.
+                minLength: 1
+                type: string
             required:
             - credentialRef
             - endpoint
-            - models
+            - model
+            - provider
             type: object
           status:
-            description: LLMProviderStatus defines the observed state of an LLMProvider.
+            description: GatewayStatus defines the observed state of a Gateway.
             properties:
               conditions:
                 description: |-
                   Conditions represent the latest available observations of the
-                  LLMProvider's state.
+                  Gateway's state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -1562,14 +1510,8 @@ spec:
               connectionVerified:
                 description: |-
                   ConnectionVerified indicates whether the controller has successfully
-                  verified connectivity to the provider endpoint.
+                  verified connectivity to the gateway endpoint.
                 type: boolean
-              discoveredModels:
-                description: DiscoveredModels lists the model names discovered from
-                  the provider.
-                items:
-                  type: string
-                type: array
               observedGeneration:
                 description: ObservedGeneration is the most recent generation observed
                   by the controller.
@@ -1996,6 +1938,13 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
   - create
@@ -2029,9 +1978,9 @@ rules:
   resources:
   - agentruns
   - agents
-  - agentworkloadruns
-  - agentworkloads
-  - llmproviders
+  - agentworkflowruns
+  - agentworkflows
+  - gateways
   - skillcards
   - skillcollections
   verbs:
@@ -2047,9 +1996,9 @@ rules:
   resources:
   - agentruns/finalizers
   - agents/finalizers
-  - agentworkloadruns/finalizers
-  - agentworkloads/finalizers
-  - llmproviders/finalizers
+  - agentworkflowruns/finalizers
+  - agentworkflows/finalizers
+  - gateways/finalizers
   - skillcards/finalizers
   - skillcollections/finalizers
   verbs:
@@ -2059,9 +2008,9 @@ rules:
   resources:
   - agentruns/status
   - agents/status
-  - agentworkloadruns/status
-  - agentworkloads/status
-  - llmproviders/status
+  - agentworkflowruns/status
+  - agentworkflows/status
+  - gateways/status
   - skillcards/status
   - skillcollections/status
   verbs:
@@ -2193,6 +2142,7 @@ spec:
         command:
         - /manager
         image: ghcr.io/ibolton336/agentic-controller:demo
+        imagePullPolicy: Always
         livenessProbe:
           httpGet:
             path: /healthz

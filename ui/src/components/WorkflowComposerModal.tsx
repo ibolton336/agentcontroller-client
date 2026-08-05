@@ -18,29 +18,29 @@ import {
   TextInput,
 } from "@patternfly/react-core";
 import type {
-  AgentWorkload,
-  AgentWorkloadSpec,
-  AgentWorkloadStage,
+  AgentWorkflow,
+  AgentWorkflowSpec,
+  AgentWorkflowStage,
   AgentResource,
 } from "@konveyor/agentic-client/contract";
 import { RESOURCE_NAME_PATTERN, STAGE_NAME_PATTERN } from "@konveyor/agentic-client/contract";
 import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
 import { errorMessage } from "../format";
 
-interface WorkloadComposerModalProps {
+interface WorkflowComposerModalProps {
   api: ShimClient;
-  existing?: AgentWorkload;
+  existing?: AgentWorkflow;
   onClose: () => void;
   onSaved: () => void;
 }
 
-const emptyStage = (): AgentWorkloadStage => ({ name: "", agentRef: "", instructions: "" });
+const emptyStage = (): AgentWorkflowStage => ({ name: "", agentRef: "", instructions: "" });
 
-export function WorkloadComposerModal({ api, existing, onClose, onSaved }: WorkloadComposerModalProps) {
+export function WorkflowComposerModal({ api, existing, onClose, onSaved }: WorkflowComposerModalProps) {
   const isEdit = !!existing;
   const [name, setName] = useState(existing?.metadata.name ?? "");
   const [guide, setGuide] = useState(existing?.spec.guide ?? "");
-  const [stages, setStages] = useState<AgentWorkloadStage[]>(
+  const [stages, setStages] = useState<AgentWorkflowStage[]>(
     existing?.spec.stages.length ? [...existing.spec.stages] : [emptyStage()],
   );
   const [agents, setAgents] = useState<AgentResource[] | null>(null);
@@ -57,23 +57,23 @@ export function WorkloadComposerModal({ api, existing, onClose, onSaved }: Workl
   const stagesValid = stages.every((s) => s.name.trim() && STAGE_NAME_PATTERN.test(s.name) && s.agentRef);
   const validStages = stages.filter((s) => s.name.trim() && s.agentRef);
 
-  const providerOverlap = (() => {
+  const gatewayMismatch = (() => {
     if (!agents || validStages.length < 2) return false;
-    const providerSets = validStages.map((s) => {
+    const gatewaySets = validStages.map((s) => {
       const agent = agents.find((a) => a.metadata.name === s.agentRef);
-      return new Set((agent?.spec.providers ?? []).map((p) => p.ref));
+      return new Set((agent?.spec.gateways ?? []).map((g) => g.ref));
     });
-    const first = providerSets[0];
+    const first = gatewaySets[0];
     if (!first || first.size === 0) return true;
-    return providerSets.some((s) => {
-      for (const p of first) { if (!s.has(p)) return true; }
+    return gatewaySets.some((s) => {
+      for (const g of first) { if (!s.has(g)) return true; }
       return false;
     });
   })();
 
   const canSubmit = name.trim() !== "" && nameValid && validStages.length > 0 && stagesValid && !submitting;
 
-  const updateStage = (i: number, field: keyof AgentWorkloadStage, value: string) => {
+  const updateStage = (i: number, field: keyof AgentWorkflowStage, value: string) => {
     setStages((prev) => prev.map((s, j) => (j === i ? { ...s, [field]: value } : s)));
   };
 
@@ -92,7 +92,7 @@ export function WorkloadComposerModal({ api, existing, onClose, onSaved }: Workl
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const spec: AgentWorkloadSpec = {
+      const spec: AgentWorkflowSpec = {
         guide: guide.trim() || undefined,
         stages: validStages.map((s) => ({
           name: s.name,
@@ -101,9 +101,9 @@ export function WorkloadComposerModal({ api, existing, onClose, onSaved }: Workl
         })),
       };
       if (isEdit) {
-        await api.updateWorkload(name, spec);
+        await api.updateWorkflow(name, spec);
       } else {
-        await api.createWorkload(name, spec);
+        await api.createWorkflow(name, spec);
       }
       onSaved();
     } catch (err) {
@@ -114,8 +114,8 @@ export function WorkloadComposerModal({ api, existing, onClose, onSaved }: Workl
 
   return (
     <Modal variant={ModalVariant.large} isOpen onClose={() => { if (!submitting) onClose(); }}
-      aria-labelledby="workload-composer-title">
-      <ModalHeader title={isEdit ? `Edit workload: ${name}` : "Create workload"} labelId="workload-composer-title" />
+      aria-labelledby="workflow-composer-title">
+      <ModalHeader title={isEdit ? `Edit workflow: ${name}` : "Create workflow"} labelId="workflow-composer-title" />
       <ModalBody>
         {submitError && <Alert variant="danger" isInline title="Save failed" style={{ marginBottom: "1rem" }}>{submitError}</Alert>}
 
@@ -124,10 +124,10 @@ export function WorkloadComposerModal({ api, existing, onClose, onSaved }: Workl
           branch. There is no mechanism that feeds one stage&apos;s prompt/output into the next stage&apos;s prompt.
         </Alert>
 
-        {providerOverlap && (
-          <Alert variant="warning" isInline title="Provider overlap" style={{ marginBottom: "1rem" }}>
-            The stage agents reference different providers. All stages share a single model selection
-            at run time — ensure every stage agent has a common provider.
+        {gatewayMismatch && (
+          <Alert variant="warning" isInline title="Gateway mismatch" style={{ marginBottom: "1rem" }}>
+            The stage agents declare different gateways. All stages share a single gateway selection
+            at run time — ensure every stage agent declares a common gateway.
           </Alert>
         )}
 
@@ -144,7 +144,7 @@ export function WorkloadComposerModal({ api, existing, onClose, onSaved }: Workl
 
           <FormGroup label="Guide" fieldId="pb-guide">
             <TextArea id="pb-guide" value={guide} onChange={(_e, v) => setGuide(v)}
-              rows={3} resizeOrientation="vertical" placeholder="High-level guidance for this workload" />
+              rows={3} resizeOrientation="vertical" placeholder="High-level guidance for this workflow" />
           </FormGroup>
 
           <FormGroup label="Stages" isRequired fieldId="pb-stages">

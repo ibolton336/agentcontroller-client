@@ -17,7 +17,7 @@ import { RunsPage } from "./components/RunsPage";
 import { RunDetailPage } from "./components/RunDetailPage";
 import { AgentsPage } from "./components/AgentsPage";
 import { SkillsPage } from "./components/SkillsPage";
-import { WorkloadsPage } from "./components/WorkloadsPage";
+import { WorkflowsPage } from "./components/WorkflowsPage";
 
 const SHIM_URL =
   import.meta.env.VITE_SHIM_URL ??
@@ -28,7 +28,7 @@ type View =
   | { kind: "detail"; runName: string }
   | { kind: "agents" }
   | { kind: "skills" }
-  | { kind: "workloads" };
+  | { kind: "workflows" };
 
 function viewToHash(v: View): string {
   switch (v.kind) {
@@ -36,7 +36,7 @@ function viewToHash(v: View): string {
     case "detail": return `#/runs/${encodeURIComponent(v.runName)}`;
     case "agents": return "#/agents";
     case "skills": return "#/skills";
-    case "workloads": return "#/workloads";
+    case "workflows": return "#/workflows";
   }
 }
 
@@ -44,7 +44,7 @@ function hashToView(hash: string): View {
   const h = hash.startsWith("#") ? hash.slice(1) : hash;
   if (h === "/agents") return { kind: "agents" };
   if (h === "/skills") return { kind: "skills" };
-  if (h === "/workloads") return { kind: "workloads" };
+  if (h === "/workflows") return { kind: "workflows" };
   const runMatch = /^\/runs\/(.+)$/.exec(h);
   if (runMatch) {
     try {
@@ -114,7 +114,7 @@ export function App() {
       ) : (
         <>
           {view.kind !== "detail" && (
-            <PageSection variant="light" style={{ paddingBottom: 0 }}>
+            <PageSection variant="default" style={{ paddingBottom: 0 }}>
               <ToggleGroup aria-label="Navigation">
                 <ToggleGroupItem text="Agent runs" isSelected={navTab === "runs"}
                   onChange={() => navigate({ kind: "runs" })} />
@@ -122,8 +122,8 @@ export function App() {
                   onChange={() => navigate({ kind: "agents" })} />
                 <ToggleGroupItem text="Skills" isSelected={navTab === "skills"}
                   onChange={() => navigate({ kind: "skills" })} />
-                <ToggleGroupItem text="Workloads" isSelected={navTab === "workloads"}
-                  onChange={() => navigate({ kind: "workloads" })} />
+                <ToggleGroupItem text="Workflows" isSelected={navTab === "workflows"}
+                  onChange={() => navigate({ kind: "workflows" })} />
               </ToggleGroup>
             </PageSection>
           )}
@@ -137,7 +137,7 @@ export function App() {
           )}
           {view.kind === "agents" && <AgentsPage api={api.client} />}
           {view.kind === "skills" && <SkillsPage api={api.client} />}
-          {view.kind === "workloads" && <WorkloadsPage api={api.client} />}
+          {view.kind === "workflows" && <WorkflowsPage api={api.client} />}
         </>
       )}
     </Page>

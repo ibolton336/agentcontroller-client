@@ -35,7 +35,7 @@ metadata:
 spec:
   image: acp-mock-harness:dev
   prompt: Probe agent for the skills mount experiment.
-  providers:
-    - ref: mock-provider
+  gateways:
+    - ref: mock-gateway
   skillCards:
     - ref: ejb-to-cdi

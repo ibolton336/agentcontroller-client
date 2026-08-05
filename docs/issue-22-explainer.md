@@ -175,7 +175,7 @@ upstream out to N viewers (later). goosed won't do either for you.
   end-to-end today, with the browser UI driving real runs through it.
 - Open question on the thread is **placement** (which component hosts
   R1/R2), not feasibility.
-- Deep dives: `issue-22-contract.md` (the contract), ADR 0004 (verified
-  facts + transports), ADR 0005 (param resolution),
+- Deep dives: `issue-22-contract.md` (the contract), ADR 0009 (verified
+  facts + transports), ADR 0010 (param resolution),
   `issue-22-concurrency-findings.md` (goose source research behind §3 of
   this doc).

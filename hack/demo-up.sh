@@ -72,7 +72,7 @@ if kubectl wait agent/migration-analyzer -n $NS \
      --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True --timeout=90s >/dev/null 2>&1; then
   ok "agent migration-analyzer Ready"
 else
-  warn "migration-analyzer not Ready yet — check: kubectl get llmproviders,agents -n $NS"
+  warn "migration-analyzer not Ready yet — check: kubectl get gateways.konveyor.io,agents -n $NS"
 fi
 
 echo "── konveyor hub (application inventory) ────────────"

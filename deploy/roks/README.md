@@ -47,7 +47,7 @@ browser ── Route (edge TLS) ── tackle2-ui (feature/agent-runs)
 - A checkout of this repo (for these manifests). The other source repos
   (`agentic-controller`, `tackle2-ui`) are only needed if you want to
   rebuild images — see step 2.
-- AWS credentials with Bedrock access (for the `aws-bedrock` LLMProvider).
+- AWS credentials with Bedrock access (for the `bedrock-sonnet` Gateway).
 - For the coolstore demo's final push: a GitHub PAT with `repo` scope on
   your coolstore fork.
 
@@ -105,7 +105,7 @@ ghcr.io/ibolton336/tackle2-ui:demo          # feature/agent-runs console
 
 They're produced by the
 [`build-images` workflow](../../.github/workflows/build-images.yml) from
-`agentcontroller-client` + `agentic-controller@demo/dylan-workload` +
+`agentcontroller-client` + `agentic-controller@main` (upstream, post-#100) +
 `tackle2-ui@feature/agent-runs` (refs overridable via workflow_dispatch
 inputs). To republish after a source change, push the branch and run:
 
@@ -140,16 +140,15 @@ oc apply -f agentic-controller-install.yaml    # CRDs + RBAC + controller Deploy
 oc apply -f agent-sandbox-v0.5.0.json          # Agent Sandbox v0.5.0
 ```
 
-`agentic-controller-install.yaml` is `oc kustomize config/default` rendered
-from the **same controller tree the image was built from**
-(`agentic-controller@demo/dylan-workload`), with the image repointed at
-ghcr. If you rebuild the controller from a
-different branch, re-render this file from that tree — CRDs and RBAC must
-match the running binary.
+`agentic-controller-install.yaml` is `kubectl kustomize config/default`
+rendered from the **same controller tree the image was built from**
+(upstream `agentic-controller@main`, post-#100 Gateway rename). If you
+rebuild the controller from a different ref, re-render this file from that
+tree — CRDs and RBAC must match the running binary.
 
-## 4. LLMProvider
+## 4. Gateway
 
-Create the Bedrock credentials secret and a provider named `aws-bedrock`
+Create the Bedrock credentials secret and a Gateway named `bedrock-sonnet`
 (that exact name — the seeded agents and demo Agents reference it):
 
 ```sh
@@ -159,10 +158,11 @@ oc -n konveyor-agents create secret generic aws-bedrock-creds \
   --from-literal=AWS_REGION=us-east-1
 ```
 
-Adapt [`manifests/goose-bedrock.yaml`](../../manifests/goose-bedrock.yaml)
-(rename to `aws-bedrock`, keep `credentialRef.secretName: aws-bedrock-creds`;
-the key field can be omitted — the harness resolves the full SigV4 triple
-from the secret). Wait for the provider to report Ready.
+Apply [`manifests/goose-bedrock.yaml`](../../manifests/goose-bedrock.yaml)'s
+`bedrock-sonnet` Gateway as-is (`spec.provider: aws-bedrock`, keyless
+`credentialRef.secretName: aws-bedrock-creds` — the controller mounts the
+whole Secret so the harness gets the full SigV4 triple). Wait for the
+gateway to report Ready.
 
 ## 5. Gateway + console
 
@@ -204,7 +204,7 @@ Idempotent; `?dryRun=true` shows the plan without writing.
 ## 7. The coolstore migration demo
 
 ```sh
-oc apply -f coolstore-quarkus-demo.yaml    # Agent + AgentWorkload (cluster-agnostic)
+oc apply -f coolstore-quarkus-demo.yaml    # Agent + AgentWorkflow (cluster-agnostic)
 ```
 
 The final push needs a Hub identity on the application. Run
@@ -220,7 +220,7 @@ The association **must** carry `role: source` — the harness filters on the
 association role, and a bare `{id}` attach makes the push go anonymous
 (fails with "No anonymous write access").
 
-Then start a run: from the console's workload page, or apply a run file
+Then start a run: from the console's workflow page, or apply a run file
 (see `runs/` for per-cluster examples — app id and `TARGET_BRANCH` differ
 per cluster, so don't share run files between them). A full
 assess→remediate→validate chain takes ~20–25 min and pushes a branch to

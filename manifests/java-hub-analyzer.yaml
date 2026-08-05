@@ -5,8 +5,8 @@
 # - param-sources annotations make the UI app-scope the run; the shim
 #   translates applicationRef into HUB_BASE_URL/APP_ID/TARGET_BRANCH env
 #   that the harness requires (it ignores the repository/branch params).
-# - aws-bedrock is the Ready provider; the harness lowercases/underscores
-#   the name into goose's aws_bedrock id.
+# - bedrock-sonnet is the Ready Gateway; its spec.provider (aws-bedrock)
+#   reaches the harness as KONVEYOR_LLM_PROVIDER -> goose aws_bedrock.
 apiVersion: konveyor.io/v1alpha1
 kind: Agent
 metadata:
@@ -25,8 +25,8 @@ spec:
   prompt: >-
     You are a Java EE migration analyzer. Examine the application in the
     workspace and produce a migration plan under .konveyor/plan.md.
-  providers:
-    - ref: aws-bedrock
+  gateways:
+    - ref: bedrock-sonnet
   params:
     - name: repository
       type: string

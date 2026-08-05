@@ -4,21 +4,21 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.21.0
-  name: agentworkloadruns.konveyor.io
+  name: agentworkflowruns.konveyor.io
 spec:
   group: konveyor.io
   names:
-    kind: AgentWorkloadRun
-    listKind: AgentWorkloadRunList
-    plural: agentworkloadruns
+    kind: AgentWorkflowRun
+    listKind: AgentWorkflowRunList
+    plural: agentworkflowruns
     shortNames:
-    - apr
-    singular: agentworkloadrun
+    - awr
+    singular: agentworkflowrun
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.workloadRef
-      name: Workload
+    - jsonPath: .spec.workflowRef
+      name: Workflow
       type: string
     - jsonPath: .status.phase
       name: Phase
@@ -33,8 +33,8 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          AgentWorkloadRun is a request to execute an AgentWorkload. It references
-          an AgentWorkload and carries generic parameters. The controller orchestrates
+          AgentWorkflowRun is a request to execute an AgentWorkflow. It references
+          an AgentWorkflow and carries generic parameters. The controller orchestrates
           execution: creates an AgentRun per stage, manages cross-stage handoff via
           committed files on a shared target branch.
         properties:
@@ -56,7 +56,9 @@ spec:
           metadata:
             type: object
           spec:
-            description: AgentWorkloadRunSpec defines the desired state of an AgentWorkloadRun.
+            description: |-
+              AgentWorkflowRunSpec defines the desired state of an AgentWorkflowRun.
+              The spec is immutable once created — delete and recreate to change values.
             properties:
               env:
                 description: |-
@@ -266,41 +268,12 @@ spec:
                       x-kubernetes-map-type: atomic
                   type: object
                 type: array
-              models:
+              gateway:
                 description: |-
-                  Models selects specific provider/model combinations for all stages.
-                  Individual stages may override these selections in the future.
-                items:
-                  description: AgentRunModelSelection selects a specific provider
-                    and model for this run.
-                  properties:
-                    model:
-                      description: |-
-                        Model is the model identifier. Must be declared on the referenced
-                        LLMProvider.
-                      minLength: 1
-                      type: string
-                    provider:
-                      description: |-
-                        Provider is the name of an LLMProvider CR. Must be in the Agent's
-                        providers list.
-                      minLength: 1
-                      type: string
-                    role:
-                      description: |-
-                        Role is the purpose of this model in the run (e.g. "primary", "efficient").
-                        The harness maps roles to runtime-specific configuration.
-                      minLength: 1
-                      type: string
-                  required:
-                  - model
-                  - provider
-                  - role
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - role
-                x-kubernetes-list-type: map
+                  Gateway selects the Gateway (provider/model combination) for all
+                  stages. Individual stages may override this selection in the future.
+                minLength: 1
+                type: string
               params:
                 description: Params supplies values for Agent parameters across all
                   stages.
@@ -324,27 +297,27 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
-              workloadRef:
-                description: WorkloadRef is the name of the AgentWorkload CR to execute.
+              workflowRef:
+                description: WorkflowRef is the name of the AgentWorkflow CR to execute.
                 minLength: 1
                 type: string
             required:
-            - workloadRef
+            - workflowRef
             type: object
             x-kubernetes-validations:
-            - message: workloadRef is immutable
-              rule: self.workloadRef == oldSelf.workloadRef
+            - message: spec is immutable
+              rule: self == oldSelf
           status:
-            description: AgentWorkloadRunStatus defines the observed state of an AgentWorkloadRun.
+            description: AgentWorkflowRunStatus defines the observed state of an AgentWorkflowRun.
             properties:
               completionTime:
-                description: CompletionTime is the time the workload run finished.
+                description: CompletionTime is the time the workflow run finished.
                 format: date-time
                 type: string
               conditions:
                 description: |-
                   Conditions represent the latest available observations of the
-                  AgentWorkloadRun's state.
+                  AgentWorkflowRun's state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -413,7 +386,7 @@ spec:
                 type: integer
               phase:
                 default: Pending
-                description: Phase is the current phase of the overall workload run.
+                description: Phase is the current phase of the overall workflow run.
                 enum:
                 - Pending
                 - Running
@@ -424,8 +397,8 @@ spec:
                 description: Stages tracks the status of each stage.
                 items:
                   description: |-
-                    AgentWorkloadRunStageStatus tracks the status of a single stage within
-                    a workload run.
+                    AgentWorkflowRunStageStatus tracks the status of a single stage within
+                    a workflow run.
                   properties:
                     agentRunName:
                       description: AgentRunName is the name of the AgentRun CR created
@@ -433,7 +406,7 @@ spec:
                       type: string
                     name:
                       description: Name is the stage name, matching a stage in the
-                        AgentWorkload.
+                        AgentWorkflow.
                       type: string
                     phase:
                       description: Phase is the current phase of this stage.
@@ -452,7 +425,7 @@ spec:
                 - name
                 x-kubernetes-list-type: map
               startTime:
-                description: StartTime is the time the workload run started.
+                description: StartTime is the time the workflow run started.
                 format: date-time
                 type: string
             type: object

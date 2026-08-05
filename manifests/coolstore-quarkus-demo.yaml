@@ -8,8 +8,8 @@ metadata:
     konveyor.io/managed: "true"
 spec:
   image: quay.io/konveyor/agent-java:dev   # skills baked at /opt/skills: plan, execute, verify, javaee-to-quarkus, patternfly-migration
-  providers:
-    - ref: aws-bedrock                     # must match a Ready LLMProvider; validateModels checks membership
+  gateways:
+    - ref: bedrock-sonnet                  # must match a Ready Gateway; validateGateway checks membership
   params:
     - name: max_turns
       type: number
@@ -20,9 +20,9 @@ spec:
     Quarkus 3 migration. Work only inside the workspace repository. Never run git
     commands yourself; the harness commits and pushes your file writes automatically.
 ---
-# 2. AgentWorkload — guide becomes KONVEYOR_WORKLOAD_INSTRUCTIONS in every stage
+# 2. AgentWorkflow — guide becomes KONVEYOR_WORKFLOW_GUIDE in every stage
 apiVersion: konveyor.io/v1alpha1
-kind: AgentWorkload
+kind: AgentWorkflow
 metadata:
   name: coolstore-quarkus-demo
   namespace: konveyor-agents
@@ -115,20 +115,20 @@ spec:
         honest caveats compile cannot see (messaging end-to-end untested, in-mem H2,
         no prod AMQP broker configured). Do NOT modify PLAN.md's step list.
 ---
-# 3. AgentWorkloadRun — spec is immutable; models + env are copied to ALL stages
+# 3. AgentWorkflowRun — spec is immutable; gateway + env are copied to ALL stages
 apiVersion: konveyor.io/v1alpha1
-kind: AgentWorkloadRun
+kind: AgentWorkflowRun
 metadata:
   name: coolstore-quarkus-demo-2
   namespace: konveyor-agents
   labels:
     konveyor.io/managed: "true"
 spec:
-  workloadRef: coolstore-quarkus-demo
-  models:                                  # REQUIRED by hand — no controller defaults these
-    - role: primary
-      provider: aws-bedrock
-      model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+  workflowRef: coolstore-quarkus-demo
+  # gateway may be omitted: the (single) stage Agent declares exactly one
+  # gateway and the controller defaults to it. Set explicitly here to make
+  # the demo's model choice visible.
+  gateway: bedrock-sonnet
   params:
     - name: max_turns
       value: "150"                         # declared on the (single) Agent, so valid for every stage

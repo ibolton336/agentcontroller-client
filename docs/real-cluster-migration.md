@@ -370,7 +370,7 @@ It is id **2**, not 1 — Postgres does not reuse the id of a deleted record.
 `manifests/coolstore-quarkus-demo.yaml` has been updated accordingly
 (`APP_ID: "2"`), along with `TARGET_BRANCH: quarkus-migration-ocp-1`, since
 the old `quarkus-migration-demo-2` branch already exists on the fork and would
-collide. The `AgentWorkloadRun` name in that manifest
+collide. The `AgentWorkflowRun` name in that manifest
 (`coolstore-quarkus-demo-2`) still needs to be fresh per attempt.
 
 ### G7 — Control plane absent 🟠
@@ -415,7 +415,7 @@ what an open Route ultimately exposes.
 ### G9 — Bedrock credentials 🟡
 
 `aws-bedrock-creds` (3 keys) exists only in minikube's `konveyor-agents`. The
-LLMProvider wiring itself is portable — a keyless `credentialRef` exposes the
+Gateway wiring itself is portable — a keyless `credentialRef` exposes the
 whole Secret via `envFrom` since upstream #34 — but the Secret must be
 recreated on the target. Confirm the cluster's egress reaches
 `bedrock-runtime.us-east-1.amazonaws.com` (no proxy configured, so it should).
@@ -508,6 +508,16 @@ add some).
 >
 > Rotate the GitHub PAT after the demo (it transited a chat session); the
 > Hub identity `github-push` must be updated with the replacement.
+>
+> ⚠️ **2026-08-05 — upstream naming is now canonical.** Upstream merged
+> AgentPlaybook→AgentWorkflow (#80) and LLMProvider→Gateway (#100); this
+> tree is fully migrated to that naming (`AgentWorkflowRun`/`workflowRef`,
+> `Gateway`/`spec.gateway`, `KONVEYOR_LLM_*`). The interim fork naming
+> (`AgentWorkloadRun`, `aws-bedrock` LLMProvider) is retired. BOTH demo
+> clusters still run pre-rename controllers/CRDs — re-deploy from
+> `deploy/roks/agentic-controller-install.yaml` (now rendered from
+> upstream main @ 059b6f60) and recreate LLMProvider CRs as Gateways
+> before applying any of the renamed manifests.
 
 Each phase is independently verifiable; do not start the next until the
 previous is green.
@@ -538,10 +548,10 @@ Phases 1–5.
    with the image patched to the registry ref.
 6. Install Agent Sandbox v0.5.0 (resolve the cert-manager question first).
 7. Create ns `konveyor-agents`, recreate `aws-bedrock-creds`, apply the
-   LLMProvider, confirm it reaches `Verified=true`.
+   `bedrock-sonnet` Gateway, confirm it reaches `Verified=true`.
 
 **Phase 3 — a run that is not the demo**
-8. Apply the mock agent/provider (`manifests/samples.yaml`) and get one
+8. Apply the mock agent/gateway (`manifests/samples.yaml`) and get one
    trivial AgentRun to `Succeeded`. This isolates SCC, image-pull, ACP dial,
    and model injection from any Hub or git complexity.
 
@@ -561,7 +571,7 @@ Phases 1–5.
 **Phase 6 — the demo itself**
 13. Port `manifests/coolstore-quarkus-demo.yaml` with corrected
     `HUB_BASE_URL` / `APP_ID` / fresh `TARGET_BRANCH`, and run the full
-    assess→remediate→validate workload.
+    assess→remediate→validate workflow.
 14. Re-check the known caveats that are unrelated to the move: `OnFailure`
     crashloop on a failing stage, `.konveyor/analysis.json` not reaching the
     pushed branch, the dirty-worktree warning misattributing the harness's own

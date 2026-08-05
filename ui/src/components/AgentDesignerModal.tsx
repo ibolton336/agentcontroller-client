@@ -24,14 +24,13 @@ import type {
   AgentParam,
   AgentResource,
   AgentResourceSpec,
-  LLMProvider,
   SkillCard,
   SkillCollection,
 } from "@konveyor/agentic-client/contract";
 import { RESOURCE_NAME_PATTERN } from "@konveyor/agentic-client/contract";
 import type { ShimClient } from "@konveyor/agentic-client/transport-shim";
 import { errorMessage } from "../format";
-import { useImageCatalog, useProviders, ReadyLabel } from "./sources";
+import { useImageCatalog, useGateways, ReadyLabel } from "./sources";
 
 interface AgentDesignerModalProps {
   api: ShimClient;
@@ -48,8 +47,8 @@ export function AgentDesignerModal({ api, existing, onClose, onSaved }: AgentDes
   const [image, setImage] = useState(existing?.spec.image ?? "");
   const [customImage, setCustomImage] = useState(false);
   const [prompt, setPrompt] = useState(existing?.spec.prompt ?? "");
-  const [selectedProviders, setSelectedProviders] = useState<string[]>(
-    (existing?.spec.providers ?? []).map((p) => p.ref),
+  const [selectedGateways, setSelectedGateways] = useState<string[]>(
+    (existing?.spec.gateways ?? []).map((g) => g.ref),
   );
   const [selectedSkillCards, setSelectedSkillCards] = useState<string[]>(
     (existing?.spec.skillCards ?? []).map((s) => s.ref),
@@ -61,7 +60,7 @@ export function AgentDesignerModal({ api, existing, onClose, onSaved }: AgentDes
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { providers, loading: providersLoading } = useProviders(api);
+  const { gateways, loading: gatewaysLoading } = useGateways(api);
   const { images } = useImageCatalog(api);
   const [skillCards, setSkillCards] = useState<SkillCard[] | null>(null);
   const [skillCollections, setSkillCollections] = useState<SkillCollection[] | null>(null);
@@ -86,11 +85,11 @@ export function AgentDesignerModal({ api, existing, onClose, onSaved }: AgentDes
     name.trim() !== "" &&
     nameValid &&
     image.trim() !== "" &&
-    selectedProviders.length > 0 &&
+    selectedGateways.length > 0 &&
     !submitting;
 
-  const toggleProvider = (ref: string) => {
-    setSelectedProviders((prev) =>
+  const toggleGateway = (ref: string) => {
+    setSelectedGateways((prev) =>
       prev.includes(ref) ? prev.filter((r) => r !== ref) : [...prev, ref],
     );
   };
@@ -106,7 +105,7 @@ export function AgentDesignerModal({ api, existing, onClose, onSaved }: AgentDes
       const spec: AgentResourceSpec = {
         image,
         prompt: prompt.trim() || undefined,
-        providers: selectedProviders.map((ref) => ({ ref })),
+        gateways: selectedGateways.map((ref) => ({ ref })),
         skillCards: selectedSkillCards.length > 0 ? selectedSkillCards.map((ref) => ({ ref })) : undefined,
         skillCollections: selectedSkillCollections.length > 0 ? selectedSkillCollections.map((ref) => ({ ref })) : undefined,
         params: params.filter((p) => p.name.trim()).length > 0
@@ -174,17 +173,17 @@ export function AgentDesignerModal({ api, existing, onClose, onSaved }: AgentDes
               rows={4} resizeOrientation="vertical" placeholder="Standing instructions for this agent" />
           </FormGroup>
 
-          <FormGroup label="Providers" isRequired fieldId="agent-providers">
-            {providersLoading ? <Spinner size="md" /> : providers.length === 0 ? (
-              <Alert variant="warning" isInline title="No LLMProviders found" />
+          <FormGroup label="Gateways" isRequired fieldId="agent-gateways">
+            {gatewaysLoading ? <Spinner size="md" /> : gateways.length === 0 ? (
+              <Alert variant="warning" isInline title="No Gateways found" />
             ) : (
-              providers.map((p) => {
-                const ref = p.metadata.name!;
-                const idx = selectedProviders.indexOf(ref);
+              gateways.map((g) => {
+                const ref = g.metadata.name!;
+                const idx = selectedGateways.indexOf(ref);
                 return (
                   <div key={ref} style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                    <Checkbox id={`prov-${ref}`} isChecked={idx >= 0} onChange={() => toggleProvider(ref)}
-                      label={`${ref} (${p.spec.models.map((m) => m.name).join(", ")})`} />
+                    <Checkbox id={`gw-${ref}`} isChecked={idx >= 0} onChange={() => toggleGateway(ref)}
+                      label={`${ref} — ${g.spec.model.name} (${g.spec.provider})`} />
                     {idx === 0 && <Label color="blue" isCompact>1st</Label>}
                   </div>
                 );

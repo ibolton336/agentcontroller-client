@@ -3,10 +3,10 @@
  *
  * Two demo sets (Java EE → Quarkus, PatternFly 5→6) plus the image catalog
  * ConfigMap. The set is PLANNED per request, not a static list: agents bind
- * to the cluster's real LLMProvider (discovered, or pinned via SEED_PROVIDER)
- * and take their images from the resolved catalog. A set whose provider or
+ * to the cluster's real Gateway (discovered, or pinned via SEED_GATEWAY)
+ * and take their images from the resolved catalog. A set whose gateway or
  * image the cluster cannot supply is reported "skipped" with a reason —
- * never created broken. LLMProviders themselves are install-time
+ * never created broken. Gateways themselves are install-time
  * infrastructure (they need real credentials) and are never seeded here;
  * likewise inline SkillCards are excluded until the controller supports
  * inline sources (today they reconcile to Ready=False/InlineNotSupported).
@@ -61,10 +61,10 @@ export interface SeedImages {
 }
 
 export interface SeedPlanInputs {
-  /** LLMProvider name every seeded agent references; absent = agent sets skipped. */
-  provider?: string;
-  /** Why no provider was resolved — becomes the per-entry skip reason. */
-  noProviderReason?: string;
+  /** Gateway name every seeded agent references; absent = agent sets skipped. */
+  gateway?: string;
+  /** Why no gateway was resolved — becomes the per-entry skip reason. */
+  noGatewayReason?: string;
   images: SeedImages;
 }
 
@@ -73,12 +73,12 @@ export interface SeedPlan { resources: SeedResource[]; skipped: SkippedSeed[] }
 
 // ---------------------------------------- Java EE → Quarkus migration set
 
-function javaSet(provider: string, image: string): SeedResource[] {
+function javaSet(gateway: string, image: string): SeedResource[] {
   return [
     cr("Agent", "java-migration-analyzer", {
       image,
       prompt: "You are a Java EE migration analyzer. Examine the application at /workspace and produce a migration plan under .konveyor/plan.md.",
-      providers: [{ ref: provider }],
+      gateways: [{ ref: gateway }],
       params: [
         { name: "repository", type: "string", description: "Git URL of the application", required: true },
         { name: "branch", type: "string", description: "Branch to analyze", default: "main" },
@@ -98,7 +98,7 @@ function javaSet(provider: string, image: string): SeedResource[] {
     cr("Agent", "java-migration-remediator", {
       image,
       prompt: "You are a Java EE migration executor. Apply the plan from .konveyor/plan.md to the source at /workspace. Commit each logical change.",
-      providers: [{ ref: provider }],
+      gateways: [{ ref: gateway }],
       params: [
         { name: "repository", type: "string", description: "Git URL of the application", required: true },
         { name: "branch", type: "string", description: "Working branch", default: "main" },
@@ -108,14 +108,14 @@ function javaSet(provider: string, image: string): SeedResource[] {
     cr("Agent", "java-migration-validator", {
       image,
       prompt: "You are a migration validator. Build and test the migrated application at /workspace. Report results to .konveyor/verify.md.",
-      providers: [{ ref: provider }],
+      gateways: [{ ref: gateway }],
       params: [
         { name: "repository", type: "string", description: "Git URL of the application", required: true },
         { name: "branch", type: "string", description: "Working branch", default: "main" },
         { name: "mode", type: "string", description: '"serve" or "batch"', default: "batch" },
       ],
     }),
-    cr("AgentWorkload", "javaee-to-quarkus", {
+    cr("AgentWorkflow", "javaee-to-quarkus", {
       guide: "Three-stage Java EE to Quarkus migration pipeline. All stages share the same branch and push their output back to it.",
       stages: [
         { name: "plan", agentRef: "java-migration-analyzer", instructions: "Stage 1: analyze the application and produce a migration plan." },
@@ -128,12 +128,12 @@ function javaSet(provider: string, image: string): SeedResource[] {
 
 // ---------------------------------------- PatternFly migration set
 
-function pfSet(provider: string, image: string): SeedResource[] {
+function pfSet(gateway: string, image: string): SeedResource[] {
   return [
     cr("Agent", "pf-migration-analyzer", {
       image,
       prompt: "You are a PatternFly migration analyzer. Examine the frontend application at /workspace and produce a PF5→PF6 migration plan.",
-      providers: [{ ref: provider }],
+      gateways: [{ ref: gateway }],
       params: [
         { name: "repository", type: "string", description: "Git URL of the frontend application", required: true },
         { name: "branch", type: "string", description: "Branch to analyze", default: "main" },
@@ -143,7 +143,7 @@ function pfSet(provider: string, image: string): SeedResource[] {
     cr("Agent", "pf-migration-remediator", {
       image,
       prompt: "You are a PatternFly migration executor. Apply the PF5→PF6 migration plan to the frontend at /workspace.",
-      providers: [{ ref: provider }],
+      gateways: [{ ref: gateway }],
       params: [
         { name: "repository", type: "string", description: "Git URL of the frontend application", required: true },
         { name: "branch", type: "string", description: "Working branch", default: "main" },
@@ -153,14 +153,14 @@ function pfSet(provider: string, image: string): SeedResource[] {
     cr("Agent", "pf-migration-validator", {
       image,
       prompt: "You are a PatternFly migration validator. Build and test the migrated frontend at /workspace.",
-      providers: [{ ref: provider }],
+      gateways: [{ ref: gateway }],
       params: [
         { name: "repository", type: "string", description: "Git URL of the frontend application", required: true },
         { name: "branch", type: "string", description: "Working branch", default: "main" },
         { name: "mode", type: "string", description: '"serve" or "batch"', default: "batch" },
       ],
     }),
-    cr("AgentWorkload", "patternfly-migration", {
+    cr("AgentWorkflow", "patternfly-migration", {
       guide: "Three-stage PatternFly 5→6 migration pipeline for frontend applications.",
       stages: [
         { name: "analyze", agentRef: "pf-migration-analyzer", instructions: "Stage 1: analyze the frontend and produce a PF5→PF6 migration plan." },
@@ -177,7 +177,7 @@ interface AgentSetDef {
   /** Image catalog key the set's agents run on. */
   catalogKey: "agent-java" | "agent-nodejs";
   image: (images: SeedImages) => string | undefined;
-  build: (provider: string, image: string) => SeedResource[];
+  build: (gateway: string, image: string) => SeedResource[];
   /** Kind/name of every member — used to report a skipped set entry-by-entry. */
   members: { kind: string; name: string }[];
 }
@@ -191,7 +191,7 @@ const AGENT_SETS: AgentSetDef[] = [
       { kind: "Agent", name: "java-migration-analyzer" },
       { kind: "Agent", name: "java-migration-remediator" },
       { kind: "Agent", name: "java-migration-validator" },
-      { kind: "AgentWorkload", name: "javaee-to-quarkus" },
+      { kind: "AgentWorkflow", name: "javaee-to-quarkus" },
     ],
   },
   {
@@ -202,14 +202,14 @@ const AGENT_SETS: AgentSetDef[] = [
       { kind: "Agent", name: "pf-migration-analyzer" },
       { kind: "Agent", name: "pf-migration-remediator" },
       { kind: "Agent", name: "pf-migration-validator" },
-      { kind: "AgentWorkload", name: "patternfly-migration" },
+      { kind: "AgentWorkflow", name: "patternfly-migration" },
     ],
   },
 ];
 
 /**
  * Computes the seed plan for this cluster. Pure: no cluster reads/writes —
- * the caller resolves provider + images first and applies the plan after.
+ * the caller resolves gateway + images first and applies the plan after.
  */
 export function planSeed(inputs: SeedPlanInputs): SeedPlan {
   const resources: SeedResource[] = [
@@ -237,15 +237,15 @@ export function planSeed(inputs: SeedPlanInputs): SeedPlan {
   for (const set of AGENT_SETS) {
     const image = set.image(inputs.images);
     let reason: string | undefined;
-    if (!inputs.provider) {
-      reason = inputs.noProviderReason ?? "no LLMProvider available";
+    if (!inputs.gateway) {
+      reason = inputs.noGatewayReason ?? "no Gateway available";
     } else if (!image) {
       reason = `image "${set.catalogKey}" is not in this cluster's catalog — add it to the agent-image-catalog ConfigMap and re-seed`;
     }
     if (reason) {
       skipped.push(...set.members.map((m) => ({ ...m, reason: reason! })));
     } else {
-      resources.push(...set.build(inputs.provider!, image!));
+      resources.push(...set.build(inputs.gateway!, image!));
     }
   }
   return { resources, skipped };
@@ -253,10 +253,10 @@ export function planSeed(inputs: SeedPlanInputs): SeedPlan {
 
 /** Plurals map for seeding — maps Kind to the k8s API plural. */
 export const KIND_TO_PLURAL: Record<string, string> = {
-  LLMProvider: PLURALS.LLMProvider,
+  Gateway: PLURALS.Gateway,
   Agent: PLURALS.Agent,
   SkillCard: PLURALS.SkillCard,
   SkillCollection: PLURALS.SkillCollection,
-  AgentWorkload: PLURALS.AgentWorkload,
-  AgentWorkloadRun: PLURALS.AgentWorkloadRun,
+  AgentWorkflow: PLURALS.AgentWorkflow,
+  AgentWorkflowRun: PLURALS.AgentWorkflowRun,
 };

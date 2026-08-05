@@ -36,7 +36,7 @@ Prototyped against the real controller (PR #4) on minikube (Agent Sandbox v0.5.0
 - three-stage AgentWorkload flow (assess → remediate → validate) end-to-end in batch mode behind #36
 - isomorphic client core (`@konveyor/agentic-client`: contract types + `AcpSession` over plain WebSocket, no node builtins); two transports: direct-k8s (IDE/node) and proxy (browser), the latter driven today against a local `hub-shim` stand-in
 
-Details: [ADR 0004 — verified client contract and layered transports](https://github.com/ibolton336/agentcontroller-client/blob/main/docs/adr/0004-client-contract-and-transports.md), [ADR 0005 — platform-resolved params](https://github.com/ibolton336/agentcontroller-client/blob/main/docs/adr/0005-platform-resolved-params.md).
+Details: [ADR 0009 — verified client contract and layered transports](https://github.com/ibolton336/agentcontroller-client/blob/main/docs/adr/0009-client-contract-and-transports.md), [ADR 0010 — platform-resolved params](https://github.com/ibolton336/agentcontroller-client/blob/main/docs/adr/0010-platform-resolved-params.md).
 
 ## Agent Runs API v1 — the proposed surface
 
@@ -59,7 +59,7 @@ Host-neutral by design — a client swaps only base URL + auth across placements
 
 ## Contract facts the client layer depends on
 
-Verified against the live controller (rationale in ADR 0004):
+Verified against the live controller (rationale in ADR 0009):
 
 - pod name == `status.sandboxName` == run name; resolve by name, never by label (pods currently carry no `konveyor.io/agentrun` label — patch proposed separately)
 - ACP key Secret `<sandboxName>-acp-key`, data key `secret-key`, via `status.secretKeyRef.name`
@@ -149,7 +149,7 @@ metadata:
       {"git": "konveyor.io/application-identity"}
 ```
 
-Three deliberate choices (reasoning in ADR 0005): **source ids are free-form namespaced strings, not a CRD enum** — an enum bakes Hub's vocabulary into a CRD whose controller ignores the field, and new values become schema upgrades that fail *closed* (`storageClassName` precedent); **fail open** — an unrecognized source id MUST be treated as caller-supplied and the field rendered; **credentials use the same mechanism**, resolving to a Secret mounted via `spec.envFrom`.
+Three deliberate choices (reasoning in ADR 0010): **source ids are free-form namespaced strings, not a CRD enum** — an enum bakes Hub's vocabulary into a CRD whose controller ignores the field, and new values become schema upgrades that fail *closed* (`storageClassName` precedent); **fail open** — an unrecognized source id MUST be treated as caller-supplied and the field rendered; **credentials use the same mechanism**, resolving to a Secret mounted via `spec.envFrom`.
 
 At create, caller-supplied values win; a required param with a *recognized* source the application can't supply is a 400, never silently empty. Verified: `POST {agentRef, applicationRef}` with **no params** yields a Running pod with resolved repo URL/branch and the identity Secret mounted — the create form for a fully sourced agent collapses to application picker + instructions. Carrier is an annotation today; graduation path is an optional `source` field on `AgentParam`.
 

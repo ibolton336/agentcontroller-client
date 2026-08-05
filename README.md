@@ -17,8 +17,8 @@ controller lands, delete the simulator — the client code is unchanged.
 | `packages/agentrun-client/src/` | The reusable module (shaped for konveyor/editor-extensions). `types.ts` mirrors the CRDs, `kube.ts` creates/watches AgentRuns and resolves the ACP endpoint, `portforward.ts` tunnels to the pod, `acp.ts` connects via `@agentclientprotocol/sdk`'s WebSocket transport. |
 | `packages/agentrun-client/dev/` | `simulate-controller.ts` (stand-in reconciler), `demo.ts` (end-to-end flow), `local-smoke.ts` (no-cluster protocol test). |
 | `harness-mock/` | Mock of the sandbox harness ACP surface — real ACP via the SDK's server side, deterministic fake agent. Honors `GOOSE_SERVER__SECRET_KEY`, `GOOSE_MODE`, `KONVEYOR_PARAM_*`, `AGENT_PROMPT`. |
-| `manifests/` | Sample LLMProvider + Agent CRs (`samples.yaml` = mock, `goose-bedrock.yaml` = real goose on AWS Bedrock). |
-| `harness-goose/` | Real agent-base image: goose v1.39.0 `serve` on :4000 (plain HTTP at this tag; the self-signed-TLS default landed later — keep it pinned) behind `entrypoint.sh`, which adapts the real controller's KONVEYOR_* env contract — clones the run's `repository` param into `/workspace`, maps `KONVEYOR_MODEL_PRIMARY_*` onto `GOOSE_PROVIDER`/`GOOSE_MODEL`, and writes the prompt/instructions to `.goosehints`. SigV4 creds arrive via `run.spec.envFrom` (the controller's single-key injection fits OpenAI-style providers only). |
+| `manifests/` | Sample Gateway + Agent CRs (`samples.yaml` = mock, `goose-bedrock.yaml` = real goose on AWS Bedrock). |
+| `harness-goose/` | Real agent-base image: goose v1.39.0 `serve` on :4000 (plain HTTP at this tag; the self-signed-TLS default landed later — keep it pinned) behind `entrypoint.sh`, which adapts the real controller's KONVEYOR_* env contract — clones the run's `repository` param into `/workspace`, maps `KONVEYOR_LLM_*` (Gateway injection; legacy `KONVEYOR_MODEL_PRIMARY_*` fallback) onto `GOOSE_PROVIDER`/`GOOSE_MODEL`, and writes the prompt/instructions to `.goosehints`. SigV4 creds arrive via the Gateway's keyless credentialRef, mounted whole by the controller. |
 | `agentic-controller/` | Upstream clone (with two local CEL-rule fixes in the Agent CRD, PR pending). |
 
 > **Full local dev-mode guide** (cluster + simulator + extension dev
@@ -59,12 +59,18 @@ kubectl create secret generic aws-bedrock-creds -n konveyor-agents \
 kubectl apply -f manifests/goose-bedrock.yaml
 ```
 
-Then create runs with `agentRef: migration-analyzer-goose` and a models
-selection (`role: primary, provider: bedrock, model: <bedrock model id>`).
-The simulator resolves the LLMProvider CR to `GOOSE_PROVIDER`/`GOOSE_MODEL`
-plus an `envFrom` of the credential secret, and clones the `repository`
+Then create runs with `agentRef: migration-analyzer-goose` — no model
+selection needed: the agent declares exactly one Gateway
+(`bedrock-sonnet`) and the controller defaults to it (set `spec.gateway`
+to pick another declared Gateway). The simulator resolves the Gateway CR
+to `KONVEYOR_LLM_*` + `GOOSE_PROVIDER`/`GOOSE_MODEL` plus the credential
+Secret (keyless = whole-Secret envFrom), and clones the `repository`
 param into /workspace via initContainer — the same mapping the real
-harness will own.
+harness owns.
+
+The full Secret → Gateway → env → goose → SigV4 chain, including how
+the #53 image differs from this POC one and which naming conventions are
+load-bearing, is traced in [docs/bedrock-wiring.md](docs/bedrock-wiring.md).
 
 ## editor-extensions integration (implemented)
 
@@ -103,7 +109,7 @@ The real agentic-controller reconciler (upstream PR #4) is live on the
 cluster, so the **controller simulator is retired** — everything above that
 mentions it is historical. The verified client contract and the transport
 layering are captured in
-[ADR 0004](docs/adr/0004-client-contract-and-transports.md). The repo now
+[ADR 0009](docs/adr/0009-client-contract-and-transports.md). The repo now
 hosts:
 
 - `harness-mock/`, `harness-goose/` — the agent-base images the sandboxes run.

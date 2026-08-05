@@ -91,7 +91,7 @@ export function AgentsPage({ api }: AgentsPageProps) {
               <Tr>
                 <Th>Name</Th>
                 <Th>Image</Th>
-                <Th>Providers</Th>
+                <Th>Gateways</Th>
                 <Th>Skills</Th>
                 <Th>Params</Th>
                 <Th>Ready</Th>
@@ -107,7 +107,7 @@ export function AgentsPage({ api }: AgentsPageProps) {
                   <Tr key={agent.metadata.uid ?? name}>
                     <Td dataLabel="Name">{name}</Td>
                     <Td dataLabel="Image"><code style={{ fontSize: "0.85em" }}>{agent.spec.image}</code></Td>
-                    <Td dataLabel="Providers">{(agent.spec.providers ?? []).map((p) => p.ref).join(", ") || "—"}</Td>
+                    <Td dataLabel="Gateways">{(agent.spec.gateways ?? []).map((g) => g.ref).join(", ") || "—"}</Td>
                     <Td dataLabel="Skills">
                       {sc === 0 ? (
                         <Label color="red">0 skills</Label>

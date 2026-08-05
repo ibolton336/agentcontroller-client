@@ -14,14 +14,14 @@
  *   GET    /api/applications            -> 200 Application[] (mock inventory)
  *   GET    /api/agents[/:name]          -> 200 Agent[] | Agent | 404
  *                                          (list filtered: konveyor.io/managed=true)
- *   GET    /api/llmproviders[/:name]    -> 200 LLMProvider[] | LLMProvider | 404
+ *   GET    /api/gateways[/:name]        -> 200 Gateway[] | Gateway | 404
  *   GET    /api/skillcards[/:name]      -> 200 SkillCard[] | SkillCard | 404
  *   GET    /api/skillcollections[/:name]-> 200 SkillCollection[] | SkillCollection | 404
- *   GET    /api/agentworkloads[/:name]  -> 200 AgentWorkload[] | AgentWorkload | 404
+ *   GET    /api/agentworkflows[/:name]  -> 200 AgentWorkflow[] | AgentWorkflow | 404
  *   GET    /api/images                  -> 200 AgentImage[] (image catalog)
  *   POST   /api/defaults[?dryRun=true]  -> 200 seed result (create-only;
  *                                          agents bind to the cluster's real
- *                                          LLMProvider and catalog images;
+ *                                          Gateway and catalog images;
  *                                          dryRun computes the same plan and
  *                                          statuses without writing)
  *   GET    /api/agentruns               -> 200 AgentRun[]
@@ -48,11 +48,10 @@ import {
   PLURALS,
   type Agent,
   type AgentRun,
-  type AgentRunModelSelection,
   type AgentRunSpec,
   type EnvFromSource,
   type EnvVar,
-  type LLMProvider,
+  type Gateway,
 } from "../../agentrun-client/src/types.js";
 import {
   CREDENTIAL_SOURCES_ANNOTATION,
@@ -66,7 +65,7 @@ import {
   invalidTargetBranchReason,
   parseSourcesAnnotation,
   type AgentImage,
-  type AgentWorkload,
+  type AgentWorkflow,
   type Application,
 } from "../../agentic-client/src/contract/index.js";
 import { planSeed, KIND_TO_PLURAL, type SeedPlan } from "./defaults.js";
@@ -134,21 +133,21 @@ const WRITABLE: Record<string, string> = {
   [PLURALS.Agent]: "Agent",
   [PLURALS.SkillCard]: "SkillCard",
   [PLURALS.SkillCollection]: "SkillCollection",
-  [PLURALS.AgentWorkload]: "AgentWorkload",
+  [PLURALS.AgentWorkflow]: "AgentWorkflow",
 };
 
 /** Resources served read-only as full CRs: list + get by name. */
 const READ_ONLY: Record<string, string> = {
   ...WRITABLE,
-  [PLURALS.LLMProvider]: "LLMProvider",
-  [PLURALS.AgentWorkloadRun]: "AgentWorkloadRun",
+  [PLURALS.Gateway]: "Gateway",
+  [PLURALS.AgentWorkflowRun]: "AgentWorkflowRun",
 };
 
 const LIST_LABEL_SELECTORS: Record<string, string> = {
   [PLURALS.Agent]: `${MANAGED_LABEL}=true`,
   [PLURALS.SkillCard]: `${MANAGED_LABEL}=true`,
   [PLURALS.SkillCollection]: `${MANAGED_LABEL}=true`,
-  [PLURALS.AgentWorkload]: `${MANAGED_LABEL}=true`,
+  [PLURALS.AgentWorkflow]: `${MANAGED_LABEL}=true`,
 };
 
 /**
@@ -228,57 +227,58 @@ async function getImageCatalog(): Promise<{ source: "configmap" | "builtin"; ima
   }
 }
 
-// ------------------------------------------------------- seed provider
+// ------------------------------------------------------- seed gateway
 
 /**
- * Which LLMProvider seeded agents bind to. Providers need real credentials,
+ * Which Gateway seeded agents bind to. Gateways need real credentials,
  * so POST /api/defaults never creates one — it binds to what the install
- * actually created. Unset = discover (prefer a Ready provider).
+ * actually created. Unset = discover (prefer a Ready gateway).
+ * SEED_PROVIDER is honored as a legacy alias for SEED_GATEWAY.
  */
-const SEED_PROVIDER = process.env.SEED_PROVIDER;
+const SEED_GATEWAY = process.env.SEED_GATEWAY ?? process.env.SEED_PROVIDER;
 
-interface ProviderCR {
+interface GatewayCR {
   apiVersion?: string;
   kind?: string;
   metadata?: { name?: string };
   status?: { conditions?: { type?: string; status?: string }[] };
 }
 
-const providerReady = (p: ProviderCR): boolean =>
-  (p.status?.conditions ?? []).some((c) => c.type === "Ready" && c.status === "True");
+const gatewayReady = (g: GatewayCR): boolean =>
+  (g.status?.conditions ?? []).some((c) => c.type === "Ready" && c.status === "True");
 
-export interface SeedProviderInfo {
+export interface SeedGatewayInfo {
   name: string;
   source: "env" | "discovered";
   ready: boolean;
 }
 
-/** Resolved provider, or the reason there is none (drives per-entry skips). */
-interface SeedProviderResolution {
-  info?: SeedProviderInfo;
+/** Resolved gateway, or the reason there is none (drives per-entry skips). */
+interface SeedGatewayResolution {
+  info?: SeedGatewayInfo;
   reason?: string;
 }
 
-async function resolveSeedProvider(): Promise<SeedProviderResolution> {
-  if (SEED_PROVIDER) {
+async function resolveSeedGateway(): Promise<SeedGatewayResolution> {
+  if (SEED_GATEWAY) {
     try {
-      const p = (await getCustom(PLURALS.LLMProvider, "LLMProvider", SEED_PROVIDER)) as ProviderCR;
-      return { info: { name: SEED_PROVIDER, source: "env", ready: providerReady(p) } };
+      const g = (await getCustom(PLURALS.Gateway, "Gateway", SEED_GATEWAY)) as GatewayCR;
+      return { info: { name: SEED_GATEWAY, source: "env", ready: gatewayReady(g) } };
     } catch (err) {
       if (k8sStatusCode(err) !== 404) throw err;
       return {
-        reason: `LLMProvider "${SEED_PROVIDER}" (SEED_PROVIDER) not found in namespace ${NAMESPACE} — create it and re-seed`,
+        reason: `Gateway "${SEED_GATEWAY}" (SEED_GATEWAY) not found in namespace ${NAMESPACE} — create it and re-seed`,
       };
     }
   }
-  const providers = await listCustom<ProviderCR>(PLURALS.LLMProvider, "LLMProvider");
-  const pick = providers.find(providerReady) ?? providers[0];
+  const gateways = await listCustom<GatewayCR>(PLURALS.Gateway, "Gateway");
+  const pick = gateways.find(gatewayReady) ?? gateways[0];
   if (!pick?.metadata?.name) {
     return {
-      reason: `no LLMProvider in namespace ${NAMESPACE} — create one (with real credentials) and re-seed`,
+      reason: `no Gateway in namespace ${NAMESPACE} — create one (with real credentials) and re-seed`,
     };
   }
-  return { info: { name: pick.metadata.name, source: "discovered", ready: providerReady(pick) } };
+  return { info: { name: pick.metadata.name, source: "discovered", ready: gatewayReady(pick) } };
 }
 
 interface HubApp {
@@ -461,17 +461,17 @@ interface CreateRunBody {
   applicationRef?: string;
   /** Only meaningful with applicationRef. Defaults to defaultTargetBranch(). */
   targetBranch?: string;
-  /** Explicit "primary"-role selection; absent = default provider policy. */
-  model?: { provider: string; model: string };
+  /** Explicit Gateway selection; absent = controller default (single-gateway Agent). */
+  gateway?: string;
 }
 
-/** Body of POST /api/agentworkloadruns (contract: CreateWorkloadRunInput). */
-interface CreateWorkloadRunBody {
-  workloadRef: string;
+/** Body of POST /api/agentworkflowruns (contract: CreateWorkflowRunInput). */
+interface CreateWorkflowRunBody {
+  workflowRef: string;
   params?: Record<string, string>;
   applicationRef?: string;
   targetBranch?: string;
-  model?: { provider: string; model: string };
+  gateway?: string;
 }
 
 /**
@@ -486,7 +486,7 @@ interface ResolvedSources {
 
 /**
  * Resolves an Agent's declared param/credential sources from the selected
- * application — the Hub-side half of the param-sources contract (ADR 0005).
+ * application — the Hub-side half of the param-sources contract (ADR 0010).
  *
  * Fail-open takes precedence over every other rule: an unrecognized source
  * identifier, or an annotation entry naming a param the Agent does not
@@ -651,128 +651,61 @@ async function fetchAgent(agentRef: string): Promise<Agent | undefined> {
 }
 
 /**
- * The run's model selection + LLM-provider credentials, defaulted from the
- * Agent's declared providers — the platform-side policy the controller does
- * not perform for itself: it turns spec.models into KONVEYOR_MODEL_{ROLE}_*
- * env but defaults nothing, and the migration-harness hard-requires
- * KONVEYOR_MODEL_PRIMARY_MODEL/PROVIDER at startup.
- *
- * Defaults to the Agent's first declared provider and that provider's
- * primary-tier model (else its first). Best-effort: an agent with no
- * provider, an unresolvable LLMProvider, or a provider with no models
- * contributes nothing — fine for fixtures; the create path warns when an
- * application-scoped run resolves no model.
+ * Gateway selection policy. The controller now owns the mechanics
+ * (post-#100): validateGateway defaults a run with no spec.gateway to the
+ * Agent's only declared gateway and fails validation when several are
+ * declared; buildEnvVars injects KONVEYOR_LLM_* and mounts the credential
+ * Secret itself. The shim's remaining job is fail-fast UX:
+ * - an EXPLICIT caller selection is validated loudly (400 naming the
+ *   declared set) instead of surfacing later as a Failed run;
+ * - the ambiguous case — no selection, an Agent declaring several
+ *   gateways — is pre-empted with a 400 naming the choices;
+ * - no selection + a single-gateway (or unknown) Agent returns undefined:
+ *   spec.gateway stays unset and the controller defaults or reports.
  */
-async function resolveModels(
-  agent: Agent | undefined,
-  agentRef: string,
-): Promise<{ models: AgentRunModelSelection[]; envFrom: EnvFromSource[] }> {
-  const empty = { models: [] as AgentRunModelSelection[], envFrom: [] as EnvFromSource[] };
-  // Unknown agent: let createAgentRun proceed and the controller report it.
-  if (!agent) return empty;
-  const providerRef = agent.spec.providers?.[0]?.ref;
-  if (!providerRef) return empty;
-  return resolveProviderModel(providerRef, `agent "${agentRef}"`);
-}
-
-/** The provider's primary-tier model (else first) + its credential Secret. */
-async function resolveProviderModel(
-  providerRef: string,
-  forWhom: string,
-): Promise<{ models: AgentRunModelSelection[]; envFrom: EnvFromSource[] }> {
-  const empty = { models: [] as AgentRunModelSelection[], envFrom: [] as EnvFromSource[] };
-  let provider: LLMProvider;
-  try {
-    provider = (await getCustom(PLURALS.LLMProvider, "LLMProvider", providerRef)) as LLMProvider;
-  } catch (err) {
-    if (k8sStatusCode(err) === 404) {
-      log(`${forWhom} declares provider "${providerRef}" but no such LLMProvider — no model injected`);
-      return empty;
-    }
-    throw err;
-  }
-
-  const model =
-    (provider.spec.models?.find((m) => m.tier === "primary") ?? provider.spec.models?.[0])?.name;
-  if (!model) {
-    log(`LLMProvider "${providerRef}" lists no models — no model injected`);
-    return empty;
-  }
-
-  const models: AgentRunModelSelection[] = [{ role: "primary", provider: providerRef, model }];
-  // Since controller #34, keyless credentialRefs are exposed to the sandbox
-  // by the controller itself; this duplicates that (same secret, harmless)
-  // and remains the only credential path against pre-#34 controllers.
-  // `optional` so a provider whose Secret is absent still lets the run start.
-  const secretName = provider.spec.credentialRef?.secretName;
-  const envFrom: EnvFromSource[] = secretName
-    ? [{ secretRef: { name: secretName, optional: true } }]
-    : [];
-  warnUnknownGooseProvider(providerRef);
-  log(
-    `model: ${providerRef}/${model} for ${forWhom}` +
-      (secretName ? ` (+creds secret ${secretName})` : ""),
-  );
-  return { models, envFrom };
-}
-
-/**
- * An EXPLICIT caller model selection ({provider, model} on the create body).
- * Unlike the default policy — which is best-effort, because the caller asked
- * for nothing — an explicit choice fails loudly: a provider outside the
- * Agent's declared providers, an unknown LLMProvider CR, or an undeclared
- * model are 400s, since the controller/harness would only reject them later
- * and less legibly.
- */
-async function resolveExplicitModel(
-  choice: { provider: string; model: string },
+async function resolveGateway(
+  explicit: string | undefined,
   agents: Agent[],
-): Promise<{ models: AgentRunModelSelection[]; envFrom: EnvFromSource[] }> {
+): Promise<string | undefined> {
+  if (explicit) {
+    for (const agent of agents) {
+      const declared = (agent.spec.gateways ?? []).map((g) => g.ref);
+      if (!declared.includes(explicit)) {
+        badRequest(
+          `gateway "${explicit}" is not among Agent "${agent.metadata.name}"'s ` +
+            `declared gateways (${declared.join(", ") || "none"})`,
+        );
+      }
+    }
+    let gateway: Gateway;
+    try {
+      gateway = (await getCustom(PLURALS.Gateway, "Gateway", explicit)) as Gateway;
+    } catch (err) {
+      if (k8sStatusCode(err) === 404) {
+        badRequest(`unknown Gateway "${explicit}" — GET /api/gateways lists them`);
+      }
+      throw err;
+    }
+    warnUnknownGooseProvider(gateway);
+    log(`gateway: ${explicit} (explicit caller selection)`);
+    return explicit;
+  }
   for (const agent of agents) {
-    const declared = (agent.spec.providers ?? []).map((p) => p.ref);
-    if (!declared.includes(choice.provider)) {
+    const declared = (agent.spec.gateways ?? []).map((g) => g.ref);
+    if (declared.length > 1) {
       badRequest(
-        `model.provider "${choice.provider}" is not among Agent "${agent.metadata.name}"'s ` +
-          `declared providers (${declared.join(", ") || "none"})`,
+        `Agent "${agent.metadata.name}" declares ${declared.length} gateways ` +
+          `(${declared.join(", ")}) — pass gateway to select one`,
       );
     }
   }
-  let provider: LLMProvider;
-  try {
-    provider = (await getCustom(
-      PLURALS.LLMProvider,
-      "LLMProvider",
-      choice.provider,
-    )) as LLMProvider;
-  } catch (err) {
-    if (k8sStatusCode(err) === 404) {
-      badRequest(`unknown LLMProvider "${choice.provider}" — GET /api/llmproviders lists them`);
-    }
-    throw err;
-  }
-  if (!provider.spec.models?.some((m) => m.name === choice.model)) {
-    const declared = (provider.spec.models ?? []).map((m) => m.name);
-    badRequest(
-      `model "${choice.model}" is not declared on LLMProvider "${choice.provider}" ` +
-        `(declared: ${declared.join(", ") || "none"})`,
-    );
-  }
-  const models: AgentRunModelSelection[] = [
-    { role: "primary", provider: choice.provider, model: choice.model },
-  ];
-  const secretName = provider.spec.credentialRef?.secretName;
-  const envFrom: EnvFromSource[] = secretName
-    ? [{ secretRef: { name: secretName, optional: true } }]
-    : [];
-  warnUnknownGooseProvider(choice.provider);
-  log(`model: ${choice.provider}/${choice.model} (explicit caller selection)`);
-  return { models, envFrom };
+  return undefined;
 }
 
 /**
- * goose provider ids the migration-harness's verbatim name mapping can hit
- * (CR name lowercased, "-" -> "_"). Advisory only — goose grows providers,
- * so an unknown id is a warning, never a 400.
+ * goose provider ids the harness's provider mapping can hit
+ * (spec.provider lowercased, "-" -> "_"). Advisory only — goose grows
+ * providers, so an unknown id is a warning, never a 400.
  */
 const KNOWN_GOOSE_PROVIDER_IDS = new Set([
   "anthropic",
@@ -790,18 +723,18 @@ const KNOWN_GOOSE_PROVIDER_IDS = new Set([
 ]);
 
 /**
- * The migration-harness maps the LLMProvider CR NAME to a goose provider id
- * verbatim (lowercased, "-" -> "_") — a CR named "bedrock" does not mean
+ * The harness maps Gateway spec.provider to a goose provider id
+ * (lowercased, "-" -> "_") — a provider "bedrock" does not mean
  * aws_bedrock. Warn at create time so the misname surfaces here instead of
  * as a goose startup failure inside the pod.
  */
-function warnUnknownGooseProvider(providerRef: string): void {
-  const gooseId = providerRef.toLowerCase().replace(/-/g, "_");
+function warnUnknownGooseProvider(gateway: Gateway): void {
+  const gooseId = gateway.spec.provider.toLowerCase().replace(/-/g, "_");
   if (!KNOWN_GOOSE_PROVIDER_IDS.has(gooseId)) {
     warn(
-      `LLMProvider "${providerRef}" maps to goose provider id "${gooseId}", which is not a ` +
-        `known goose provider — the harness maps CR names verbatim; if goose rejects it, ` +
-        `rename the CR (e.g. "aws-bedrock" -> aws_bedrock)`,
+      `Gateway "${gateway.metadata.name}" declares provider "${gateway.spec.provider}" -> goose ` +
+        `provider id "${gooseId}", which is not a known goose provider — if goose rejects it, ` +
+        `fix spec.provider (e.g. "aws-bedrock" for aws_bedrock)`,
     );
   }
 }
@@ -837,15 +770,8 @@ function parseCreateRunBody(raw: unknown): CreateRunBody {
   if (body.targetBranch !== undefined && (typeof body.targetBranch !== "string" || body.targetBranch.trim() === "")) {
     badRequest("targetBranch must be a non-empty string");
   }
-  let model: { provider: string; model: string } | undefined;
-  if (body.model !== undefined) {
-    const m = body.model as Record<string, unknown> | null;
-    if (!m || typeof m !== "object" || Array.isArray(m) ||
-        typeof m.provider !== "string" || m.provider.trim() === "" ||
-        typeof m.model !== "string" || m.model.trim() === "") {
-      badRequest('model must be an object: {"provider": "...", "model": "..."}');
-    }
-    model = { provider: (m.provider as string).trim(), model: (m.model as string).trim() };
+  if (body.gateway !== undefined && (typeof body.gateway !== "string" || body.gateway.trim() === "")) {
+    badRequest("gateway must be a non-empty string (a Gateway name)");
   }
   return {
     agentRef: body.agentRef,
@@ -853,26 +779,23 @@ function parseCreateRunBody(raw: unknown): CreateRunBody {
     instructions: body.instructions as string | undefined,
     applicationRef: body.applicationRef as string | undefined,
     targetBranch: (body.targetBranch as string | undefined)?.trim(),
-    model,
+    gateway: (body.gateway as string | undefined)?.trim(),
   };
 }
 
-function parseCreateWorkloadRunBody(raw: unknown): CreateWorkloadRunBody {
+function parseCreateWorkflowRunBody(raw: unknown): CreateWorkflowRunBody {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    badRequest("body must be a JSON object: {workloadRef, model, params?, applicationRef?, targetBranch?}");
+    badRequest("body must be a JSON object: {workflowRef, gateway?, params?, applicationRef?, targetBranch?}");
   }
   const body = raw as Record<string, unknown>;
-  if (typeof body.workloadRef !== "string" || body.workloadRef.trim() === "") {
-    badRequest("workloadRef is required and must be a non-empty string");
+  if (typeof body.workflowRef !== "string" || body.workflowRef.trim() === "") {
+    badRequest("workflowRef is required and must be a non-empty string");
   }
-  // Optional: absent means "default from the workload's stage agents"
+  // Optional: absent means "let the controller default per stage agent"
   // (same policy as single-run create). Present means shape-checked here
-  // and validated loudly by resolveExplicitModel.
-  const model = body.model as Record<string, unknown> | undefined;
-  if (model !== undefined &&
-      (!model || typeof model !== "object" || Array.isArray(model) ||
-       typeof model.provider !== "string" || typeof model.model !== "string")) {
-    badRequest("model must be {provider, model}");
+  // and validated loudly by resolveGateway.
+  if (body.gateway !== undefined && (typeof body.gateway !== "string" || body.gateway.trim() === "")) {
+    badRequest("gateway must be a non-empty string (a Gateway name)");
   }
   let params: Record<string, string> | undefined;
   if (body.params !== undefined) {
@@ -894,17 +817,15 @@ function parseCreateWorkloadRunBody(raw: unknown): CreateWorkloadRunBody {
     badRequest("targetBranch must be a non-empty string");
   }
   if (body.instructions !== undefined) {
-    // Contract carries it; the AgentWorkloadRun CRD has no such field.
-    log("createWorkloadRun: dropping unsupported field \"instructions\" (not in the CRD)");
+    // Contract carries it; the AgentWorkflowRun CRD has no such field.
+    log("createWorkflowRun: dropping unsupported field \"instructions\" (not in the CRD)");
   }
   return {
-    workloadRef: body.workloadRef,
+    workflowRef: body.workflowRef,
     params,
     applicationRef: body.applicationRef as string | undefined,
     targetBranch: body.targetBranch as string | undefined,
-    model: model
-      ? { provider: model.provider as string, model: model.model as string }
-      : undefined,
+    gateway: (body.gateway as string | undefined)?.trim(),
   };
 }
 
@@ -929,12 +850,12 @@ async function handleApi(
     const dryRun = /^(1|true)$/i.test(query.get("dryRun") ?? "");
 
     // Resolve what THIS cluster can supply, then plan against it.
-    const provider = await resolveSeedProvider();
+    const gateway = await resolveSeedGateway();
     const catalog = await getImageCatalog();
     const catalogImage = (name: string) => catalog.images.find((i) => i.name === name)?.image;
     const plan: SeedPlan = planSeed({
-      provider: provider.info?.name,
-      noProviderReason: provider.reason,
+      gateway: gateway.info?.name,
+      noGatewayReason: gateway.reason,
       images: {
         java: catalogImage("agent-java"),
         nodejs: catalogImage("agent-nodejs"),
@@ -1014,14 +935,14 @@ async function handleApi(
     const skippedCount = results.filter((r) => r.status === "skipped").length;
     log(
       `defaults${dryRun ? " (dry run)" : ""}: ${seeded} created, ${existed} existed, ` +
-        `${skippedCount} skipped (provider=${provider.info?.name ?? "none"})`,
+        `${skippedCount} skipped (gateway=${gateway.info?.name ?? "none"})`,
     );
     return sendJson(res, 200, {
       seeded,
       existed,
       skipped: skippedCount,
       dryRun,
-      provider: provider.info ?? null,
+      gateway: gateway.info ?? null,
       results,
     });
   }
@@ -1127,65 +1048,55 @@ async function handleApi(
     return sendError(res, 405, "method not allowed");
   }
 
-  // ---- workload runs: create + delete (list/get fall through to READ_ONLY).
+  // ---- workflow runs: create + delete (list/get fall through to READ_ONLY).
   // Runs are not catalog resources — the WRITABLE path's {name, spec} shape
   // and replace semantics don't apply, so they get a dedicated handler that
   // mirrors POST /api/agentruns.
-  if (apiMatch && apiMatch[1] === PLURALS.AgentWorkloadRun && method !== "GET") {
+  if (apiMatch && apiMatch[1] === PLURALS.AgentWorkflowRun && method !== "GET") {
     if (method === "POST" && !apiMatch[2]) {
-      let input: CreateWorkloadRunBody;
+      let input: CreateWorkflowRunBody;
       try {
-        input = parseCreateWorkloadRunBody(await readJsonBody(req));
+        input = parseCreateWorkflowRunBody(await readJsonBody(req));
       } catch (err) {
         if (!(err instanceof BadRequestError)) throw err;
         return sendError(res, 400, errorMessage(err));
       }
-      let workload: AgentWorkload;
+      let workflow: AgentWorkflow;
       try {
-        workload = (await getCustom(PLURALS.AgentWorkload, "AgentWorkload", input.workloadRef)) as AgentWorkload;
+        workflow = (await getCustom(PLURALS.AgentWorkflow, "AgentWorkflow", input.workflowRef)) as AgentWorkflow;
       } catch (err) {
         if (k8sStatusCode(err) === 404) {
-          return sendError(res, 400, `unknown workloadRef "${input.workloadRef}" — GET /api/agentworkloads lists them`);
+          return sendError(res, 400, `unknown workflowRef "${input.workflowRef}" — GET /api/agentworkflows lists them`);
         }
         throw err;
       }
 
-      // Model policy mirrors single-run create: an explicit choice is
-      // validated loudly against the stage agents' declared providers; no
-      // choice defaults from the first stage agent's provider chain. The
-      // controller defaults nothing, and a modelless run only fails later
-      // as an opaque session/new -32603, so an unresolvable default is 400.
-      const stageRefs = [...new Set((workload.spec.stages ?? []).map((s) => s.agentRef))];
+      // Gateway policy mirrors single-run create: an explicit choice is
+      // validated loudly against every stage agent's declared gateways; no
+      // choice leaves spec.gateway unset and each stage AgentRun defaults
+      // per its own agent (multi-gateway stage agents are pre-empted with
+      // a 400 instead of a run that reaches Failed).
+      const stageRefs = [...new Set((workflow.spec.stages ?? []).map((s) => s.agentRef))];
       const stageAgents: Agent[] = [];
       for (const ref of stageRefs) {
         try {
           stageAgents.push((await getCustom(PLURALS.Agent, "Agent", ref)) as Agent);
         } catch (err) {
           if (k8sStatusCode(err) !== 404) throw err;
-          log(`workload "${input.workloadRef}" stage agent "${ref}" not found — skipping for model resolution`);
+          log(`workflow "${input.workflowRef}" stage agent "${ref}" not found — skipping for gateway resolution`);
         }
       }
-      let resolvedModels: AgentRunModelSelection[];
-      let modelEnvFrom: EnvFromSource[];
+      let gateway: string | undefined;
       try {
-        const resolved = input.model
-          ? await resolveExplicitModel(input.model, stageAgents)
-          : await resolveModels(stageAgents[0], stageRefs[0] ?? "(no stages)");
-        resolvedModels = resolved.models;
-        modelEnvFrom = resolved.envFrom;
+        gateway = await resolveGateway(input.gateway, stageAgents);
       } catch (err) {
         if (!(err instanceof BadRequestError)) throw err;
         return sendError(res, 400, errorMessage(err));
       }
-      if (resolvedModels.length === 0) {
-        return sendError(res, 400,
-          `no model: workload "${input.workloadRef}"'s stage agents declare no resolvable ` +
-          `LLMProvider — pass model: {provider, model} explicitly (GET /api/llmproviders lists them)`);
-      }
 
       // Every stage shares one target branch; the harness requires it and
       // requires it to differ from the source branch. Fresh per attempt.
-      const targetBranch = input.targetBranch ?? `konveyor/${input.workloadRef}-${Date.now()}`;
+      const targetBranch = input.targetBranch ?? `konveyor/${input.workflowRef}-${Date.now()}`;
       const env: Array<{ name: string; value: string }> = [
         { name: "TARGET_BRANCH", value: targetBranch },
       ];
@@ -1208,11 +1119,10 @@ async function handleApi(
       }
 
       const spec: Record<string, unknown> = {
-        workloadRef: input.workloadRef,
-        models: resolvedModels,
+        workflowRef: input.workflowRef,
         env,
       };
-      if (modelEnvFrom.length > 0) spec.envFrom = modelEnvFrom;
+      if (gateway) spec.gateway = gateway;
       if (input.params && Object.keys(input.params).length > 0) {
         spec.params = Object.entries(input.params).map(([name, value]) => ({ name, value }));
       }
@@ -1221,10 +1131,10 @@ async function handleApi(
         group: GROUP,
         version: VERSION,
         namespace: NAMESPACE,
-        plural: PLURALS.AgentWorkloadRun,
+        plural: PLURALS.AgentWorkflowRun,
         body: {
           apiVersion: API_VERSION,
-          kind: "AgentWorkloadRun",
+          kind: "AgentWorkflowRun",
           metadata: {
             generateName: "ui-",
             namespace: NAMESPACE,
@@ -1233,8 +1143,8 @@ async function handleApi(
           spec,
         },
       }) as { metadata?: { name?: string } };
-      log(`created AgentWorkloadRun ${created.metadata?.name} (workloadRef=${input.workloadRef}, branch=${targetBranch})`);
-      return sendJson(res, 201, { apiVersion: API_VERSION, kind: "AgentWorkloadRun", ...created as object });
+      log(`created AgentWorkflowRun ${created.metadata?.name} (workflowRef=${input.workflowRef}, branch=${targetBranch})`);
+      return sendJson(res, 201, { apiVersion: API_VERSION, kind: "AgentWorkflowRun", ...created as object });
     }
 
     if (method === "DELETE" && apiMatch[2]) {
@@ -1242,13 +1152,13 @@ async function handleApi(
       try {
         await custom.deleteNamespacedCustomObject({
           group: GROUP, version: VERSION, namespace: NAMESPACE,
-          plural: PLURALS.AgentWorkloadRun, name,
+          plural: PLURALS.AgentWorkflowRun, name,
         });
       } catch (err) {
-        if (k8sStatusCode(err) === 404) return sendError(res, 404, `AgentWorkloadRun ${name} not found`);
+        if (k8sStatusCode(err) === 404) return sendError(res, 404, `AgentWorkflowRun ${name} not found`);
         throw err;
       }
-      log(`deleted AgentWorkloadRun ${name}`);
+      log(`deleted AgentWorkflowRun ${name}`);
       res.writeHead(204).end();
       return;
     }
@@ -1282,7 +1192,7 @@ async function handleApi(
       let sources: ResolvedSources;
       let agent: Agent | undefined;
       let hubEnv: EnvVar[];
-      let modelSel: { models: AgentRunModelSelection[]; envFrom: EnvFromSource[] };
+      let gateway: string | undefined;
       try {
         input = parseCreateRunBody(await readJsonBody(req));
         sources = await resolveSources(input);
@@ -1304,21 +1214,13 @@ async function handleApi(
           : [];
         // Explicit selection validates against the agent when it resolves
         // (an unknown agentRef stays the controller's to report); absent,
-        // the default first-provider/primary-tier policy applies.
-        modelSel = input.model
-          ? await resolveExplicitModel(input.model, agent ? [agent] : [])
-          : await resolveModels(agent, input.agentRef);
+        // the controller defaults a single-gateway Agent by itself.
+        gateway = await resolveGateway(input.gateway, agent ? [agent] : []);
       } catch (err) {
         // Only caller faults are 400. resolveSources talks to the apiserver
         // inside this try, and a transport failure there is a 5xx.
         if (!(err instanceof BadRequestError)) throw err;
         return sendError(res, 400, errorMessage(err));
-      }
-      if (input.applicationRef && modelSel.models.length === 0) {
-        warn(
-          `run (${input.agentRef}): no primary model resolved — the migration-harness ` +
-            `hard-requires KONVEYOR_MODEL_PRIMARY_MODEL/PROVIDER and will fail at startup`,
-        );
       }
       const spec: AgentRunSpec = { agentRef: input.agentRef };
       const params = { ...sources.params, ...(input.params ?? {}) };
@@ -1326,12 +1228,12 @@ async function handleApi(
         spec.params = Object.entries(params).map(([name, value]) => ({ name, value }));
       }
       if (input.instructions !== undefined) spec.instructions = input.instructions;
-      if (modelSel.models.length > 0) spec.models = modelSel.models;
-      // Hub coordinates + TARGET_BRANCH ride spec.env; credential Secrets
-      // (application identity, LLM provider) ride envFrom.
+      if (gateway) spec.gateway = gateway;
+      // Hub coordinates + TARGET_BRANCH ride spec.env; the application
+      // identity Secret rides envFrom (the controller mounts the gateway's
+      // LLM credential itself since #100).
       if (hubEnv.length > 0) spec.env = hubEnv;
-      const envFrom = [...sources.envFrom, ...modelSel.envFrom];
-      if (envFrom.length > 0) spec.envFrom = envFrom;
+      if (sources.envFrom.length > 0) spec.envFrom = sources.envFrom;
       const run = await runClient.createAgentRun(spec, { generateName: "ui-" });
       const via = input.applicationRef ? ` via application=${input.applicationRef}` : "";
       log(`created AgentRun ${run.metadata.name} (agentRef=${input.agentRef}${via})`);
@@ -1534,7 +1436,7 @@ server.on("upgrade", (req, socket, head) => {
 server.listen(PORT, HOST, () => {
   log(`SHIM API v1 listening on http://${HOST}:${PORT} (namespace=${NAMESPACE}, acp-dial=${ACP_DIAL})`);
   log(
-    `routes: GET /healthz | GET /api/{applications,images} | POST /api/defaults | CRUD /api/{agents,skillcards,skillcollections,agentworkloads}[/:name] | GET /api/llmproviders[/:name] | GET|POST /api/agentworkloadruns | GET|DELETE /api/agentworkloadruns/:name | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
+    `routes: GET /healthz | GET /api/{applications,images} | POST /api/defaults | CRUD /api/{agents,skillcards,skillcollections,agentworkflows}[/:name] | GET /api/gateways[/:name] | GET|POST /api/agentworkflowruns | GET|DELETE /api/agentworkflowruns/:name | GET|POST /api/agentruns | GET|DELETE /api/agentruns/:name | WS /api/agentruns/:name/acp`,
   );
 });
 

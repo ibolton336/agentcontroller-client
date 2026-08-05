@@ -1,5 +1,6 @@
-# Three-stage RHDH upgrade workload: assess -> remediate -> validate.
-# Runs behind the AgentWorkload/AgentWorkloadRun controllers (upstream #36).
+# Three-stage RHDH upgrade workflow: assess -> remediate -> validate.
+# Runs behind the AgentWorkflow/AgentWorkflowRun controllers (upstream #36,
+# renamed in #80).
 #
 # Stage handoff is the #36 convention: every stage receives the same
 # `branch` param, clones it, and pushes its output back to it. The testbed
@@ -9,7 +10,7 @@
 # Stages run the goose harness in batch mode (mode=batch param): the
 # entrypoint runs `goose run` with the stage instructions and exits, so
 # the pod completes and the stage AgentRun can Succeed. Every param on the
-# AgentWorkloadRun is forwarded to every stage, and the AgentRun controller
+# AgentWorkflowRun is forwarded to every stage, and the AgentRun controller
 # rejects params an Agent doesn't declare — so both agents declare the
 # full shared param set.
 ---
@@ -33,8 +34,8 @@ spec:
     /opt/skills/rhdh-upgrade-helper/ if you need conventions (OCI ref
     syntax, dynamic-plugins schema). git, python3 with PyYAML are
     installed. Work autonomously; never wait for input.
-  providers:
-    - ref: bedrock
+  gateways:
+    - ref: bedrock-sonnet
   params:
     - name: repository
       type: string
@@ -58,12 +59,12 @@ spec:
       default: "batch"
 ---
 apiVersion: konveyor.io/v1alpha1
-kind: AgentWorkload
+kind: AgentWorkflow
 metadata:
   name: rhdh-upgrade
   namespace: konveyor-agents
   labels:
-    # Konveyor UI lists filter on this — unlabeled workloads are invisible.
+    # Konveyor UI lists filter on this — unlabeled workflows are invisible.
     konveyor.io/managed: "true"
 spec:
   guide: |
@@ -72,7 +73,7 @@ spec:
     out at /workspace. All stages share the same git branch: read what
     earlier stages committed, and commit and push your own output to
     origin HEAD before finishing. Use a git identity of
-    workload@konveyor.local / "rhdh-upgrade workload" when committing.
+    workflow@konveyor.local / "rhdh-upgrade workflow" when committing.
     Work autonomously; there is no human to ask.
   stages:
     - name: assess
@@ -109,16 +110,13 @@ spec:
         post-remediation assessment" and push to origin HEAD.
 ---
 apiVersion: konveyor.io/v1alpha1
-kind: AgentWorkloadRun
+kind: AgentWorkflowRun
 metadata:
   name: upgrade-run-1
   namespace: konveyor-agents
 spec:
-  workloadRef: rhdh-upgrade
-  models:
-    - role: primary
-      provider: bedrock
-      model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  workflowRef: rhdh-upgrade
+  gateway: bedrock-sonnet
   params:
     - name: repository
       value: "git://192.168.65.254:9418/rhdh-upgrade-testbed"

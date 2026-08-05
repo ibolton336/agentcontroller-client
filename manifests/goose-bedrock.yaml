@@ -2,27 +2,40 @@
 # The aws-bedrock-creds secret is created separately (see README) so
 # credentials never land in this file.
 ---
+# One Gateway = one provider/model endpoint (post-#100). spec.provider is
+# the runtime provider id, injected as KONVEYOR_LLM_PROVIDER; the harness
+# maps it onto GOOSE_PROVIDER ("aws-bedrock" -> aws_bedrock). The keyless
+# credentialRef exposes the whole Secret via envFrom (AWS SigV4 spans
+# multiple env vars).
 apiVersion: konveyor.io/v1alpha1
-kind: LLMProvider
+kind: Gateway
 metadata:
-  name: bedrock
+  name: bedrock-sonnet
   namespace: konveyor-agents
-  annotations:
-    # POC contract: tells the harness which goose provider implementation
-    # this LLMProvider maps to. See simulate-controller.ts.
-    konveyor.io/goose-provider: aws_bedrock
 spec:
+  provider: aws-bedrock
   endpoint: "https://bedrock-runtime.us-east-1.amazonaws.com"
   credentialRef:
     secretName: aws-bedrock-creds
-    key: AWS_ACCESS_KEY_ID
-  models:
-    - name: "global.anthropic.claude-haiku-4-5-20251001-v1:0"
-      contextWindow: 200000
-      tier: efficient
-    - name: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-      contextWindow: 200000
-      tier: primary
+  model:
+    name: "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    contextWindow: 200000
+    tier: primary
+---
+apiVersion: konveyor.io/v1alpha1
+kind: Gateway
+metadata:
+  name: bedrock-haiku
+  namespace: konveyor-agents
+spec:
+  provider: aws-bedrock
+  endpoint: "https://bedrock-runtime.us-east-1.amazonaws.com"
+  credentialRef:
+    secretName: aws-bedrock-creds
+  model:
+    name: "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+    contextWindow: 200000
+    tier: efficient
 ---
 apiVersion: konveyor.io/v1alpha1
 kind: Agent
@@ -32,7 +45,7 @@ metadata:
   labels:
     konveyor.io/managed: "true"
   annotations:
-    # Platform-resolved params (ADR 0005) — same contract as the mock agent.
+    # Platform-resolved params (ADR 0010) — same contract as the mock agent.
     konveyor.io/param-sources: |
       {"repository": "konveyor.io/application-repository-url",
        "branch": "konveyor.io/application-repository-branch"}
@@ -43,8 +56,11 @@ spec:
   prompt: |
     You are a migration analysis agent. The application source is checked
     out at /workspace. Answer questions about it concisely.
-  providers:
-    - ref: bedrock
+  # Single declared gateway: runs may omit spec.gateway and the controller
+  # defaults to it. bedrock-haiku exists as an explicit-selection option
+  # for agents that declare it.
+  gateways:
+    - ref: bedrock-sonnet
   params:
     - name: repository
       type: string

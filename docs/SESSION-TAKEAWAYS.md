@@ -28,7 +28,7 @@ what's real vs. stubbed. Written 2026-07-09. Repo `main` at `536380f`.
 | `a244461` | self-healing Hub port-forward |
 | `536380f` | UI inventory provenance indicator (real Hub vs stub) |
 
-## The core design decision: platform-resolved params (ADR 0005)
+## The core design decision: platform-resolved params (ADR 0010)
 
 The problem: an Agent declares typed params, but nothing says `repository`
 *is* the selected application's repo URL. Hub needs to know what to fill; the
@@ -118,7 +118,7 @@ The standalone shim is throwaway. Its work becomes Hub's own endpoints:
 operational concern is that Hub becomes a *stateful* proxy holding long-lived
 ACP WebSocket connections; the REST side stays stateless.
 
-`SHIM API v1` (the shim's HTTP surface, in ADR 0004) is the reference contract
+`SHIM API v1` (the shim's HTTP surface, in ADR 0009) is the reference contract
 David's Hub fork is being built against. `packages/hub-shim/dev/browser-smoke.ts`
 is the acceptance test.
 
@@ -146,7 +146,7 @@ is the acceptance test.
 
 ## Open actions
 
-1. Soften ADR 0005's normative voice (`MUST`, `non-conformant`) to proposal
+1. Soften ADR 0010's normative voice (`MUST`, `non-conformant`) to proposal
    voice — some of it rode into the posted #22 comment; it's an unratified
    annotation, not a ratified spec.
 2. Exercise one fresh goose+Bedrock run before demoing — the only live link not
@@ -157,9 +157,9 @@ is the acceptance test.
 
 ## Reference
 
-- `docs/adr/0004-client-contract-and-transports.md` — verified client contract
+- `docs/adr/0009-client-contract-and-transports.md` — verified client contract
   + SHIM API v1 table.
-- `docs/adr/0005-platform-resolved-params.md` — param sources.
+- `docs/adr/0010-platform-resolved-params.md` — param sources.
 - `docs/issue-22-contract-proposal.md`, `docs/issue-22-followup.md` — upstream
   comments (posting is a human decision).
 - `docs/DEMO.md` — demo script.

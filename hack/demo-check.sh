@@ -32,7 +32,7 @@ avail=$(kubectl get deploy agentic-controller-controller-manager -n agentic-cont
 ok "controller Available"
 ready=$(kubectl get agent migration-analyzer -n $NS \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-[ "$ready" = "True" ] || die "agent migration-analyzer not Ready — check: kubectl get llmproviders,agents -n $NS"
+[ "$ready" = "True" ] || die "agent migration-analyzer not Ready — check: kubectl get gateways.konveyor.io,agents -n $NS"
 ok "agent migration-analyzer Ready"
 gready=$(kubectl get agent migration-analyzer-goose -n $NS \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")

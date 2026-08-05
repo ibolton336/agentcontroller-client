@@ -113,7 +113,7 @@ that isn't there.
 
 ## Supporting material
 
-- Client contract + transport layering ADR: `docs/adr/0004-client-contract-and-transports.md`
+- Client contract + transport layering ADR: `docs/adr/0009-client-contract-and-transports.md`
 - Reference shape for the future Hub passthrough proxy (route table the
   UIs were built against): `packages/hub-shim`
 - Working agent base showing the KONVEYOR_* env contract end-to-end:

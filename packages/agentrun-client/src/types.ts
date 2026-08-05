@@ -2,6 +2,7 @@
  * TypeScript mirrors of the konveyor.io/v1alpha1 CRD types.
  *
  * Source of truth: github.com/konveyor/agentic-controller api/v1alpha1/*.go
+ * (main @ 059b6f60, post-#100 Gateway rename / post-#80 Workflow rename).
  * Keep field names and optionality in sync with the Go structs.
  */
 
@@ -49,15 +50,6 @@ export interface EnvFromSource {
 
 export type AgentRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
 
-export interface AgentRunModelSelection {
-  /** Purpose of this model in the run, e.g. "primary", "efficient". */
-  role: string;
-  /** Name of an LLMProvider CR; must be in the Agent's providers list. */
-  provider: string;
-  /** Model identifier declared on the referenced LLMProvider. */
-  model: string;
-}
-
 export interface AgentRunParam {
   /** Matches an Agent param declaration. */
   name: string;
@@ -67,7 +59,12 @@ export interface AgentRunParam {
 export interface AgentRunSpec {
   /** Name of the Agent CR to execute. Immutable. */
   agentRef: string;
-  models?: AgentRunModelSelection[];
+  /**
+   * Name of a Gateway from the Agent's gateways list. Optional when the
+   * Agent declares exactly one gateway (the controller defaults to it);
+   * required when it declares several.
+   */
+  gateway?: string;
   /** Injected as KONVEYOR_PARAM_{NAME} env vars into the Sandbox. */
   params?: AgentRunParam[];
   /** Task-specific instructions, composed with the Agent's prompt. */
@@ -118,7 +115,7 @@ export interface AgentSpec {
   image: string;
   /** Standing instructions, composed with AgentRun instructions. */
   prompt?: string;
-  providers: { ref: string }[];
+  gateways: { ref: string }[];
   skillCards?: { ref: string }[];
   skillCollections?: { ref: string }[];
   params?: AgentParam[];
@@ -132,29 +129,36 @@ export interface Agent {
   status?: { observedGeneration?: number; conditions?: Condition[] };
 }
 
-// ------------------------------------------------------------- LLMProvider
+// ----------------------------------------------------------------- Gateway
 
-export interface LLMProviderModel {
+export interface GatewayModel {
   name: string;
   contextWindow: number;
   tier?: string;
 }
 
-export interface LLMProviderSpec {
+export interface GatewaySpec {
+  /**
+   * Runtime provider identifier (e.g. "anthropic", "openai",
+   * "aws-bedrock"). Injected as KONVEYOR_LLM_PROVIDER so the harness can
+   * map credentials to provider-specific env vars.
+   */
+  provider: string;
   endpoint: string;
-  credentialRef: { secretName: string; key: string };
-  models: LLMProviderModel[];
+  /** key absent = expose the whole Secret via envFrom (e.g. AWS SigV4). */
+  credentialRef: { secretName: string; key?: string };
+  /** One gateway = one model. */
+  model: GatewayModel;
 }
 
-export interface LLMProvider {
+export interface Gateway {
   apiVersion: typeof API_VERSION;
-  kind: "LLMProvider";
+  kind: "Gateway";
   metadata: ObjectMeta;
-  spec: LLMProviderSpec;
+  spec: GatewaySpec;
   status?: {
     observedGeneration?: number;
     connectionVerified?: boolean;
-    discoveredModels?: string[];
     conditions?: Condition[];
   };
 }
@@ -208,70 +212,70 @@ export interface SkillCollection {
   status?: { observedGeneration?: number; conditions?: Condition[] };
 }
 
-// ---------------------------------------------------------- AgentWorkload
+// ---------------------------------------------------------- AgentWorkflow
 
-export interface AgentWorkloadStage {
+export interface AgentWorkflowStage {
   name: string;
   agentRef: string;
   instructions?: string;
 }
 
-export interface AgentWorkloadSpec {
+export interface AgentWorkflowSpec {
   guide?: string;
-  stages: AgentWorkloadStage[];
+  stages: AgentWorkflowStage[];
 }
 
-export interface AgentWorkload {
+export interface AgentWorkflow {
   apiVersion: typeof API_VERSION;
-  kind: "AgentWorkload";
+  kind: "AgentWorkflow";
   metadata: ObjectMeta;
-  spec: AgentWorkloadSpec;
+  spec: AgentWorkflowSpec;
   status?: { observedGeneration?: number; conditions?: Condition[] };
 }
 
-// ------------------------------------------------------- AgentWorkloadRun
+// ------------------------------------------------------- AgentWorkflowRun
 
-export type AgentWorkloadRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
+export type AgentWorkflowRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
 
-export interface AgentWorkloadRunStageStatus {
+export interface AgentWorkflowRunStageStatus {
   name: string;
-  phase?: AgentRunPhase;
+  phase: AgentRunPhase;
   agentRunName?: string;
 }
 
-export interface AgentWorkloadRunSpec {
-  workloadRef: string;
-  models?: AgentRunModelSelection[];
+export interface AgentWorkflowRunSpec {
+  workflowRef: string;
+  /** Name of a Gateway, propagated to every stage's AgentRun. */
+  gateway?: string;
   params?: AgentRunParam[];
-  instructions?: string;
   env?: EnvVar[];
   envFrom?: EnvFromSource[];
 }
 
-export interface AgentWorkloadRunStatus {
-  phase?: AgentWorkloadRunPhase;
+export interface AgentWorkflowRunStatus {
+  phase?: AgentWorkflowRunPhase;
   observedGeneration?: number;
   currentStage?: string;
-  stages?: AgentWorkloadRunStageStatus[];
+  stages?: AgentWorkflowRunStageStatus[];
   startTime?: string;
   completionTime?: string;
   conditions?: Condition[];
 }
 
-export interface AgentWorkloadRun {
+export interface AgentWorkflowRun {
   apiVersion: typeof API_VERSION;
-  kind: "AgentWorkloadRun";
+  kind: "AgentWorkflowRun";
   metadata: ObjectMeta;
-  spec: AgentWorkloadRunSpec;
-  status?: AgentWorkloadRunStatus;
+  spec: AgentWorkflowRunSpec;
+  status?: AgentWorkflowRunStatus;
 }
 
 export const PLURALS = {
   AgentRun: "agentruns",
   Agent: "agents",
-  LLMProvider: "llmproviders",
+  Gateway: "gateways",
   SkillCard: "skillcards",
   SkillCollection: "skillcollections",
-  AgentWorkload: "agentworkloads",
-  AgentWorkloadRun: "agentworkloadruns",
+  AgentWorkflow: "agentworkflows",
+  AgentWorkflowRun: "agentworkflowruns",
 } as const;

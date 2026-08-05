@@ -2,7 +2,8 @@
  * Contract types + helpers for the konveyor.io/v1alpha1 AgentRun surface.
  *
  * Source of truth: github.com/konveyor/agentic-controller api/v1alpha1/*.go
- * (the REAL controller, PR #4 era). Everything here is browser-safe: no
+ * (the REAL controller, main @ 059b6f60 — post-#100 Gateway rename,
+ * post-#80 Workflow rename). Everything here is browser-safe: no
  * node builtins, no kube client — transports live elsewhere (see
  * ../transport-shim for the hub-shim HTTP transport).
  *
@@ -61,19 +62,18 @@ export interface AgentRunParam {
   value: string;
 }
 
-export interface AgentRunModelSelection {
-  role: string;
-  provider: string;
-  model: string;
-}
-
 export interface AgentRunSpec {
   /** Name of the Agent CR to execute. Immutable (whole-spec CEL rule). */
   agentRef: string;
   params?: AgentRunParam[];
   /** Task-specific instructions, composed with the Agent's standing prompt. */
   instructions?: string;
-  models?: AgentRunModelSelection[];
+  /**
+   * Name of a Gateway from the Agent's gateways list. Optional when the
+   * Agent declares exactly one gateway (the controller defaults to it);
+   * required when it declares several (validation fails fast otherwise).
+   */
+  gateway?: string;
   env?: EnvVar[];
   envFrom?: EnvFromSource[];
 }
@@ -120,7 +120,7 @@ export interface AgentResourceSpec {
   image: string;
   prompt?: string;
   params?: AgentParam[];
-  providers?: { ref: string }[];
+  gateways?: { ref: string }[];
   skillCards?: { ref: string }[];
   skillCollections?: { ref: string }[];
 }
@@ -264,7 +264,7 @@ export interface Application {
    * The application's source-control credential as Hub holds it — a named
    * Identity in Hub's vault. Present when the app has a `source` identity.
    * NOTE: this is a reference, not a usable secret: materializing a Hub
-   * identity into the sandbox is the open design question (see ADR 0005).
+   * identity into the sandbox is the open design question (see ADR 0010).
    */
   identity?: { name: string };
   /**
@@ -335,87 +335,90 @@ export interface SkillCollection {
   status?: { observedGeneration?: number; conditions?: Condition[] };
 }
 
-// ------------------------------------------------------------- LLMProvider
+// ----------------------------------------------------------------- Gateway
 
-export interface LLMProviderModel {
+export interface GatewayModel {
   name: string;
   contextWindow: number;
   tier?: string;
 }
 
-export interface LLMProvider {
+/** One Gateway = one provider/model endpoint (post-#100 shape). */
+export interface Gateway {
   apiVersion?: string;
   kind?: string;
   metadata: ObjectMeta;
   spec: {
+    /** Runtime provider id ("anthropic", "openai", "aws-bedrock", ...). */
+    provider: string;
     endpoint: string;
-    credentialRef: { secretName: string; key: string };
-    models: LLMProviderModel[];
+    /** key absent = whole-Secret credential (e.g. AWS SigV4) via envFrom. */
+    credentialRef: { secretName: string; key?: string };
+    model: GatewayModel;
   };
   status?: {
     observedGeneration?: number;
     connectionVerified?: boolean;
-    discoveredModels?: string[];
     conditions?: Condition[];
   };
 }
 
-// ---------------------------------------------------------- AgentWorkload
+// ---------------------------------------------------------- AgentWorkflow
 
 export const STAGE_NAME_PATTERN = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 
-export interface AgentWorkloadStage {
+export interface AgentWorkflowStage {
   name: string;
   agentRef: string;
   instructions?: string;
 }
 
-export interface AgentWorkloadSpec {
+export interface AgentWorkflowSpec {
   guide?: string;
-  stages: AgentWorkloadStage[];
+  stages: AgentWorkflowStage[];
 }
 
-export interface AgentWorkload {
+export interface AgentWorkflow {
   apiVersion?: string;
   kind?: string;
   metadata: ObjectMeta;
-  spec: AgentWorkloadSpec;
+  spec: AgentWorkflowSpec;
   status?: { observedGeneration?: number; conditions?: Condition[] };
 }
 
-// ------------------------------------------------------- AgentWorkloadRun
+// ------------------------------------------------------- AgentWorkflowRun
 
-export type AgentWorkloadRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
+export type AgentWorkflowRunPhase = "Pending" | "Running" | "Succeeded" | "Failed";
 
-export interface AgentWorkloadRunStageStatus {
+export interface AgentWorkflowRunStageStatus {
   name: string;
   phase?: AgentRunPhase;
   agentRunName?: string;
 }
 
-export interface AgentWorkloadRunStatus {
-  phase?: AgentWorkloadRunPhase;
+export interface AgentWorkflowRunStatus {
+  phase?: AgentWorkflowRunPhase;
   observedGeneration?: number;
   currentStage?: string;
-  stages?: AgentWorkloadRunStageStatus[];
+  stages?: AgentWorkflowRunStageStatus[];
   startTime?: string;
   completionTime?: string;
   conditions?: Condition[];
 }
 
-export interface AgentWorkloadRun {
+export interface AgentWorkflowRun {
   apiVersion?: string;
   kind?: string;
   metadata: ObjectMeta;
   spec: {
-    workloadRef: string;
-    models?: AgentRunModelSelection[];
+    workflowRef: string;
+    /** Name of a Gateway, propagated to every stage's AgentRun. */
+    gateway?: string;
     params?: AgentRunParam[];
-    instructions?: string;
     env?: EnvVar[];
     envFrom?: EnvFromSource[];
   };
-  status?: AgentWorkloadRunStatus;
+  status?: AgentWorkflowRunStatus;
 }
 
 // -------------------------------------------------------- naming / helpers
@@ -458,16 +461,18 @@ export interface CreateRunInput {
   instructions?: string;
   applicationRef?: string;
   targetBranch?: string;
-  model?: { provider: string; model: string };
+  /** Gateway name; omit to let the controller default (single-gateway Agent). */
+  gateway?: string;
 }
 
-export interface CreateWorkloadRunInput {
-  workloadRef: string;
+export interface CreateWorkflowRunInput {
+  workflowRef: string;
   params?: Record<string, string>;
   instructions?: string;
   applicationRef?: string;
   targetBranch?: string;
-  model?: { provider: string; model: string };
+  /** Gateway name; omit to let the controller default (single-gateway Agent). */
+  gateway?: string;
 }
 
 export interface RunApi {
@@ -479,18 +484,18 @@ export interface RunApi {
   createRun(input: CreateRunInput): Promise<AgentRun>;
   getRun(name: string): Promise<AgentRun>;
   deleteRun(name: string): Promise<void>;
-  listWorkloads(): Promise<AgentWorkload[]>;
-  listWorkloadRuns(): Promise<AgentWorkloadRun[]>;
-  getWorkloadRun(name: string): Promise<AgentWorkloadRun>;
-  createWorkloadRun(input: CreateWorkloadRunInput): Promise<AgentWorkloadRun>;
-  deleteWorkloadRun(name: string): Promise<void>;
+  listWorkflows(): Promise<AgentWorkflow[]>;
+  listWorkflowRuns(): Promise<AgentWorkflowRun[]>;
+  getWorkflowRun(name: string): Promise<AgentWorkflowRun>;
+  createWorkflowRun(input: CreateWorkflowRunInput): Promise<AgentWorkflowRun>;
+  deleteWorkflowRun(name: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------- CatalogApi
 
 export interface CatalogApi {
-  listProviders(): Promise<LLMProvider[]>;
-  getProvider(name: string): Promise<LLMProvider>;
+  listGateways(): Promise<Gateway[]>;
+  getGateway(name: string): Promise<Gateway>;
   listSkillCards(): Promise<SkillCard[]>;
   getSkillCard(name: string): Promise<SkillCard>;
   createSkillCard(name: string, spec: SkillCardSpec): Promise<SkillCard>;
@@ -504,10 +509,10 @@ export interface CatalogApi {
   createAgent(name: string, spec: AgentResourceSpec): Promise<AgentResource>;
   updateAgent(name: string, spec: AgentResourceSpec): Promise<AgentResource>;
   deleteAgent(name: string): Promise<void>;
-  getWorkload(name: string): Promise<AgentWorkload>;
-  createWorkload(name: string, spec: AgentWorkloadSpec): Promise<AgentWorkload>;
-  updateWorkload(name: string, spec: AgentWorkloadSpec): Promise<AgentWorkload>;
-  deleteWorkload(name: string): Promise<void>;
+  getWorkflow(name: string): Promise<AgentWorkflow>;
+  createWorkflow(name: string, spec: AgentWorkflowSpec): Promise<AgentWorkflow>;
+  updateWorkflow(name: string, spec: AgentWorkflowSpec): Promise<AgentWorkflow>;
+  deleteWorkflow(name: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------- waiting

@@ -25,16 +25,16 @@ The UI's **Load defaults** button (toolbar) calls `POST /api/defaults`,
 which plans a seed set against what the cluster actually has and applies
 it create-only (re-seeding never clobbers edits):
 
-- **Java EE → Quarkus set**: 1 SkillCard, 3 Agents on `agent-java`, 1 AgentWorkload
-- **PatternFly 5→6 set**: 1 SkillCard, 3 Agents on `agent-nodejs`, 1 AgentWorkload
+- **Java EE → Quarkus set**: 1 SkillCard, 3 Agents on `agent-java`, 1 AgentWorkflow
+- **PatternFly 5→6 set**: 1 SkillCard, 3 Agents on `agent-nodejs`, 1 AgentWorkflow
 - **Image catalog**: `agent-image-catalog` ConfigMap (PR #53 hierarchy)
 
-Seeded agents bind to the cluster's real LLMProvider (`SEED_PROVIDER`
-env pins one; unset = discover, preferring Ready) and take images from
+Seeded agents bind to the cluster's real Gateway (`SEED_GATEWAY` env
+pins one; unset = discover, preferring Ready) and take images from
 the resolved catalog (`AGENT_IMAGE_PREFIX`/`AGENT_IMAGE_TAG` point the
 builtin refs at a pullable registry; a cluster-authored ConfigMap wins).
-No LLMProvider is ever seeded — providers need real credentials and are
-install-time infrastructure. A set whose provider or image the cluster
+No Gateway is ever seeded — gateways need real credentials and are
+install-time infrastructure. A set whose gateway or image the cluster
 can't supply is reported `skipped` with a reason instead of being
 created broken. `?dryRun=true` returns the same plan without writing.
 
@@ -67,7 +67,7 @@ Open http://localhost:5199 → **Create run** → agent `migration-analyzer`
 
 Note there is no repository field to type into: the agent declares that its
 `repository`, `branch`, and git credentials come from the application
-(ADR 0005), so the form shows what the platform will resolve and asks only
+(ADR 0010), so the form shows what the platform will resolve and asks only
 for what a human should actually answer. Worth saying out loud — it is the
 whole point of the beat.
 
@@ -83,8 +83,8 @@ from the kebab (cascade: Sandbox, pod, Service, secret all GC).
 
 ## Beat 2 — the real agent (goose + Bedrock) (4 min)
 
-The UI's create form doesn't yet set `models:`/`envFrom:` (known gap), so
-create the real run via the API — which is the point: same CR, any client:
+The real run is just as easy via the API — which is the point: same CR,
+any client (the create form's model dropdown now picks a Gateway too):
 
 ```sh
 kubectl create -f docs/demo/real-run.yaml
@@ -188,7 +188,7 @@ Delete the run from the kebab when done (cascade GC as in Beat 1).
 - **Only one lane changes later**: browser clients (this SPA, tackle2-ui,
   RHDH) all ride the gateway seat; hub-shim occupies it today, the real Hub
   passthrough proxy replaces it — the shim's route table *is* the proposed
-  spec (docs/adr/0004). Hub already has the `/services/:name/*path`
+  spec (docs/adr/0009). Hub already has the `/services/:name/*path`
   precedent; stdlib ReverseProxy has done WS upgrades since Go 1.12.
 - **Nobody rewrites UX**: the extension kept its panel/tree; tackle2-ui
   gains chat capability it doesn't have (zero WS code today).

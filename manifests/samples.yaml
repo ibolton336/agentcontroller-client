@@ -11,27 +11,27 @@ stringData:
   apiKey: "not-a-real-key-mock-harness-never-calls-an-llm"
 ---
 apiVersion: konveyor.io/v1alpha1
-kind: LLMProvider
+kind: Gateway
 metadata:
-  name: mock-provider
+  name: mock-gateway
   namespace: konveyor-agents
 spec:
+  # Runtime provider id, injected as KONVEYOR_LLM_PROVIDER. The mock
+  # harness never calls an LLM, so any known id works.
+  provider: openai
   # The real controller's verification Job is a reachability probe (any
   # HTTP 2xx-5xx passes, no auth). The in-cluster apiserver always answers
   # 403, needs no egress, and the mock harness never calls an LLM anyway.
-  # A dead/unresolvable endpoint here leaves the provider NotReady and
+  # A dead/unresolvable endpoint here leaves the gateway NotReady and
   # blocks every AgentRun with AgentNotReady.
   endpoint: "https://kubernetes.default.svc"
   credentialRef:
     secretName: openai-compatible-credentials
     key: apiKey
-  models:
-    - name: mock-model-large
-      contextWindow: 200000
-      tier: primary
-    - name: mock-model-small
-      contextWindow: 32000
-      tier: efficient
+  # One gateway = one model (post-#100 shape).
+  model:
+    name: mock-model-large
+    contextWindow: 200000
 ---
 apiVersion: v1
 kind: Secret
@@ -55,7 +55,7 @@ metadata:
     # Konveyor UIs list only managed agents (hub-shim filters on this).
     konveyor.io/managed: "true"
   annotations:
-    # Platform-resolved params (ADR 0005): the platform fills these from
+    # Platform-resolved params (ADR 0010): the platform fills these from
     # the selected application; the UI hides them from the create form.
     konveyor.io/param-sources: |
       {"repository": "konveyor.io/application-repository-url",
@@ -69,8 +69,8 @@ spec:
   prompt: |
     You are a migration analysis agent. Analyze the application source
     in /workspace and produce findings under .konveyor/.
-  providers:
-    - ref: mock-provider
+  gateways:
+    - ref: mock-gateway
   params:
     - name: repository
       type: string

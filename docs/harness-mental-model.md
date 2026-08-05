@@ -2,13 +2,21 @@
 
 How the PR #53 `migration-harness` operates and what it touches across a three-stage
 `AgentWorkloadRun`. Companion to [quarkus-demo-flow-and-design.md](quarkus-demo-flow-and-design.md),
-which carries the full code-level walkthrough; file references below (`harness/...`,
-`internal/controller/...`) are paths in the #53 tree using that doc's shorthand.
+which carries the full code-level walkthrough, and [bedrock-wiring.md](bedrock-wiring.md),
+which traces how model selection and AWS credentials reach goose; file references below
+(`harness/...`, `internal/controller/...`) are paths in the #53 tree using that doc's shorthand.
 
 Scope note: this describes the **#53 self-serving harness** (the one baked into
 `quay.io/konveyor/agent-java:dev` and verified on run `fork-w8vfb`) composed with the
 **#36 workload controller**. The `ACMAIN/harness/` tree is the old pre-#53 harness
 (`GIT_TARGET_BRANCH`, CLI-arg request) — ignore it.
+
+> **Post-#100/#80 update (2026-08-05).** Upstream renamed
+> AgentWorkload→AgentWorkflow (#80: `workflowRef`, `KONVEYOR_WORKFLOW_GUIDE`
+> instead of `KONVEYOR_WORKLOAD_INSTRUCTIONS`, `KONVEYOR_WORKFLOW_STAGE[_COUNT]`)
+> and LLMProvider→Gateway (#100: single-model Gateways, `KONVEYOR_LLM_*`
+> env, `spec.gateway` selection with single-gateway defaulting). Mentally
+> substitute those names below; the mechanics are otherwise unchanged.
 
 The one-sentence version: **the harness is a self-serving git-and-Hub chauffeur — it
 fetches context in, hands the agent a prompt and a clone, and continuously ships
