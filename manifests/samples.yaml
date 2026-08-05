@@ -55,7 +55,7 @@ metadata:
     # Konveyor UIs list only managed agents (hub-shim filters on this).
     konveyor.io/managed: "true"
   annotations:
-    # Platform-resolved params (ADR 0005): the platform fills these from
+    # Platform-resolved params (ADR 0010): the platform fills these from
     # the selected application; the UI hides them from the create form.
     konveyor.io/param-sources: |
       {"repository": "konveyor.io/application-repository-url",

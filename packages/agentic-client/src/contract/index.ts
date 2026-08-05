@@ -264,7 +264,7 @@ export interface Application {
    * The application's source-control credential as Hub holds it — a named
    * Identity in Hub's vault. Present when the app has a `source` identity.
    * NOTE: this is a reference, not a usable secret: materializing a Hub
-   * identity into the sandbox is the open design question (see ADR 0005).
+   * identity into the sandbox is the open design question (see ADR 0010).
    */
   identity?: { name: string };
   /**

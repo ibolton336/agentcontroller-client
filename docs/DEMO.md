@@ -67,7 +67,7 @@ Open http://localhost:5199 → **Create run** → agent `migration-analyzer`
 
 Note there is no repository field to type into: the agent declares that its
 `repository`, `branch`, and git credentials come from the application
-(ADR 0005), so the form shows what the platform will resolve and asks only
+(ADR 0010), so the form shows what the platform will resolve and asks only
 for what a human should actually answer. Worth saying out loud — it is the
 whole point of the beat.
 
@@ -188,7 +188,7 @@ Delete the run from the kebab when done (cascade GC as in Beat 1).
 - **Only one lane changes later**: browser clients (this SPA, tackle2-ui,
   RHDH) all ride the gateway seat; hub-shim occupies it today, the real Hub
   passthrough proxy replaces it — the shim's route table *is* the proposed
-  spec (docs/adr/0004). Hub already has the `/services/:name/*path`
+  spec (docs/adr/0009). Hub already has the `/services/:name/*path`
   precedent; stdlib ReverseProxy has done WS upgrades since Go 1.12.
 - **Nobody rewrites UX**: the extension kept its panel/tree; tackle2-ui
   gains chat capability it doesn't have (zero WS code today).

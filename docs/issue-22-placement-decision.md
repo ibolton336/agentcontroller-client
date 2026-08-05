@@ -37,7 +37,7 @@ behind the single-writer requirement).
 > 
 > Credential domains become three, with a new wall *inside the pod*: browser hub-token → Hub (existing); harness hub-token (scoped, Secret-mounted) → Hub API; per-run ACP key → agent server. The harness sees the git credentials; the agent never does.
 > 
-> Note on the param-source annotations (ADR 0005): for the Hub path they're superseded by harness-pulls. They remain the mechanism for callers/hosts that resolve values at create time, and **open question 1 (vocabulary governance) is unchanged** — though its urgency drops now that the primary host doesn't consume them.
+> Note on the param-source annotations (ADR 0010): for the Hub path they're superseded by harness-pulls. They remain the mechanism for callers/hosts that resolve values at create time, and **open question 1 (vocabulary governance) is unchanged** — though its urgency drops now that the primary host doesn't consume them.
 > 
 > ## Two things settled by already-verified contract facts
 > 

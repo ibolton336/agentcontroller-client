@@ -486,7 +486,7 @@ interface ResolvedSources {
 
 /**
  * Resolves an Agent's declared param/credential sources from the selected
- * application — the Hub-side half of the param-sources contract (ADR 0005).
+ * application — the Hub-side half of the param-sources contract (ADR 0010).
  *
  * Fail-open takes precedence over every other rule: an unrecognized source
  * identifier, or an annotation entry naming a param the Agent does not

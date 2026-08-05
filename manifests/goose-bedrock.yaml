@@ -45,7 +45,7 @@ metadata:
   labels:
     konveyor.io/managed: "true"
   annotations:
-    # Platform-resolved params (ADR 0005) — same contract as the mock agent.
+    # Platform-resolved params (ADR 0010) — same contract as the mock agent.
     konveyor.io/param-sources: |
       {"repository": "konveyor.io/application-repository-url",
        "branch": "konveyor.io/application-repository-branch"}

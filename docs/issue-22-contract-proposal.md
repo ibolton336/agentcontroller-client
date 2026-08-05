@@ -30,8 +30,8 @@ goose+Bedrock agent base:
 - a local stand-in for the Hub passthrough proxy (`hub-shim`) that a
   browser SPA drives today
 
-Full write-up: [ADR 0004 — verified client contract and layered
-transports](https://github.com/ibolton336/agentcontroller-client/blob/main/docs/adr/0004-client-contract-and-transports.md).
+Full write-up: [ADR 0009 — verified client contract and layered
+transports](https://github.com/ibolton336/agentcontroller-client/blob/main/docs/adr/0009-client-contract-and-transports.md).
 
 ## Proposed Hub proxy surface (SHIM HTTP API v1)
 
@@ -48,7 +48,7 @@ would be written against:
 | GET | `/api/skillcards[/:name]` | 200 `SkillCard[]` \| `SkillCard` \| 404 |
 | GET | `/api/skillcollections[/:name]` | 200 `SkillCollection[]` \| `SkillCollection` \| 404 |
 | GET | `/api/agentruns` | 200 `AgentRun[]` |
-| POST | `/api/agentruns` | 201 `AgentRun` — body `{agentRef, params?, instructions?, applicationRef?}`; `applicationRef` resolves the agent's declared param/credential sources (ADR 0005) |
+| POST | `/api/agentruns` | 201 `AgentRun` — body `{agentRef, params?, instructions?, applicationRef?}`; `applicationRef` resolves the agent's declared param/credential sources (ADR 0010) |
 | GET | `/api/agentruns/:name` | 200 `AgentRun` \| 404 |
 | DELETE | `/api/agentruns/:name` | 204 |
 | WS | `/api/agentruns/:name/acp` | proxy to the sandbox pod's `:4000/acp` — the proxy resolves the pod (`status.sandboxName`), reads the key (`status.secretKeyRef` → `secret-key`), injects `X-Secret-Key`, and pipes frames |
@@ -61,7 +61,7 @@ base URL + auth.
 
 ## Contract facts the client layer depends on
 
-Verified against the live controller (details + rationale in ADR 0004):
+Verified against the live controller (details + rationale in ADR 0009):
 
 - pod name == `status.sandboxName` == run name; resolve by name, never by
   label (pods currently carry no `konveyor.io/agentrun` label — patch

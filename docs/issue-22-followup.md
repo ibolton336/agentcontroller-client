@@ -86,7 +86,7 @@ whose `spec.envFrom` mounts the application's identity Secret — and the
 controller starts a Running pod with those credentials. The create form for
 a fully sourced agent collapses to **application picker + instructions**.
 
-Details: [ADR 0005](https://github.com/ibolton336/agentcontroller-client/blob/main/docs/adr/0005-platform-resolved-params.md).
+Details: [ADR 0010](https://github.com/ibolton336/agentcontroller-client/blob/main/docs/adr/0010-platform-resolved-params.md).
 
 ### This also answers open question 1 from the comment above
 

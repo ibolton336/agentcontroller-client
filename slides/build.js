@@ -285,7 +285,7 @@ function slideSeat() {
   const s = pres.addSlide(); s.background = { color: INK };
   kicker(s, "what changes later", M, 0.5, CYAN);
   title(s, "The shim is the Hub-proxy seat", M, 0.82, LIGHT);
-  s.addText("Only one lane changes: browser clients ride the gateway seat. hub-shim occupies it today; the real Hub passthrough proxy replaces it. Its route table is the proposed spec (ADR 0004).", {
+  s.addText("Only one lane changes: browser clients ride the gateway seat. hub-shim occupies it today; the real Hub passthrough proxy replaces it. Its route table is the proposed spec (ADR 0009).", {
     x: M, y: 1.5, w: 9, h: 0.7, fontFace: F, fontSize: 13.5, color: "C4C9EC", margin: 0, lineSpacingMultiple: 1.1 });
   const pts = [
     ["Browsers can't set WS headers", "so X-Secret-Key is injected server-side — that's exactly why the proxy seat exists."],
@@ -302,7 +302,7 @@ function slideSeat() {
     s.addText(p[1], { x: x + 0.62, y: y + 0.5, w: cw - 0.8, h: 0.6, fontFace: F, fontSize: 10, color: "A7ACD6", margin: 0, lineSpacingMultiple: 1.02 });
   });
   footer(s, 12, true);
-  s.addNotes("This is the architectural ask that matters most: the shim isn't throwaway, it's a working reference for the Hub passthrough proxy. Point at ADR 0004.");
+  s.addNotes("This is the architectural ask that matters most: the shim isn't throwaway, it's a working reference for the Hub passthrough proxy. Point at ADR 0009.");
 }
 
 // ---------- 12. verified contract facts ----------
@@ -377,7 +377,7 @@ function slideClose() {
   ];
   s.addText(lines.map((l) => ({ text: l, options: { bullet: { indent: 14 }, breakLine: true, paraSpaceAfter: 10, color: "CBCFEE", fontSize: 13.5 } })), {
     x: M, y: 2.95, w: 8.6, h: 1.5, fontFace: F, margin: 0, lineSpacingMultiple: 1.05 });
-  s.addText([{ text: "docs/DEMO.md", options: { fontFace: MONO, color: LIGHT, bold: true } }, { text: "   ·   ", options: { color: "6E73A0" } }, { text: "docs/UPSTREAM-FEEDBACK.md", options: { fontFace: MONO, color: LIGHT, bold: true } }, { text: "   ·   ", options: { color: "6E73A0" } }, { text: "docs/adr/0004", options: { fontFace: MONO, color: LIGHT, bold: true } }], {
+  s.addText([{ text: "docs/DEMO.md", options: { fontFace: MONO, color: LIGHT, bold: true } }, { text: "   ·   ", options: { color: "6E73A0" } }, { text: "docs/UPSTREAM-FEEDBACK.md", options: { fontFace: MONO, color: LIGHT, bold: true } }, { text: "   ·   ", options: { color: "6E73A0" } }, { text: "docs/adr/0009", options: { fontFace: MONO, color: LIGHT, bold: true } }], {
     x: M, y: 4.7, w: 9, h: 0.3, fontFace: F, fontSize: 11, margin: 0 });
   footer(s, 15, true);
   s.addNotes("Close on the two-part message: it already works over one contract, and the asks are small and pre-merge. Point to the three docs.");
@@ -391,7 +391,7 @@ function slideClose() {
   slideRunningOrder();
   slideGif(5, "beat 1 · create", "Create a run in the browser", "01-create-mock-run.gif",
     "Create form → Running → chat auto-connects over WS",
-    ["No repository field: repository, branch and git creds resolve from the application (ADR 0005).",
+    ["No repository field: repository, branch and git creds resolve from the application (ADR 0010).",
      "SPA POSTs the shim → real controller creates the Sandbox CR → phase flips Pending → Running.",
      "Delete from the kebab: Sandbox, pod, Service, secret all cascade-GC."], "agent: migration-analyzer");
   slideGif(6, "beat 2 · permission", "The permission diff — the money shot", "02-permission-diff-browser.gif",

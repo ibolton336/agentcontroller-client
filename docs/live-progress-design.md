@@ -123,7 +123,7 @@ not niceties):
   disconnecting mid-run, and a dead listener must leave commit+push unaffected.
 - Bounded per-subscriber buffers; on overflow drop that subscriber (it can
   reconnect), never block the run path.
-- Serve `/healthz` unauthenticated (ADR 0004 contract, ~5 LOC).
+- Serve `/healthz` unauthenticated (ADR 0009 contract, ~5 LOC).
 - Decide the sessionId story explicitly in the ADR rather than relying on the
   no-filter accident: teed frames carry the run session id; a client that
   wants only its own session filters; document it.

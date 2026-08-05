@@ -9,7 +9,7 @@
 Runs the browser UI + gateway **on the cluster** — no laptop processes.
 Both components are interim by design: the gateway seat is replaced by the
 real Konveyor Hub passthrough proxy later, and the UI page is absorbed
-into tackle2-ui (see `docs/adr/0004-client-contract-and-transports.md`).
+into tackle2-ui (see `docs/adr/0009-client-contract-and-transports.md`).
 
 ```
 browser ── ingress/route (TLS + SSO) ── agentic-ui (nginx, static SPA)

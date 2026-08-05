@@ -35,7 +35,7 @@ import { GatewayPicker, ParamValueField, defaultGatewayFor, paramHelperText as p
 
 /**
  * Human names for the source identifiers this UI recognizes. Membership IS
- * the recognition test (ADR 0005 fail-open): a param whose source is absent
+ * the recognition test (ADR 0010 fail-open): a param whose source is absent
  * here is treated as caller-supplied and gets a form field, so a newer agent
  * stays usable from an older UI.
  *
@@ -180,7 +180,7 @@ export function CreateRunModal({ api, onClose, onCreated }: CreateRunModalProps)
 
   // Partition params: those with a RECOGNIZED source are the platform's job
   // (given an application); everything else — including params whose source
-  // this UI does not understand — is a user form field (ADR 0005 fail-open).
+  // this UI does not understand — is a user form field (ADR 0010 fail-open).
   const paramSources = parseSourcesAnnotation(selected);
   const credentialSources = parseSourcesAnnotation(selected, CREDENTIAL_SOURCES_ANNOTATION);
   const allParams = selected?.spec.params ?? [];

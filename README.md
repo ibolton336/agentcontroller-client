@@ -109,7 +109,7 @@ The real agentic-controller reconciler (upstream PR #4) is live on the
 cluster, so the **controller simulator is retired** — everything above that
 mentions it is historical. The verified client contract and the transport
 layering are captured in
-[ADR 0004](docs/adr/0004-client-contract-and-transports.md). The repo now
+[ADR 0009](docs/adr/0009-client-contract-and-transports.md). The repo now
 hosts:
 
 - `harness-mock/`, `harness-goose/` — the agent-base images the sandboxes run.
