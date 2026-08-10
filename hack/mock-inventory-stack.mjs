@@ -126,7 +126,7 @@ const store = {
         creationTimestamp: ago(10),
         labels: { [MANAGED]: "true", [APPLICATION]: "1" },
       },
-      spec: { workflowRef: "java-ee-to-quarkus", targetBranch: "konveyor/upgrade" },
+      spec: { workflowRef: "java-ee-to-quarkus" },
       status: { phase: "Running", startTime: ago(10) },
     },
   ],
