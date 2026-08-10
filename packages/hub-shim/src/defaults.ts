@@ -14,6 +14,19 @@
  * All resources carry konveyor.io/managed: "true" so they appear in the UI.
  * Create-only: re-seeding never clobbers edits (existing resources are
  * reported "exists" and left alone).
+ *
+ * No seeded param may be `required` without a `default`: the controller
+ * rejects a run missing such a param at create time (validateParams →
+ * Ready=False/InvalidParams), and bulk/workflow launches create their
+ * stage runs with no params at all. On the Konveyor path nothing fills
+ * application data in at create time — the harness resolves repo/branch/
+ * credentials from the Hub at runtime via injected HUB_BASE_URL/APP_ID
+ * (enhancement konveyor/enhancements#295, upstream ADR 0006). Params stay
+ * as optional caller overrides; the konveyor.io/param-sources annotations
+ * stay because the single-run modal uses them to preview/prefill values
+ * from the selected application (client ADR 0010; upstream-proposed in
+ * agentic-controller#106) — the app *picker* itself is gated on the
+ * konveyor.io/managed label, not on these annotations.
  */
 import { API_VERSION, PLURALS } from "../../agentrun-client/src/types.js";
 
@@ -80,7 +93,7 @@ function javaSet(gateway: string, image: string): SeedResource[] {
       prompt: "You are a Java EE migration analyzer. Examine the application at /workspace and produce a migration plan under .konveyor/plan.md.",
       gateways: [{ ref: gateway }],
       params: [
-        { name: "repository", type: "string", description: "Git URL of the application", required: true },
+        { name: "repository", type: "string", description: "Git URL of the application" },
         { name: "branch", type: "string", description: "Branch to analyze", default: "main" },
         { name: "mode", type: "string", description: '"serve" or "batch"', default: "serve" },
       ],
@@ -100,7 +113,7 @@ function javaSet(gateway: string, image: string): SeedResource[] {
       prompt: "You are a Java EE migration executor. Apply the plan from .konveyor/plan.md to the source at /workspace. Commit each logical change.",
       gateways: [{ ref: gateway }],
       params: [
-        { name: "repository", type: "string", description: "Git URL of the application", required: true },
+        { name: "repository", type: "string", description: "Git URL of the application" },
         { name: "branch", type: "string", description: "Working branch", default: "main" },
         { name: "mode", type: "string", description: '"serve" or "batch"', default: "batch" },
       ],
@@ -110,7 +123,7 @@ function javaSet(gateway: string, image: string): SeedResource[] {
       prompt: "You are a migration validator. Build and test the migrated application at /workspace. Report results to .konveyor/verify.md.",
       gateways: [{ ref: gateway }],
       params: [
-        { name: "repository", type: "string", description: "Git URL of the application", required: true },
+        { name: "repository", type: "string", description: "Git URL of the application" },
         { name: "branch", type: "string", description: "Working branch", default: "main" },
         { name: "mode", type: "string", description: '"serve" or "batch"', default: "batch" },
       ],
@@ -135,7 +148,7 @@ function pfSet(gateway: string, image: string): SeedResource[] {
       prompt: "You are a PatternFly migration analyzer. Examine the frontend application at /workspace and produce a PF5→PF6 migration plan.",
       gateways: [{ ref: gateway }],
       params: [
-        { name: "repository", type: "string", description: "Git URL of the frontend application", required: true },
+        { name: "repository", type: "string", description: "Git URL of the frontend application" },
         { name: "branch", type: "string", description: "Branch to analyze", default: "main" },
         { name: "mode", type: "string", description: '"serve" or "batch"', default: "serve" },
       ],
@@ -145,7 +158,7 @@ function pfSet(gateway: string, image: string): SeedResource[] {
       prompt: "You are a PatternFly migration executor. Apply the PF5→PF6 migration plan to the frontend at /workspace.",
       gateways: [{ ref: gateway }],
       params: [
-        { name: "repository", type: "string", description: "Git URL of the frontend application", required: true },
+        { name: "repository", type: "string", description: "Git URL of the frontend application" },
         { name: "branch", type: "string", description: "Working branch", default: "main" },
         { name: "mode", type: "string", description: '"serve" or "batch"', default: "batch" },
       ],
@@ -155,7 +168,7 @@ function pfSet(gateway: string, image: string): SeedResource[] {
       prompt: "You are a PatternFly migration validator. Build and test the migrated frontend at /workspace.",
       gateways: [{ ref: gateway }],
       params: [
-        { name: "repository", type: "string", description: "Git URL of the frontend application", required: true },
+        { name: "repository", type: "string", description: "Git URL of the frontend application" },
         { name: "branch", type: "string", description: "Working branch", default: "main" },
         { name: "mode", type: "string", description: '"serve" or "batch"', default: "batch" },
       ],
