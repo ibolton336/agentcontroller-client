@@ -55,6 +55,98 @@
       "env": {
         "PORT": "7081"
       }
+    },
+    {
+      "name": "tackle2-ui-prod-mock",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
+      "port": 9100,
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "9100",
+        "AGENTIC_SHIM_URL": "http://localhost:17080"
+      }
+    },
+    {
+      "name": "tackle2-ui-webpack-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "start:dev",
+        "--prefix",
+        "/Users/ibolton/Development/tackle2-ui",
+        "-w",
+        "client"
+      ],
+      "port": 9001
+    },
+    {
+      "name": "tackle2-ui-dev-mock",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
+      "port": 9100,
+      "env": {
+        "NODE_ENV": "development",
+        "PORT": "9100",
+        "AGENTIC_SHIM_URL": "http://localhost:17080"
+      }
+    },
+    {
+      "name": "tackle2-ui-prod-agentic-on",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
+      "port": 9102,
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "9102",
+        "TACKLE_HUB_URL": "http://localhost:18090",
+        "AGENTIC_ENABLED": "true"
+      }
+    },
+    {
+      "name": "tackle2-ui-prod-no-agentic",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
+      "port": 9101,
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "9101"
+      }
+    },
+    {
+      "name": "mockstack",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["hack/mock-inventory-stack.mjs"],
+      "port": 18090
+    },
+    {
+      "name": "tackle2-ui-dev-mockhub",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/ibolton/Development/tackle2-ui && npx concurrently -n common,server,client 'npm:start:dev:common' 'npm:start:dev:server' 'npm:start:dev:client'"
+      ],
+      "port": 9000,
+      "env": {
+        "TACKLE_HUB_URL": "http://localhost:18090",
+        "AGENTIC_ENABLED": "true"
+      }
+    },
+    {
+      "name": "tackle2-ui-webpack-dev-agentic-off",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "start:dev",
+        "--prefix",
+        "/Users/ibolton/Development/tackle2-ui",
+        "-w",
+        "client"
+      ],
+      "port": 9001,
+      "env": {
+        "AGENTIC_ENABLED": "false"
+      }
     }
   ]
 }
