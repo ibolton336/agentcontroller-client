@@ -8,7 +8,12 @@
  * Asserts the seed-plan contract:
  *   1. dryRun=true is pure computation — statuses come back, nothing is written
  *   2. the real seed binds agents to the cluster's actual Gateway and to
- *      catalog-resolved images (never the retired gcp-vertex-ai / inline set)
+ *      catalog-resolved images (never the retired gcp-vertex-ai / inline set),
+ *      and no seeded agent declares a required param without a default —
+ *      bulk/workflow launches send no params at all (application data
+ *      resolves from the Hub at runtime, enhancement #295 / ADR 0006), and
+ *      the controller's validateParams fails a run missing a
+ *      required-no-default param at create time (InvalidParams)
  *   3. sets the cluster can't supply surface as "skipped" with a reason
  *   4. re-seeding is idempotent (create-only: everything reports "exists")
  *   5. a seeded agent reaches Ready=True on the live controller
@@ -153,10 +158,20 @@ async function main(): Promise<void> {
   pass("seed applied", `created=${seed.seeded} existed=${seed.existed} skipped=${seed.skipped}`);
 
   // -- 3. seeded agents bind to the real gateway + catalog image
-  const seededSets: { agent: string; catalogKey: string; workflow: string }[] = [];
+  const seededSets: { agent: string; catalogKey: string; workflow: string; members: string[] }[] = [];
   for (const set of [
-    { agent: "java-migration-analyzer", catalogKey: "agent-java", workflow: "javaee-to-quarkus" },
-    { agent: "pf-migration-analyzer", catalogKey: "agent-nodejs", workflow: "patternfly-migration" },
+    {
+      agent: "java-migration-analyzer",
+      catalogKey: "agent-java",
+      workflow: "javaee-to-quarkus",
+      members: ["java-migration-analyzer", "java-migration-remediator", "java-migration-validator"],
+    },
+    {
+      agent: "pf-migration-analyzer",
+      catalogKey: "agent-nodejs",
+      workflow: "patternfly-migration",
+      members: ["pf-migration-analyzer", "pf-migration-remediator", "pf-migration-validator"],
+    },
   ]) {
     const entry = seed.results.find((r) => r.kind === "Agent" && r.name === set.agent);
     if (!entry) fail("plan coverage", `no entry for Agent/${set.agent}`);
@@ -176,7 +191,24 @@ async function main(): Promise<void> {
     }
     const wfStatus = await getStatus(`/api/agentworkflows/${set.workflow}`);
     if (wfStatus !== 200) fail("workflow", `${set.workflow} -> HTTP ${wfStatus}`);
-    pass(`set ${set.catalogKey} seeded`, `gateway=${gwRef} image=${expectImage}`);
+    // Bulk/workflow launches create stage runs with NO params — application
+    // data resolves from the Hub at runtime (enhancement #295 / ADR 0006).
+    // The controller's validateParams mirrors exactly this predicate: a
+    // param that is required AND has no default fails those runs at create
+    // time with InvalidParams. (required-with-default is create-safe.)
+    for (const member of set.members) {
+      const stageAgent = member === set.agent ? agent : await get<NamedCR>(`/api/agents/${member}`);
+      const params = (stageAgent.spec?.params ?? []) as { name?: string; required?: boolean; default?: string }[];
+      const req = params.filter((p) => p.required === true && !p.default);
+      if (req.length > 0) {
+        fail(
+          "paramless launch",
+          `${member} declares required param(s) without defaults ${req.map((p) => `"${p.name}"`).join(", ")} — ` +
+            `a paramless bulk/stage run fails InvalidParams at create time`,
+        );
+      }
+    }
+    pass(`set ${set.catalogKey} seeded`, `gateway=${gwRef} image=${expectImage} requiredNoDefault=0`);
   }
   if (expectSkipAll && seededSets.length > 0) {
     fail("skip-all", "agents were seeded with no gateway on the cluster");
