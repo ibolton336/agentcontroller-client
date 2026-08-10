@@ -36,7 +36,7 @@ const store = {
       },
       spec: {
         image: "ghcr.io/ibolton336/agent-java:demo",
-        gateways: ["default-gateway"],
+        gateways: [{ ref: "default-gateway" }],
         params: [
           { name: "repository", required: true },
           { name: "branch", required: false, default: "main" },
@@ -46,7 +46,7 @@ const store = {
     },
     {
       metadata: { name: "freeform-agent", creationTimestamp: ago(300) },
-      spec: { image: "ghcr.io/ibolton336/agent-base:demo", gateways: ["default-gateway"] },
+      spec: { image: "ghcr.io/ibolton336/agent-base:demo", gateways: [{ ref: "default-gateway" }] },
       status: { conditions: [{ type: "Ready", status: "True" }] },
     },
   ],
@@ -65,7 +65,12 @@ const store = {
   gateways: [
     {
       metadata: { name: "default-gateway", creationTimestamp: ago(500) },
-      spec: { provider: "bedrock", model: "us.anthropic.claude-sonnet-4-5" },
+      spec: {
+        provider: "aws-bedrock",
+        endpoint: "https://bedrock-runtime.us-east-1.example",
+        credentialRef: { secretName: "bedrock-creds" },
+        model: { name: "us.anthropic.claude-sonnet-4-5", contextWindow: 200000 },
+      },
       status: { conditions: [{ type: "Ready", status: "True" }] },
     },
   ],
@@ -78,8 +83,8 @@ const store = {
       },
       spec: {
         stages: [
-          { name: "assess", agentRef: { name: "migration-analyzer" } },
-          { name: "execute", agentRef: { name: "freeform-agent" } },
+          { name: "assess", agentRef: "migration-analyzer" },
+          { name: "execute", agentRef: "freeform-agent" },
         ],
       },
       status: {
@@ -89,7 +94,7 @@ const store = {
     {
       // No status at all — the modal treats this as selectable (fails open).
       metadata: { name: "patternfly-migration", creationTimestamp: ago(180), labels: { [MANAGED]: "true" } },
-      spec: { stages: [{ name: "migrate", agentRef: { name: "freeform-agent" } }] },
+      spec: { stages: [{ name: "migrate", agentRef: "freeform-agent" }] },
     },
   ],
   runs: [
