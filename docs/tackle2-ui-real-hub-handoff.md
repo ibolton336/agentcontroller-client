@@ -1,5 +1,14 @@
 # Running the migrated tackle2-ui against the real hub
 
+> **2026-08-11: this recipe is LIVE on the ROKS demo cluster.** The
+> tackle-hub deployment runs `ghcr.io/ibolton336/tackle2-hub@sha256:e16ddab6…`
+> (built from `jortel:agentic` by the `build-hub` workflow) with
+> `NAMESPACE=konveyor-agents` and the RBAC from
+> `deploy/roks/hub-agentic-swap.yaml`; the UI runs the migrated image with
+> `AGENTIC_ENABLED=true` and no shim. The tackle-operator is scaled to 0 to
+> hold the swap (scale to 1 to roll back; hub DB backed up on the PVC as
+> `hub.db*.pre-agentic` — note Jeff's build migrated the schema forward).
+
 2026-08-10. For the env being stood up around Jeff's hub `agent/*` endpoints.
 The UI branch (`ibolton336/tackle2-ui@feature/agent-runs`, `b66c42efd`) no
 longer speaks the hub-shim contract at all — every agentic call rides the
@@ -60,8 +69,8 @@ deployment.
 | Gap | Symptom in the UI |
 |---|---|
 | No run cancel (and no run delete by design) | Runs have no destructive actions; a stuck run must be handled with kubectl |
-| No token minting / env injection (`HUB_BASE_URL`, app id, `TARGET_BRANCH`) | Runs start but anything needing hub grounding — assess-style insight reads, PAT-identity pushes — fails inside the harness; the workflow-run modal's Target branch field currently has no effect |
-| Env-name drift unresolved (`APP_ID` shim/harness vs `HUB_APP_ID` in #1112) | Must be settled before injection lands or grounding breaks silently |
+| ~~No token minting / env injection~~ **PARTIALLY LANDED** (verified on ROKS 2026-08-11): run create injects `spec.env HUB_BASE_URL` + `envFrom` a minted Secret with `HUB_TOKEN`/`HUB_TOKEN_ID` | What's still missing is the application id and `TARGET_BRANCH` |
+| Env-name drift — **proven live on ROKS**: harness requires `APP_ID`, hub injects no app id at all | Every managed-agent run fail-fasts: pod exits `config: required env var APP_ID is not set`, run reports Failed within seconds |
 | Application label not stamped server-side | UI stamps it client-side at create; runs created by other clients won't appear in per-app views until the hub stamps |
 | Run lists filter `konveyor.io/managed=true` | Controller-created workflow **stage runs are invisible** — the workflow-run drill-down looks empty even while stages execute |
 | No 400 on managed-agent run without an application | A doomed run is accepted and fails late in the harness (the UI's own modals prevent this path, other clients aren't protected) |

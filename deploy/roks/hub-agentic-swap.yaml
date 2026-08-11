@@ -1,0 +1,78 @@
+# Shim→hub migration test: run Jeff's agent-endpoints hub on ROKS.
+#
+# The tackle-hub Deployment is operator-owned, so the swap is done with the
+# operator scaled down (the operator would otherwise revert the patches):
+#
+#   CTX="konveyor-tackle/c111-e-us-east-containers-cloud-ibm-com:32692/IAM#ibolton@redhat.com"
+#   oc --context "$CTX" scale deploy tackle-operator -n konveyor-tackle --replicas=0
+#   oc --context "$CTX" set image  deploy/tackle-hub -n konveyor-tackle \
+#       tackle-hub=ghcr.io/ibolton336/tackle2-hub:agentic
+#   oc --context "$CTX" set env    deploy/tackle-hub -n konveyor-tackle \
+#       NAMESPACE=konveyor-agents
+#   oc --context "$CTX" apply -f hub-agentic-swap.yaml
+#
+# NAMESPACE=konveyor-agents points the hub's agent/* handlers at the
+# namespace where the agentic CRs and sandboxes live. Side effect: any hub
+# TASK pods (analysis) would also be created there while the swap is in
+# place — acceptable on this demo cluster, nothing schedules analysis
+# during the test.
+#
+# The UI swap (same window):
+#
+#   oc --context "$CTX" set env   deploy/tackle2-ui -n konveyor-agents \
+#       AGENTIC_SHIM_URL- AGENTIC_ENABLED=true
+#   oc --context "$CTX" set image deploy/tackle2-ui -n konveyor-agents \
+#       'tackle2-ui=ghcr.io/ibolton336/tackle2-ui@sha256:a660050d10dbb48d5a4df99ccae2dbd30e629f051aae886fa15cfc2d090cb034'
+#
+# ROLLBACK (stock shim-era stack): scale tackle-operator back to 1 (it
+# reconciles tackle-hub to the stock image/env), restore the UI env
+# (AGENTIC_SHIM_URL=http://agentic-gateway.konveyor-agents.svc:7080,
+# AGENTIC_ENABLED-) and repoint the UI image at the pre-migration digest.
+# The Role/RoleBinding below are additive and harmless to leave.
+---
+# Jeff's hub reads/writes the agentic CRs and the sandboxes' ACP-key
+# Secrets with its own ServiceAccount via the kube API. The operator's
+# stock RBAC knows nothing about konveyor.io agent resources.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tackle-hub-agentic
+  namespace: konveyor-agents
+rules:
+  - apiGroups: ["konveyor.io"]
+    resources:
+      - agents
+      - skillcards
+      - skillcollections
+      - gateways
+      - agentruns
+      - agentworkflows
+      - agentworkflowruns
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # get: ACP relay reads the sandbox secret key. create/update/delete: run
+  # create mints a scoped hub-token Secret (surfaced live as a 403 — the
+  # deployed build already does #1112's minting).
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  # NAMESPACE=konveyor-agents makes the hub's own CR machinery (identity
+  # providers, addons, extensions, tasks) look in this namespace too — it
+  # boots against empty lists, but the startup Tenant loader hard-fails on
+  # a 403, so the whole group needs granting here for the swap window.
+  - apiGroups: ["tackle.konveyor.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tackle-hub-agentic
+  namespace: konveyor-agents
+subjects:
+  - kind: ServiceAccount
+    name: tackle-hub
+    namespace: konveyor-tackle
+roleRef:
+  kind: Role
+  name: tackle-hub-agentic
+  apiGroup: rbac.authorization.k8s.io
