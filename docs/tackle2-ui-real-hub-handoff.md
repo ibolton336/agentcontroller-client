@@ -1,13 +1,16 @@
 # Running the migrated tackle2-ui against the real hub
 
-> **2026-08-11: this recipe is LIVE on the ROKS demo cluster.** The
-> tackle-hub deployment runs `ghcr.io/ibolton336/tackle2-hub@sha256:e16ddab6…`
-> (built from `jortel:agentic` by the `build-hub` workflow) with
-> `NAMESPACE=konveyor-agents` and the RBAC from
-> `deploy/roks/hub-agentic-swap.yaml`; the UI runs the migrated image with
-> `AGENTIC_ENABLED=true` and no shim. The tackle-operator is scaled to 0 to
-> hold the swap (scale to 1 to roll back; hub DB backed up on the PVC as
-> `hub.db*.pre-agentic` — note Jeff's build migrated the schema forward).
+> **2026-08-11: this recipe is LIVE on the ROKS demo cluster, running the
+> `/agentic/agentruns` pair pinned below** (hub `sha256:8a3fe0a0…` @
+> `0969d735` + UI `sha256:04ee4721…` @ `f91267d13`, swapped in the same
+> window; verified live — run history, stage runs now visible, Agents page
+> through the managed filter). Hub keeps `NAMESPACE=konveyor-agents` and
+> the RBAC from `deploy/roks/hub-agentic-swap.yaml`; the UI runs with
+> `AGENTIC_ENABLED=true` and no shim; the UI Deployment's container is
+> named `ui` (the swap recipe's `tackle2-ui=` example is wrong there). The
+> tackle-operator is scaled to 0 to hold the swap (scale to 1 to roll
+> back; hub DB backed up on the PVC as `hub.db*.pre-agentic` — schema has
+> been migrated forward by Jeff's builds).
 
 2026-08-10. For the env being stood up around Jeff's hub `agent/*` endpoints.
 The UI branch (`ibolton336/tackle2-ui@feature/agent-runs`, `b66c42efd`) no
@@ -114,9 +117,11 @@ hub and any drift shows up as a concrete page/wire failure.
 ## Image digests (this build — the `/agentic` pair, deploy together)
 
 - `ghcr.io/ibolton336/tackle2-ui:demo` @
-  `sha256:cad1b3e5d8e7e5960d2aa433108a330888dbb6d1acf2b333d3e0bd217c7718c1`
-  (multi-arch index, amd64+arm64, CI run 31515355189, built from
-  `feature/agent-runs` @ `aa3c5f8bc` — speaks `/hub/agentic/agentruns`)
+  `sha256:04ee4721cefdb16765140d374b16ca70bbc412fd24e4f2b979641f8b8f301204`
+  (multi-arch index, amd64+arm64, CI run 31524229505, built from
+  `feature/agent-runs` @ `f91267d13` — speaks `/hub/agentic/agentruns`
+  and does the ACP nonce two-step with a bare-dial fallback on pre-nonce
+  hubs, so it pairs with every `/agentic/agentruns`-era hub)
 - `ghcr.io/ibolton336/tackle2-hub:agentic` @
   `sha256:8a3fe0a09fb929acdd9c99006cff3d481e7e26a8c73d4e9119c1c1ab255f9752`
   (multi-arch index, CI run 31515352680, built from
@@ -127,8 +132,8 @@ Deploy as a pair — mixed pairs break the agentic pages, and four
 contract eras now exist (`/agent/*`, `/agentic/runs`,
 `/agentic/agentruns`, and `/agentic/agentruns` + required ACP nonce).
 Superseded same-day pair: UI `eaac1de2` + hub `a484513f` (the
-`/agentic/runs` era). The ROKS deployment still runs the pre-rename pair
-(`e16ddab6` hub + `a660050d` UI) until swapped. To run a nonce-era hub
+`/agentic/runs` era; also UI `cad1b3e5`, pre-nonce). The ROKS deployment
+runs the pinned pair as of 2026-08-11. To run a nonce-era hub
 today, Jeff publishes his branch as `quay.io/jortel/tackle2-hub:agent`
 (rolling tag) — pair it with a UI built from the two-step commit onward
 (the two-step falls back to a bare dial on pre-nonce hubs, so the UI tip
