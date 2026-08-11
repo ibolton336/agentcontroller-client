@@ -1,7 +1,8 @@
 # Builds a tackle2-hub image from an arbitrary fork/ref — used to test the
-# UI's shim→hub migration against Jeff's agent-endpoints branch on ROKS
-# (amd64-only: the demo cluster's workers are amd64; native runner avoids
-# the QEMU/UBI dnf TLS failure documented in build-images.yml).
+# UI's shim→hub migration against Jeff's agent-endpoints branch (ROKS is
+# amd64; the arm64 leg exists for local arm64 minikube auth rigs). Same
+# native-runner matrix as build-images.yml: each arch builds natively, so
+# the emulated-UBI dnf TLS failure under QEMU never comes up.
 name: build-hub
 on:
   workflow_dispatch:
@@ -10,8 +11,8 @@ on:
         description: "tackle2-hub repo (owner/name)"
         default: "jortel/tackle2-hub"
       hub_ref:
-        description: "branch / SHA to build"
-        default: "agentic"
+        description: "branch / full 40-char SHA to build (short SHAs fail checkout)"
+        default: "a3af8307cfd002cb474cef54bbb582247b0aeade"
       tag:
         description: "image tag to push"
         default: "agentic"
@@ -23,14 +24,25 @@ permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/tackle2-hub
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.event.inputs.hub_repo || 'jortel/tackle2-hub' }}
-          ref: ${{ github.event.inputs.hub_ref || 'agentic' }}
+          ref: ${{ github.event.inputs.hub_ref || 'a3af8307cfd002cb474cef54bbb582247b0aeade' }}
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -40,9 +52,21 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/tackle2-hub:${{ github.event.inputs.tag || 'agentic' }}
-      - name: print digest
+          provenance: false
+          tags: ${{ env.IMAGE }}:${{ github.event.inputs.tag || 'agentic' }}-${{ matrix.arch }}
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create multi-arch manifest
         run: |
-          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/tackle2-hub:${{ github.event.inputs.tag || 'agentic' }} | head -5
+          TAG='${{ github.event.inputs.tag || 'agentic' }}'
+          docker buildx imagetools create -t "$IMAGE:$TAG" "$IMAGE:$TAG-amd64" "$IMAGE:$TAG-arm64"
+          docker buildx imagetools inspect "$IMAGE:$TAG"
