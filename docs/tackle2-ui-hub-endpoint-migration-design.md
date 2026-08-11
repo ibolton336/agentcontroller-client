@@ -2,6 +2,10 @@
 
 2026-08-10. Approved in-session; implementation plan follows separately.
 
+> **2026-08-11 update:** the route namespace was renamed `/agent/*` →
+> `/agentic/*` (mock, UI, and the direction agreed for hub PR #1119).
+> Route strings below are the `/agent`-era record; only the prefix differs.
+
 ## Goal
 
 `feature/agent-runs` (ibolton336/tackle2-ui, currently @ 8a70bf644) stops

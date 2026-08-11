@@ -1,5 +1,10 @@
 # tackle2-ui Hub Endpoint Migration — Implementation Plan
 
+> **2026-08-11 update:** the route namespace was renamed `/agent/*` →
+> `/agentic/*` (mock, UI, and the direction agreed for hub PR #1119).
+> Route strings and embedded transcripts below are the `/agent`-era
+> execution record; only the prefix differs.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Migrate tackle2-ui `feature/agent-runs` off the hub-shim contract onto the real hub `agent/*` API (per `docs/tackle2-ui-hub-endpoint-migration-design.md`), verified cluster-free against a rewritten mock hub, then ship the image and the coworker-env handoff.

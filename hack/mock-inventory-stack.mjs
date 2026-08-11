@@ -1,13 +1,15 @@
 // Cluster-free mock HUB for tackle2-ui feature/agent-runs — hub-contract era.
 // One listener, :18090, fronted by the express server's /hub proxy
 // ("^/hub" -> ""). Serves BOTH the core inventory the app shell needs and
-// the agent/* surface per jortel:tackle2-hub@agentic (392a9493):
+// the agentic/* surface per jortel:tackle2-hub@agentic (envelopes verified
+// at 392a9493; the /agent -> /agentic prefix rename landed upstream at
+// 7751e27d and this mock matches it):
 //   - lists return JSON arrays of full CRs
 //   - create = POST full CR -> 201 CR (generateName honored,
 //     konveyor.io/managed=true injected, like the hub)
 //   - update = PUT full CR -> 204 NO BODY
 //   - run kinds: list/get/create only (no update/delete/cancel)
-//   - /agent/runs/:name/acp answers a real WebSocket upgrade (101) and
+//   - /agentic/runs/:name/acp answers a real WebSocket upgrade (101) and
 //     holds the socket open — connection smoke only, no ACP frames.
 // Every request is logged; POST/PUT bodies in full — the wire-shape proof.
 
@@ -189,8 +191,8 @@ const hub = http.createServer(async (req, res) => {
   // ---- core inventory ----
   if (req.method === "GET" && p === "/applications") return send(res, 200, applications);
 
-  // ---- agent surface ----
-  const m = /^\/agent\/([a-z]+)(?:\/([^/]+))?(\/acp)?$/.exec(p);
+  // ---- agentic surface ----
+  const m = /^\/agentic\/([a-z]+)(?:\/([^/]+))?(\/acp)?$/.exec(p);
   if (m) {
     const [, kind, name, acp] = m;
     const known = CONFIG_KINDS.includes(kind) || RUN_KINDS.includes(kind);
@@ -249,7 +251,7 @@ const hub = http.createServer(async (req, res) => {
     }
 
     // PUT/DELETE on run kinds, or anything else: no such route on the hub.
-    return send(res, 405, { error: `no ${req.method} route for /agent/${kind}` });
+    return send(res, 405, { error: `no ${req.method} route for /agentic/${kind}` });
   }
 
   // Everything else the inventory screens enumerate (tags, archetypes,
@@ -261,10 +263,12 @@ const hub = http.createServer(async (req, res) => {
   return send(res, 200, {});
 });
 
-// WS upgrade for /agent/runs/:name/acp — RFC6455 handshake, then hold the
-// socket open. Connection smoke only: the UI's badge should read connected.
+// WS upgrade for /agentic/runs/:name/acp — RFC6455 handshake, then hold the
+// socket open. Connection smoke only: the ChatPanel's dial must land here
+// (logged as "WS upgraded"); with no ACP frames answered the panel stays
+// Connecting and periodically re-dials.
 hub.on("upgrade", (req, socket) => {
-  const ok = /^\/agent\/runs\/[^/]+\/acp$/.test(new URL(req.url, "http://localhost").pathname);
+  const ok = /^\/agentic\/runs\/[^/]+\/acp$/.test(new URL(req.url, "http://localhost").pathname);
   const key = req.headers["sec-websocket-key"];
   if (!ok || !key) {
     socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
@@ -284,4 +288,4 @@ hub.on("upgrade", (req, socket) => {
   socket.on("error", () => {});
 });
 
-hub.listen(18090, () => console.log("mock hub on :18090 (core inventory + /agent/*)"));
+hub.listen(18090, () => console.log("mock hub on :18090 (core inventory + /agentic/*)"));

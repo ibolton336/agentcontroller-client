@@ -17,14 +17,16 @@ deployment.
 
 ## What the env needs
 
-- **Hub** built from `jortel/tackle2-hub@agentic` — verified against
-  `39b446bf` (2026-08-10) which served `/agent/*`; the UI now speaks
-  `/agentic/*` (2026-08-11, anticipating the same rename planned for hub
-  PR #1119). Routes consumed:
+- **Hub** built from `jortel/tackle2-hub@agentic` — envelopes verified
+  against `39b446bf` (2026-08-10); the `/agent/*` → `/agentic/*` prefix
+  rename landed upstream at `7751e27d` (2026-08-11) and the UI speaks the
+  renamed surface. Routes consumed:
   `/agentic/{agents,skills,skillcollections,gateways,runs,workflows,workflowruns}[/:name]`
-  plus the `/agentic/runs/:name/acp` WebSocket relay. A hub still serving
-  `/agent/*` needs the one-line prefix revert in
-  `client/src/app/api/rest/agent-runs.ts`.
+  plus the `/agentic/runs/:name/acp` WebSocket relay. A hub built from a
+  ref OLDER than `7751e27d` (including the currently deployed
+  `sha256:e16ddab6…` image) still serves `/agent/*` and needs the one-line
+  prefix revert in `client/src/app/api/rest/agent-runs.ts` — or a hub
+  image rebuild.
 - **agentic-controller** installed (CRDs + controller) in the namespace the
   hub serves, plus at least one Gateway with working credentials.
 - **Auth off** for now (`feature_auth_required: false`). With auth on, REST
