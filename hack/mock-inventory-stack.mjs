@@ -2,15 +2,18 @@
 // One listener, :18090, fronted by the express server's /hub proxy
 // ("^/hub" -> ""). Serves BOTH the core inventory the app shell needs and
 // the agentic/* surface per jortel:tackle2-hub@agentic (envelopes verified
-// at 392a9493; the /agent -> /agentic prefix rename landed upstream at
-// 7751e27d and this mock matches it):
+// at 392a9493; /agent -> /agentic landed at 7751e27d, runs -> agentruns at
+// 9ae3d72a, ACP nonce auth at a3af8307 — this mock matches head):
 //   - lists return JSON arrays of full CRs
 //   - create = POST full CR -> 201 CR (generateName honored,
 //     konveyor.io/managed=true injected, like the hub)
 //   - update = PUT full CR -> 204 NO BODY
 //   - run kinds: list/get/create only (no update/delete/cancel)
-//   - /agentic/agentruns/:name/acp answers a real WebSocket upgrade (101) and
-//     holds the socket open — connection smoke only, no ACP frames.
+//   - POST /agentic/agentruns/:name/acp/nonce -> 201 nonce (single-use,
+//     30s TTL), required by the WS upgrade in BOTH auth modes like the hub
+//   - /agentic/agentruns/:name/acp?nonce=... answers a real WebSocket
+//     upgrade (101) and holds the socket open — connection smoke only, no
+//     ACP frames; a missing/stale/reused nonce is refused with 403.
 // Every request is logged; POST/PUT bodies in full — the wire-shape proof.
 
 import http from "node:http";
@@ -21,6 +24,19 @@ const ago = (mins) => new Date(Date.now() - mins * 60_000).toISOString();
 
 const MANAGED = "konveyor.io/managed";
 const APPLICATION = "konveyor.io/application";
+
+// ---- ACP nonce (hub parity: single-use, 30s TTL, required in both modes)
+const nonces = new Map(); // nonce -> expiry (epoch ms)
+const issueNonce = () => {
+  const n = crypto.randomBytes(8).toString("hex");
+  nonces.set(n, Date.now() + 30_000);
+  return n;
+};
+const redeemNonce = (n) => {
+  const expiry = nonces.get(n);
+  nonces.delete(n); // single-use: gone whether it validates or not
+  return expiry !== undefined && Date.now() <= expiry;
+};
 
 // ---------------------------------------------------------------- fixtures
 
@@ -192,12 +208,26 @@ const hub = http.createServer(async (req, res) => {
   if (req.method === "GET" && p === "/applications") return send(res, 200, applications);
 
   // ---- agentic surface ----
-  const m = /^\/agentic\/([a-z]+)(?:\/([^/]+))?(\/acp)?$/.exec(p);
+  const m = /^\/agentic\/([a-z]+)(?:\/([^/]+))?(\/acp(?:\/nonce)?)?$/.exec(p);
   if (m) {
     const [, kind, name, acp] = m;
     const known = CONFIG_KINDS.includes(kind) || RUN_KINDS.includes(kind);
     if (!known) return send(res, 404, { error: `unknown agent resource "${kind}"` });
     const list = store[kind];
+
+    if (acp === "/acp/nonce") {
+      // Hub parity: POST-only, Gets the run first (404 when absent), 201
+      // with the JSON-encoded nonce string as the created resource.
+      if (kind !== "agentruns" || !name)
+        return send(res, 404, { error: "nonce is minted per agent run" });
+      if (req.method !== "POST")
+        return send(res, 405, { error: "nonce mint is POST-only" });
+      if (!list.some((r) => r.metadata.name === name))
+        return send(res, 404, { error: `${kind}/${name} not found` });
+      const nonce = issueNonce();
+      console.log(`[hub] NONCE minted for ${name}: ${nonce}`);
+      return send(res, 201, nonce);
+    }
 
     if (acp) return send(res, 400, { error: "acp is websocket-only (see upgrade handler)" });
 
@@ -263,15 +293,22 @@ const hub = http.createServer(async (req, res) => {
   return send(res, 200, {});
 });
 
-// WS upgrade for /agentic/agentruns/:name/acp — RFC6455 handshake, then hold the
-// socket open. Connection smoke only: the ChatPanel's dial must land here
-// (logged as "WS upgraded"); with no ACP frames answered the panel stays
-// Connecting and periodically re-dials.
+// WS upgrade for /agentic/agentruns/:name/acp?nonce=... — nonce is redeemed
+// FIRST (hub parity: required in both auth modes), then RFC6455 handshake
+// and hold the socket open. Connection smoke only: the ChatPanel's dial
+// must land here (logged as "WS upgraded"); with no ACP frames answered
+// the panel stays Connecting and periodically re-dials (fresh nonce each).
 hub.on("upgrade", (req, socket) => {
-  const ok = /^\/agentic\/agentruns\/[^/]+\/acp$/.test(new URL(req.url, "http://localhost").pathname);
+  const u = new URL(req.url, "http://localhost");
+  const ok = /^\/agentic\/agentruns\/[^/]+\/acp$/.test(u.pathname);
   const key = req.headers["sec-websocket-key"];
   if (!ok || !key) {
     socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+    return socket.destroy();
+  }
+  if (!redeemNonce(u.searchParams.get("nonce") ?? "")) {
+    console.log(`[hub] WS refused (missing/stale/reused nonce): ${req.url}`);
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     return socket.destroy();
   }
   const accept = crypto

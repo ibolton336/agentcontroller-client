@@ -34,8 +34,9 @@ deployment.
   hub serves, plus at least one Gateway with working credentials.
 - **Auth off** for now (`feature_auth_required: false`). With auth on, REST
   works (the UI attaches Bearer tokens) but the ACP WebSocket will 401 —
-  browsers cannot send an Authorization header on WS. Agreed direction
-  (Jeff, 2026-08-11): two-step nonce — see the pending table.
+  browsers cannot send an Authorization header on WS. Solved by the nonce
+  two-step (see the pending table) — the mint rides authenticated REST,
+  the WS carries only the single-use nonce.
 - **Seed resources** cluster-side (there is no Load-defaults button anymore):
   `kubectl apply -f manifests/samples.yaml` from this repo, run by the env
   owner on their cluster.
@@ -82,7 +83,7 @@ deployment.
 | Application label not stamped server-side | UI stamps it client-side at create; runs created by other clients won't appear in per-app views until the hub stamps |
 | ~~Run lists filter `konveyor.io/managed=true`~~ **RESOLVED @ `0969d735`** — run lists are unfiltered; the managed filter moved to the Agents list (with create-side label injection) | Workflow-run drill-downs show controller-created stage runs on hubs ≥ `0969d735`; older hubs still hide them |
 | No 400 on managed-agent run without an application | A doomed run is accepted and fails late in the harness (the UI's own modals prevent this path, other clients aren't protected) |
-| WS auth mechanism | Works only while auth is off. Agreed direction (Jeff, 2026-08-11): authenticated `POST /agentic/agentruns/:name/acp` returns a short-lived nonce, then `new WebSocket(".../agentic/agentruns/acp?nonce=...")` — hub implementation and the UI two-step both pending |
+| ~~WS auth mechanism~~ **IMPLEMENTED both sides 2026-08-11** — hub @ `a3af8307`: authenticated `POST /agentic/agentruns/:name/acp/nonce` → 201 nonce (single-use, 30s TTL), and `GET .../:name/acp?nonce=...` redeems it **unconditionally — required even with auth off**; UI mints per dial attempt, falling back to the bare dial when the mint 404s (pre-nonce hub) | Hubs built ≥ `a3af8307` refuse nonce-less dials — UI images older than the two-step lose chat against them. The pinned pair below predates the nonce era on BOTH sides and stays self-consistent |
 
 Also: runs created before this migration carried the application only in
 `spec.env` (`APP_ID`) with no label — they won't show up in per-application
@@ -122,8 +123,13 @@ hub and any drift shows up as a concrete page/wire failure.
   `jortel:tackle2-hub@agentic` @ `0969d735` — serves `/agentic/agentruns`;
   run lists unfiltered, managed filter on the Agents list)
 
-Deploy as a pair — mixed pairs 404 the agentic pages, and three route
-eras now exist (`/agent/*`, `/agentic/runs`, `/agentic/agentruns`).
+Deploy as a pair — mixed pairs break the agentic pages, and four
+contract eras now exist (`/agent/*`, `/agentic/runs`,
+`/agentic/agentruns`, and `/agentic/agentruns` + required ACP nonce).
 Superseded same-day pair: UI `eaac1de2` + hub `a484513f` (the
 `/agentic/runs` era). The ROKS deployment still runs the pre-rename pair
-(`e16ddab6` hub + `a660050d` UI) until swapped.
+(`e16ddab6` hub + `a660050d` UI) until swapped. To run a nonce-era hub
+today, Jeff publishes his branch as `quay.io/jortel/tackle2-hub:agent`
+(rolling tag) — pair it with a UI built from the two-step commit onward
+(the two-step falls back to a bare dial on pre-nonce hubs, so the UI tip
+tolerates every `/agentic/agentruns`-era hub).
