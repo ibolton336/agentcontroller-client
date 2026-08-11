@@ -25,8 +25,8 @@ deployment.
   plus the `/agentic/runs/:name/acp` WebSocket relay. A hub built from a
   ref OLDER than `7751e27d` (including the currently deployed
   `sha256:e16ddab6…` image) still serves `/agent/*` and needs the one-line
-  prefix revert in `client/src/app/api/rest/agent-runs.ts` — or a hub
-  image rebuild.
+  prefix revert in `client/src/app/api/rest/agent-runs.ts` — or the
+  rebuilt `:agentic` image pinned at the bottom of this doc.
 - **agentic-controller** installed (CRDs + controller) in the namespace the
   hub serves, plus at least one Gateway with working credentials.
 - **Auth off** for now (`feature_auth_required: false`). With auth on, REST
@@ -107,9 +107,17 @@ hub and any drift shows up as a concrete page/wire failure.
 `tackle2-ui-prod-agentic-on` (:9102) / `tackle2-ui-prod-no-agentic`
 (:9101) for the feature-flag behaviors.
 
-## Image digest (this build)
+## Image digests (this build — the `/agentic` pair, deploy together)
 
 - `ghcr.io/ibolton336/tackle2-ui:demo` @
-  `sha256:a660050d10dbb48d5a4df99ccae2dbd30e629f051aae886fa15cfc2d090cb034`
-  (multi-arch index, amd64+arm64, CI run 31440982894, built from
-  `feature/agent-runs` @ `b66c42efd`)
+  `sha256:eaac1de2011b364bf16a6b9900f91f5b613d37d95b99371fd1d849de62595d51`
+  (multi-arch index, amd64+arm64, CI run 31507175402, built from
+  `feature/agent-runs` @ `95b708dd3` — speaks `/hub/agentic/*`)
+- `ghcr.io/ibolton336/tackle2-hub:agentic` @
+  `sha256:a484513f860542971d8ff8f9354d891e2e58703d2557e94666be73194180724f`
+  (multi-arch index, CI run 31508099488, built from
+  `jortel:tackle2-hub@agentic` @ `7751e27d` — serves `/agentic/*`)
+
+Deploy as a pair — a mixed old/new-prefix pair 404s every agentic page.
+The ROKS deployment still runs the pre-rename pair (`e16ddab6` hub +
+`a660050d` UI) until swapped.
