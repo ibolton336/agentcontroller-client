@@ -3,7 +3,9 @@
 // ("^/hub" -> ""). Serves BOTH the core inventory the app shell needs and
 // the agentic/* surface per jortel:tackle2-hub@agentic (envelopes verified
 // at 392a9493; /agent -> /agentic landed at 7751e27d, runs -> agentruns at
-// 9ae3d72a, ACP nonce auth at a3af8307 — this mock matches head):
+// 9ae3d72a, ACP nonce auth at a3af8307 = current head — this mock matches
+// it; nonce statuses probe-verified 2026-08-11 against the live hub,
+// quay.io/jortel/tackle2-hub:agent):
 //   - lists return JSON arrays of full CRs
 //   - create = POST full CR -> 201 CR (generateName honored,
 //     konveyor.io/managed=true injected, like the hub)
@@ -14,7 +16,8 @@
 //   - /agentic/agentruns/:name/acp?nonce=... answers a real WebSocket
 //     upgrade (101) and speaks just enough ACP for the chat panel to reach
 //     Connected (initialize, session/new, canned session/prompt); a
-//     missing/stale/reused nonce is refused with 403.
+//     missing/stale/reused nonce is refused with 401 like the real hub
+//     (mint 201, fresh dial 101, reused/bare dial 401).
 //   - Scripted runs replay the pod-boot race the panel has to ride out
 //     (see SCRIPTED below): the clock starts on the first GET of the run's
 //     detail, so restart the mock to replay.
@@ -584,7 +587,7 @@ hub.on("upgrade", (req, socket) => {
   const name = decodeURIComponent(m[1]);
   if (!redeemNonce(u.searchParams.get("nonce") ?? "")) {
     console.log(`[hub] WS refused (missing/stale/reused nonce): ${req.url}`);
-    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     return socket.destroy();
   }
   const accept = crypto
