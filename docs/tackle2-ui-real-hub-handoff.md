@@ -113,16 +113,17 @@ hub and any drift shows up as a concrete page/wire failure.
 ## Image digests (this build — the `/agentic` pair, deploy together)
 
 - `ghcr.io/ibolton336/tackle2-ui:demo` @
-  `sha256:eaac1de2011b364bf16a6b9900f91f5b613d37d95b99371fd1d849de62595d51`
-  (multi-arch index, amd64+arm64, CI run 31507175402, built from
-  `feature/agent-runs` @ `95b708dd3` — speaks `/hub/agentic/*`)
+  `sha256:cad1b3e5d8e7e5960d2aa433108a330888dbb6d1acf2b333d3e0bd217c7718c1`
+  (multi-arch index, amd64+arm64, CI run 31515355189, built from
+  `feature/agent-runs` @ `aa3c5f8bc` — speaks `/hub/agentic/agentruns`)
 - `ghcr.io/ibolton336/tackle2-hub:agentic` @
-  `sha256:a484513f860542971d8ff8f9354d891e2e58703d2557e94666be73194180724f`
-  (multi-arch index, CI run 31508099488, built from
-  `jortel:tackle2-hub@agentic` @ `7751e27d` — serves `/agentic/*`)
+  `sha256:8a3fe0a09fb929acdd9c99006cff3d481e7e26a8c73d4e9119c1c1ab255f9752`
+  (multi-arch index, CI run 31515352680, built from
+  `jortel:tackle2-hub@agentic` @ `0969d735` — serves `/agentic/agentruns`;
+  run lists unfiltered, managed filter on the Agents list)
 
-Deploy as a pair — a mixed old/new-prefix pair 404s every agentic page.
-The ROKS deployment still runs the pre-rename pair (`e16ddab6` hub +
-`a660050d` UI) until swapped. Note this pinned pair speaks `/agentic/runs`;
-a UI image built from the branch tip expects `/agentic/agentruns` and
-needs a hub newer than `7751e27d` (see the run-segment caveat above).
+Deploy as a pair — mixed pairs 404 the agentic pages, and three route
+eras now exist (`/agent/*`, `/agentic/runs`, `/agentic/agentruns`).
+Superseded same-day pair: UI `eaac1de2` + hub `a484513f` (the
+`/agentic/runs` era). The ROKS deployment still runs the pre-rename pair
+(`e16ddab6` hub + `a660050d` UI) until swapped.
