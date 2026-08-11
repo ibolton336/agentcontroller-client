@@ -21,18 +21,21 @@ deployment.
   against `39b446bf` (2026-08-10); the `/agent/*` → `/agentic/*` prefix
   rename landed upstream at `7751e27d` (2026-08-11) and the UI speaks the
   renamed surface. Routes consumed:
-  `/agentic/{agents,skills,skillcollections,gateways,runs,workflows,workflowruns}[/:name]`
-  plus the `/agentic/runs/:name/acp` WebSocket relay. A hub built from a
-  ref OLDER than `7751e27d` (including the currently deployed
-  `sha256:e16ddab6…` image) still serves `/agent/*` and needs the one-line
-  prefix revert in `client/src/app/api/rest/agent-runs.ts` — or the
-  rebuilt `:agentic` image pinned at the bottom of this doc.
+  `/agentic/{agents,skills,skillcollections,gateways,agentruns,workflows,workflowruns}[/:name]`
+  plus the `/agentic/agentruns/:name/acp` WebSocket relay.
+  **Run-segment note:** agent runs ride `/agentic/agentruns` (renamed
+  from `/agentic/runs` 2026-08-11 for kind-prefix parity with
+  `workflowruns` and the CRD plural; landed upstream in `9ae3d72a`,
+  branch head `0969d735`). Hub images built from OLDER refs still serve
+  `/agentic/runs` — match whichever hub you run by adjusting the one-line
+  segment/prefix constants at the top of
+  `client/src/app/api/rest/agent-runs.ts`.
 - **agentic-controller** installed (CRDs + controller) in the namespace the
   hub serves, plus at least one Gateway with working credentials.
 - **Auth off** for now (`feature_auth_required: false`). With auth on, REST
   works (the UI attaches Bearer tokens) but the ACP WebSocket will 401 —
-  browsers cannot send an Authorization header on WS; mechanism TBD with
-  Jeff.
+  browsers cannot send an Authorization header on WS. Agreed direction
+  (Jeff, 2026-08-11): two-step nonce — see the pending table.
 - **Seed resources** cluster-side (there is no Load-defaults button anymore):
   `kubectl apply -f manifests/samples.yaml` from this repo, run by the env
   owner on their cluster.
@@ -63,7 +66,7 @@ deployment.
   = "<hub app id>"` stamped client-side, platform params resolved by the
   modal into `spec.params`.
 - Per-application run views filter on the `konveyor.io/application` label.
-- ACP chat connects through the hub relay (`/hub/agentic/runs/:name/acp`);
+- ACP chat connects through the hub relay (`/hub/agentic/agentruns/:name/acp`);
   the Express server proxies the WS upgrade. Note the relay dials the
   sandbox Service by cluster DNS, so chat only works with the hub running
   in-cluster.
@@ -77,9 +80,9 @@ deployment.
 | No run cancel (and no run delete by design) | Runs have no destructive actions; a stuck run must be handled with kubectl |
 | ~~Token minting / env injection~~ **RESOLVED 2026-08-11** — contract split agreed with Jeff: the creating client supplies `APP_ID` + `TARGET_BRANCH` in `spec.env` (UI does since `7c39236ef`), the hub injects `HUB_BASE_URL` + the minted token Secret (`HUB_TOKEN`/`HUB_TOKEN_ID`) and MERGES with client env | Verified green on ROKS: run `ui-94kc2` grounded through the hub with the minted token (app + identities + 49 insights fetched), pushed its branch, and the harness revoked the token on completion (`POST /auth/tokens/:id/revoke → 204`) |
 | Application label not stamped server-side | UI stamps it client-side at create; runs created by other clients won't appear in per-app views until the hub stamps |
-| Run lists filter `konveyor.io/managed=true` | Controller-created workflow **stage runs are invisible** — the workflow-run drill-down looks empty even while stages execute |
+| ~~Run lists filter `konveyor.io/managed=true`~~ **RESOLVED @ `0969d735`** — run lists are unfiltered; the managed filter moved to the Agents list (with create-side label injection) | Workflow-run drill-downs show controller-created stage runs on hubs ≥ `0969d735`; older hubs still hide them |
 | No 400 on managed-agent run without an application | A doomed run is accepted and fails late in the harness (the UI's own modals prevent this path, other clients aren't protected) |
-| WS auth mechanism | Works only while auth is off (see above) |
+| WS auth mechanism | Works only while auth is off. Agreed direction (Jeff, 2026-08-11): authenticated `POST /agentic/agentruns/:name/acp` returns a short-lived nonce, then `new WebSocket(".../agentic/agentruns/acp?nonce=...")` — hub implementation and the UI two-step both pending |
 
 Also: runs created before this migration carried the application only in
 `spec.env` (`APP_ID`) with no label — they won't show up in per-application
@@ -120,4 +123,6 @@ hub and any drift shows up as a concrete page/wire failure.
 
 Deploy as a pair — a mixed old/new-prefix pair 404s every agentic page.
 The ROKS deployment still runs the pre-rename pair (`e16ddab6` hub +
-`a660050d` UI) until swapped.
+`a660050d` UI) until swapped. Note this pinned pair speaks `/agentic/runs`;
+a UI image built from the branch tip expects `/agentic/agentruns` and
+needs a hub newer than `7751e27d` (see the run-segment caveat above).

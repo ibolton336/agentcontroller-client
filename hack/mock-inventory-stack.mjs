@@ -9,7 +9,7 @@
 //     konveyor.io/managed=true injected, like the hub)
 //   - update = PUT full CR -> 204 NO BODY
 //   - run kinds: list/get/create only (no update/delete/cancel)
-//   - /agentic/runs/:name/acp answers a real WebSocket upgrade (101) and
+//   - /agentic/agentruns/:name/acp answers a real WebSocket upgrade (101) and
 //     holds the socket open — connection smoke only, no ACP frames.
 // Every request is logged; POST/PUT bodies in full — the wire-shape proof.
 
@@ -99,7 +99,7 @@ const store = {
       spec: { stages: [{ name: "migrate", agentRef: "freeform-agent" }] },
     },
   ],
-  runs: [
+  agentruns: [
     {
       // Running + populated status: the chat panel should dial the WS.
       metadata: {
@@ -141,7 +141,7 @@ const store = {
 
 // Run kinds are create-only (no PUT/DELETE) — hub parity.
 const CONFIG_KINDS = ["agents", "skills", "skillcollections", "gateways", "workflows"];
-const RUN_KINDS = ["runs", "workflowruns"];
+const RUN_KINDS = ["agentruns", "workflowruns"];
 
 let createCounter = 0;
 
@@ -263,12 +263,12 @@ const hub = http.createServer(async (req, res) => {
   return send(res, 200, {});
 });
 
-// WS upgrade for /agentic/runs/:name/acp — RFC6455 handshake, then hold the
+// WS upgrade for /agentic/agentruns/:name/acp — RFC6455 handshake, then hold the
 // socket open. Connection smoke only: the ChatPanel's dial must land here
 // (logged as "WS upgraded"); with no ACP frames answered the panel stays
 // Connecting and periodically re-dials.
 hub.on("upgrade", (req, socket) => {
-  const ok = /^\/agentic\/runs\/[^/]+\/acp$/.test(new URL(req.url, "http://localhost").pathname);
+  const ok = /^\/agentic\/agentruns\/[^/]+\/acp$/.test(new URL(req.url, "http://localhost").pathname);
   const key = req.headers["sec-websocket-key"];
   if (!ok || !key) {
     socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
