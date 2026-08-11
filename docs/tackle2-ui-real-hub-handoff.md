@@ -2,9 +2,10 @@
 
 > **2026-08-11: this recipe is LIVE on the ROKS demo cluster, running the
 > `/agentic/agentruns` pair pinned below** (hub `sha256:8a3fe0a0…` @
-> `0969d735` + UI `sha256:04ee4721…` @ `f91267d13`, swapped in the same
-> window; verified live — run history, stage runs now visible, Agents page
-> through the managed filter). Hub keeps `NAMESPACE=konveyor-agents` and
+> `0969d735` + UI `sha256:2da83eb1…` @ `20162dc92`, UI rolled forward
+> later the same day for the sidebar-unmount fix; verified live — run
+> history, stage runs now visible, Agents page through the managed
+> filter, sidebar + hamburger toggle survive the agentic routes). Hub keeps `NAMESPACE=konveyor-agents` and
 > the RBAC from `deploy/roks/hub-agentic-swap.yaml`; the UI runs with
 > `AGENTIC_ENABLED=true` and no shim; the UI Deployment's container is
 > named `ui` (the swap recipe's `tackle2-ui=` example is wrong there). The
@@ -86,11 +87,32 @@ deployment.
 | Application label not stamped server-side | UI stamps it client-side at create; runs created by other clients won't appear in per-app views until the hub stamps |
 | ~~Run lists filter `konveyor.io/managed=true`~~ **RESOLVED @ `0969d735`** — run lists are unfiltered; the managed filter moved to the Agents list (with create-side label injection) | Workflow-run drill-downs show controller-created stage runs on hubs ≥ `0969d735`; older hubs still hide them |
 | No 400 on managed-agent run without an application | A doomed run is accepted and fails late in the harness (the UI's own modals prevent this path, other clients aren't protected) |
+| Harness-SA name mismatch: `tokenSecret` looks up hub SA `agentic.harness` but `internal/auth/seed/serviceaccounts.yaml` still seeds `agent.harness` (rename casualty, present @ `0969d735` through branch head `a3af8307`) | **Every** run and workflow-run create fails `404 {"error":"SA (agentic.harness) not-found"}` — hit live on ROKS 2026-08-11 after the pair swap; remedy below applied there same day (SA id 1001), probe-verified. Needed once per hub install until the seed is fixed upstream |
 | ~~WS auth mechanism~~ **IMPLEMENTED both sides 2026-08-11** — hub @ `a3af8307`: authenticated `POST /agentic/agentruns/:name/acp/nonce` → 201 nonce (single-use, 30s TTL), and `GET .../:name/acp?nonce=...` redeems it **unconditionally — required even with auth off**; UI mints per dial attempt, falling back to the bare dial when the mint 404s (pre-nonce hub) | Hubs built ≥ `a3af8307` refuse nonce-less dials — UI images older than the two-step lose chat against them. The pinned pair below predates the nonce era on BOTH sides and stays self-consistent |
 
 Also: runs created before this migration carried the application only in
 `spec.env` (`APP_ID`) with no label — they won't show up in per-application
 views. Fresh runs are labeled.
+
+### Remedy for the harness-SA mismatch (one-time, per hub install)
+
+Create the missing hub service account via the API (hub auth is open on the
+demo install; addon role id is `100` from the role seed). Omitting `id` makes
+the PK sequence assign one ≥ 1000, which the boot-time seed reconciler never
+deletes — so the row survives hub restarts:
+
+```bash
+curl -sS -X POST "$HUB/serviceaccounts" -H 'Content-Type: application/json' -d '{"name":"agentic.harness","description":"Agent harness. Hotfix row: hub@0969d735 looks up agentic.harness but the seed creates agent.harness.","roles":[{"id":100,"name":"addon"}]}'
+```
+
+Verify without launching anything: POST a workflow run whose CR name the
+apiserver must reject — before the fix it 404s with the SA error, after it
+the error changes to a DNS-1123 name validation failure (the handler revokes
+the token and deletes the secret on that path, so nothing persists):
+
+```bash
+curl -sS -X POST "$HUB/agentic/workflowruns" -H 'Content-Type: application/json' -d '{"metadata":{"name":"SA-Probe-INVALID-NAME"}}'
+```
 
 ## Drift check before testing
 
@@ -117,11 +139,13 @@ hub and any drift shows up as a concrete page/wire failure.
 ## Image digests (this build — the `/agentic` pair, deploy together)
 
 - `ghcr.io/ibolton336/tackle2-ui:demo` @
-  `sha256:04ee4721cefdb16765140d374b16ca70bbc412fd24e4f2b979641f8b8f301204`
-  (multi-arch index, amd64+arm64, CI run 31524229505, built from
-  `feature/agent-runs` @ `f91267d13` — speaks `/hub/agentic/agentruns`
+  `sha256:2da83eb13647d6d75ee74ea59bf8b6ea69eea2f72715c2de9766485a185ed50f`
+  (multi-arch index, amd64+arm64, CI run 31532353127, built from
+  `feature/agent-runs` @ `20162dc92` — speaks `/hub/agentic/agentruns`
   and does the ACP nonce two-step with a bare-dial fallback on pre-nonce
-  hubs, so it pairs with every `/agentic/agentruns`-era hub)
+  hubs, so it pairs with every `/agentic/agentruns`-era hub; adds the
+  sidebar-unmount fix — agentic routes now keep the PageSidebar mounted,
+  so the masthead toggle works on every agentic page)
 - `ghcr.io/ibolton336/tackle2-hub:agentic` @
   `sha256:8a3fe0a09fb929acdd9c99006cff3d481e7e26a8c73d4e9119c1c1ab255f9752`
   (multi-arch index, CI run 31515352680, built from
@@ -132,8 +156,9 @@ Deploy as a pair — mixed pairs break the agentic pages, and four
 contract eras now exist (`/agent/*`, `/agentic/runs`,
 `/agentic/agentruns`, and `/agentic/agentruns` + required ACP nonce).
 Superseded same-day pair: UI `eaac1de2` + hub `a484513f` (the
-`/agentic/runs` era; also UI `cad1b3e5`, pre-nonce). The ROKS deployment
-runs the pinned pair as of 2026-08-11. To run a nonce-era hub
+`/agentic/runs` era; also UI `cad1b3e5`, pre-nonce; also UI `04ee4721`
+@ `f91267d13`, nonce-era but with the sidebar-unmount bug). The ROKS
+deployment runs the pinned pair as of 2026-08-11. To run a nonce-era hub
 today, Jeff publishes his branch as `quay.io/jortel/tackle2-hub:agent`
 (rolling tag) — pair it with a UI built from the two-step commit onward
 (the two-step falls back to a bare dial on pre-nonce hubs, so the UI tip
