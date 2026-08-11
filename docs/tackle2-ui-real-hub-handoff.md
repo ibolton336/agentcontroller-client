@@ -18,9 +18,13 @@ deployment.
 ## What the env needs
 
 - **Hub** built from `jortel/tackle2-hub@agentic` — verified against
-  `39b446bf` (2026-08-10). Routes consumed:
-  `/agent/{agents,skills,skillcollections,gateways,runs,workflows,workflowruns}[/:name]`
-  plus the `/agent/runs/:name/acp` WebSocket relay.
+  `39b446bf` (2026-08-10) which served `/agent/*`; the UI now speaks
+  `/agentic/*` (2026-08-11, anticipating the same rename planned for hub
+  PR #1119). Routes consumed:
+  `/agentic/{agents,skills,skillcollections,gateways,runs,workflows,workflowruns}[/:name]`
+  plus the `/agentic/runs/:name/acp` WebSocket relay. A hub still serving
+  `/agent/*` needs the one-line prefix revert in
+  `client/src/app/api/rest/agent-runs.ts`.
 - **agentic-controller** installed (CRDs + controller) in the namespace the
   hub serves, plus at least one Gateway with working credentials.
 - **Auth off** for now (`feature_auth_required: false`). With auth on, REST
@@ -49,7 +53,7 @@ deployment.
 ## What works now (verified against a contract-exact mock hub)
 
 - All five list pages (Agent runs, Agents, Skills, Workflows, Workflow
-  runs) and both detail pages, reading raw CRs from `/agent/*`.
+  runs) and both detail pages, reading raw CRs from `/agentic/*`.
 - Agent/skill/collection/workflow CRUD incl. the hub's PUT→204 semantics.
 - Run creation from the Agent runs page, the Workflow runs page, and the
   application inventory (drawer + bulk launch): wire shape is a real CR —
@@ -57,7 +61,7 @@ deployment.
   = "<hub app id>"` stamped client-side, platform params resolved by the
   modal into `spec.params`.
 - Per-application run views filter on the `konveyor.io/application` label.
-- ACP chat connects through the hub relay (`/hub/agent/runs/:name/acp`);
+- ACP chat connects through the hub relay (`/hub/agentic/runs/:name/acp`);
   the Express server proxies the WS upgrade. Note the relay dials the
   sandbox Service by cluster DNS, so chat only works with the hub running
   in-cluster.
@@ -69,8 +73,7 @@ deployment.
 | Gap | Symptom in the UI |
 |---|---|
 | No run cancel (and no run delete by design) | Runs have no destructive actions; a stuck run must be handled with kubectl |
-| ~~No token minting / env injection~~ **PARTIALLY LANDED** (verified on ROKS 2026-08-11): run create injects `spec.env HUB_BASE_URL` + `envFrom` a minted Secret with `HUB_TOKEN`/`HUB_TOKEN_ID` | What's still missing is the application id and `TARGET_BRANCH` |
-| Env-name drift — **proven live on ROKS**: harness requires `APP_ID`, hub injects no app id at all | Every managed-agent run fail-fasts: pod exits `config: required env var APP_ID is not set`, run reports Failed within seconds |
+| ~~Token minting / env injection~~ **RESOLVED 2026-08-11** — contract split agreed with Jeff: the creating client supplies `APP_ID` + `TARGET_BRANCH` in `spec.env` (UI does since `7c39236ef`), the hub injects `HUB_BASE_URL` + the minted token Secret (`HUB_TOKEN`/`HUB_TOKEN_ID`) and MERGES with client env | Verified green on ROKS: run `ui-94kc2` grounded through the hub with the minted token (app + identities + 49 insights fetched), pushed its branch, and the harness revoked the token on completion (`POST /auth/tokens/:id/revoke → 204`) |
 | Application label not stamped server-side | UI stamps it client-side at create; runs created by other clients won't appear in per-app views until the hub stamps |
 | Run lists filter `konveyor.io/managed=true` | Controller-created workflow **stage runs are invisible** — the workflow-run drill-down looks empty even while stages execute |
 | No 400 on managed-agent run without an application | A doomed run is accepted and fails late in the harness (the UI's own modals prevent this path, other clients aren't protected) |
