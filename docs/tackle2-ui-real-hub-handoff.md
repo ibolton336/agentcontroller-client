@@ -5,7 +5,11 @@
 > `0969d735` + UI `sha256:2da83eb1…` @ `20162dc92`, UI rolled forward
 > later the same day for the sidebar-unmount fix; verified live — run
 > history, stage runs now visible, Agents page through the managed
-> filter, sidebar + hamburger toggle survive the agentic routes). Hub keeps `NAMESPACE=konveyor-agents` and
+> filter, sidebar + hamburger toggle survive the agentic routes).
+> **2026-08-12: UI rolled forward again to `sha256:19a151a0…` @
+> `7787852`** — runs tables gain the application filter
+> (column + Name/Application/Phase filters + pagination + deep-linkable
+> URL params); live-verified on the route. Hub keeps `NAMESPACE=konveyor-agents` and
 > the RBAC from `deploy/roks/hub-agentic-swap.yaml`; the UI runs with
 > `AGENTIC_ENABLED=true` and no shim; the UI Deployment's container is
 > named `ui` (the swap recipe's `tackle2-ui=` example is wrong there). The
@@ -139,13 +143,15 @@ hub and any drift shows up as a concrete page/wire failure.
 ## Image digests (this build — the `/agentic` pair, deploy together)
 
 - `ghcr.io/ibolton336/tackle2-ui:demo` @
-  `sha256:2da83eb13647d6d75ee74ea59bf8b6ea69eea2f72715c2de9766485a185ed50f`
-  (multi-arch index, amd64+arm64, CI run 31532353127, built from
-  `feature/agent-runs` @ `20162dc92` — speaks `/hub/agentic/agentruns`
-  and does the ACP nonce two-step with a bare-dial fallback on pre-nonce
-  hubs, so it pairs with every `/agentic/agentruns`-era hub; adds the
-  sidebar-unmount fix — agentic routes now keep the PageSidebar mounted,
-  so the masthead toggle works on every agentic page)
+  `sha256:19a151a0a640f9be4c9bc4a64b9e7cb31d7b50fe682c3c99de1c084a6a3a40d0`
+  (multi-arch index, amd64+arm64, CI run 31607291646, built from
+  `feature/agent-runs` @ `7787852` — everything in `20162dc92` (agentruns
+  segment, ACP nonce two-step with bare-dial fallback, sidebar-unmount
+  fix) plus the runs tables on useLocalTableControls: Application column
+  off the `konveyor.io/application` label, Name/Application/Phase
+  filters, sorting, pagination, and URL-param persistence so
+  per-application views deep-link, e.g.
+  `/agent-runs?agr:filters={"application":["coolstore"]}`)
 - `ghcr.io/ibolton336/tackle2-hub:agentic` @
   `sha256:8a3fe0a09fb929acdd9c99006cff3d481e7e26a8c73d4e9119c1c1ab255f9752`
   (multi-arch index, CI run 31515352680, built from
@@ -157,8 +163,13 @@ contract eras now exist (`/agent/*`, `/agentic/runs`,
 `/agentic/agentruns`, and `/agentic/agentruns` + required ACP nonce).
 Superseded same-day pair: UI `eaac1de2` + hub `a484513f` (the
 `/agentic/runs` era; also UI `cad1b3e5`, pre-nonce; also UI `04ee4721`
-@ `f91267d13`, nonce-era but with the sidebar-unmount bug). The ROKS
-deployment runs the pinned pair as of 2026-08-11. To run a nonce-era hub
+@ `f91267d13`, nonce-era but with the sidebar-unmount bug; also UI
+`2da83eb1` @ `20162dc92`, sidebar fix but hand-rolled runs tables — no
+filtering). The ROKS deployment runs the UI digest above since
+2026-08-12 (rolled via `kubectl set image` through the demo-guest
+context; live-verified — 37-run history paginates, application filter
+narrows to the 4 labeled coolstore runs, workflow-runs multiselect
+deep-links across daytrader+kitchensink). To run a nonce-era hub
 today, Jeff publishes his branch as `quay.io/jortel/tackle2-hub:agent`
 (rolling tag) — pair it with a UI built from the two-step commit onward
 (the two-step falls back to a bare dial on pre-nonce hubs, so the UI tip
