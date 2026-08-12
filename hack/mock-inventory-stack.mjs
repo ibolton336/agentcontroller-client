@@ -141,6 +141,17 @@ const store = {
       spec: { agentRef: "freeform-agent" },
       status: { phase: "Succeeded", startTime: ago(60), completionTime: ago(55) },
     },
+    {
+      // Pre-label-era run (no application label) — per-application views and
+      // the runs-page application filter must leave it out, never crash on it.
+      metadata: {
+        name: "legacy-run-nolabel",
+        creationTimestamp: ago(300),
+        labels: { [MANAGED]: "true" },
+      },
+      spec: { agentRef: "freeform-agent" },
+      status: { phase: "Failed", startTime: ago(300), completionTime: ago(295) },
+    },
   ],
   workflowruns: [
     {
@@ -151,6 +162,22 @@ const store = {
       },
       spec: { workflowRef: "java-ee-to-quarkus" },
       status: { phase: "Running", startTime: ago(10) },
+    },
+    {
+      // Second application so the workflow-runs application filter has two
+      // buckets to separate.
+      metadata: {
+        name: "modernize-testapp",
+        creationTimestamp: ago(90),
+        labels: { [MANAGED]: "true", [APPLICATION]: "3" },
+      },
+      spec: { workflowRef: "patternfly-migration" },
+      status: {
+        phase: "Succeeded",
+        startTime: ago(90),
+        completionTime: ago(70),
+        stages: [{ name: "migrate", phase: "Succeeded" }],
+      },
     },
   ],
 };
