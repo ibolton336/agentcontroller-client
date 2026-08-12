@@ -40,11 +40,32 @@ deployment.
   `client/src/app/api/rest/agent-runs.ts`.
 - **agentic-controller** installed (CRDs + controller) in the namespace the
   hub serves, plus at least one Gateway with working credentials.
-- **Auth off** for now (`feature_auth_required: false`). With auth on, REST
-  works (the UI attaches Bearer tokens) but the ACP WebSocket will 401 —
-  browsers cannot send an Authorization header on WS. Solved by the nonce
-  two-step (see the pending table) — the mint rides authenticated REST,
-  the WS carries only the single-use nonce.
+- **Auth ON since 2026-08-12** (was `feature_auth_required: false` from the
+  2026-07-30 install). Live-verified on ROKS end to end: browser OIDC login
+  (hub builtin provider, PKCE) → bearer'd REST 200s → nonce mint 201 → ACP WS
+  relay `Connected` on a Running run. Anonymous is 401 on every route (the UI
+  proxy rewrites non-JSON 401s to a 302 → `/` — send `Accept:
+  application/json` to see the raw status). Flip recipe, both sides:
+  - Hub: `AUTH_REQUIRED=true` on the hub deployment. Prereq: the `web-ui`
+    IdpClient CR must live in the hub's `NAMESPACE` (`konveyor-agents`) —
+    `kubectl apply -f deploy/roks/idpclient-webui.yaml`. The operator's copy
+    in `konveyor-tackle` is invisible to the swapped hub (`/oidc/authorize`
+    400s "unable to retrieve client by id" without it; the hub picks up the
+    CR live, no restart needed).
+  - UI: `AUTH_REQUIRED=true` **plus** `OIDC_ISSUER=https://<route>/oidc` and
+    `OIDC_CLIENT_ID=web-ui`. The image entrypoint exits 1 without the OIDC
+    pair (crashloop); on this branch only the entrypoint reads
+    `OIDC_ISSUER` — the client authority is hardcoded same-origin `/oidc`
+    and the server proxies `/oidc` to `TACKLE_HUB_URL`.
+  - Caveats: stock non-admin roles carry zero agentic scopes, so the console
+    is effectively **admin-only** until jortel/tackle2-hub PR #2 lands in an
+    image (architect/migrator 403 on all agentic routes). Harness token
+    self-revoke 403s under auth (addon role lacks `tokens` scope) — token
+    Secrets linger, runs unaffected. Hub OIDC keeps no SSO session: every
+    authorize round-trip shows the login form, but the hub grants refresh
+    tokens so `automaticSilentRenew` keeps live UI sessions alive.
+  - Rollback: set `AUTH_REQUIRED=false` on both deployments (UI keeps the
+    OIDC vars harmlessly).
 - **Seed resources** cluster-side (there is no Load-defaults button anymore):
   `kubectl apply -f manifests/samples.yaml` from this repo, run by the env
   owner on their cluster.

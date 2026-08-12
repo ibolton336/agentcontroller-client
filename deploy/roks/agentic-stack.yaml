@@ -150,12 +150,22 @@ spec:
           env:
             - name: TACKLE_HUB_URL
               value: http://tackle-hub.konveyor-tackle.svc:8080
-            # server/src/proxies.js rewrites /agentic -> /api against this
-            # target, WebSocket upgrades included.
-            - name: AGENTIC_SHIM_URL
-              value: http://agentic-gateway.konveyor-agents.svc:7080
+            # Post-migration the UI talks to the hub directly (/hub proxy);
+            # the gateway/shim is no longer in the path.
+            - name: AGENTIC_ENABLED
+              value: "true"
+            # Auth flipped ON 2026-08-12. The image entrypoint hard-requires
+            # OIDC_ISSUER + OIDC_CLIENT_ID whenever AUTH_REQUIRED != "false"
+            # (crashloops without them). The hub must be able to resolve the
+            # web-ui IdpClient: apply idpclient-webui.yaml into the hub's
+            # NAMESPACE (konveyor-agents) — the operator's copy in
+            # konveyor-tackle is invisible to the swapped hub.
             - name: AUTH_REQUIRED
-              value: "false"
+              value: "true"
+            - name: OIDC_ISSUER
+              value: https://tackle2-ui-konveyor-agents.demo-agentic-controller-3626522b15eedb880d7b99992e225c1b-0000.us-east.containers.appdomain.cloud/oidc
+            - name: OIDC_CLIENT_ID
+              value: web-ui
             - name: RWX_SUPPORTED
               value: "false"
             - name: NODE_EXTRA_CA_CERTS

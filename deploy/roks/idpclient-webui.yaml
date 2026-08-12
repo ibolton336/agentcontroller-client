@@ -1,0 +1,20 @@
+apiVersion: tackle.konveyor.io/v1alpha1
+kind: IdpClient
+metadata:
+  name: web-ui
+  namespace: konveyor-agents
+spec:
+  id: 1
+  clientId: web-ui
+  applicationType: web
+  grants:
+  - urn:ietf:params:oauth:grant-type:jwt-bearer
+  - authorization_code
+  - refresh_token
+  redirectURIs:
+  - "${issuer.proto}://${issuer.host}{,*}/**"
+  scopes:
+  - offline_access
+  - openid
+  - profile
+  - email
