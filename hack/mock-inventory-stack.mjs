@@ -600,6 +600,10 @@ const wsParse = (buf) => {
 // before the viewer attached — the tee replays only harness frames, so the
 // id must be discovered); "off" mirrors HARNESS_HITL_STEER=off (steer
 // -32601, cancel dropped).
+//   - a steer that asks to pause / check in / report status / wait makes
+//       the "agent" do what the harness guideline tells the model to do:
+//       stop working and raise a question (elicitation/create with
+//       continue / stop choices); the stream resumes when it is answered.
 //   - `elicitation/create` (ask-run only): the "agent" asks the human a
 //       question the way the harness's ask_user tool does — forwarded to
 //       every viewer under a harness-style `kask-<n>` id (first an enum
@@ -645,7 +649,9 @@ const runState = (name) => {
       tick: 0,
       askSeq: 0,
       pendingAsks: new Map(), // kask id -> frame (replayed to late viewers)
+      askFollowUps: new Map(), // kask id -> fn run after its answer
       askTimer: undefined,
+      paused: false, // blocked on an ask: the stream ticker idles
     });
   }
   return runStates.get(name);
@@ -665,16 +671,28 @@ const PLAN = (agentStatus) => ({
 });
 // The agent asks the human: forward under kask-<n> to every viewer (and
 // to anyone attaching while it waits), like the tee's ForwardElicitation.
-const askHuman = (name, idx) => {
+const askHuman = (name, ask, { lead = "I need a decision from you before I continue. ", followUp } = {}) => {
   const st = runState(name);
-  if (!st.active || idx >= ASKS.length) return;
+  if (!st.active || !ask) return;
   const id = `kask-${++st.askSeq}`;
-  const frame = { jsonrpc: "2.0", id, method: "elicitation/create", params: { sessionId: st.sessionId, mode: "form", ...ASKS[idx] } };
+  const frame = { jsonrpc: "2.0", id, method: "elicitation/create", params: { sessionId: st.sessionId, mode: "form", ...ask } };
   st.pendingAsks.set(id, frame);
-  console.log(`[hub] RUN ${name}: asking viewers ${id}: ${JSON.stringify(ASKS[idx].message.slice(0, 60))}…`);
-  runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "I need a decision from you before I continue. " } });
+  st.askFollowUps.set(id, followUp);
+  st.paused = true; // the agent's turn is blocked on the tool call
+  console.log(`[hub] RUN ${name}: asking viewers ${id}: ${JSON.stringify(ask.message.slice(0, 60))}…`);
+  runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: lead } });
+  runUpdate(st, { sessionUpdate: "tool_call", toolCallId: id, title: "ask_user", status: "in_progress", kind: "other" });
   for (const notify of st.viewers) notify.raw?.(frame);
 };
+const PAUSE_RE = /\b(pause|check in|check with me|status report|report status|wait|hold on|stop and confirm|confirm with me)\b/i;
+const pauseAsk = (steerText) => ({
+  message: `You asked me to pause ("${steerText.slice(0, 80)}"). Status: I have scanned ${"${N}"} modules for javax.* usages and found nothing blocking so far. How should I continue?`,
+  requestedSchema: {
+    type: "object",
+    properties: { answer: { type: "string", title: "Answer", description: "Pick one", enum: ["continue as planned", "skip the remaining scans and summarize", "stop here"] } },
+    required: ["answer"],
+  },
+});
 const resolveAsk = (name, id, result) => {
   const st = runStates.get(name);
   if (!st || !st.pendingAsks.has(id)) {
@@ -682,16 +700,20 @@ const resolveAsk = (name, id, result) => {
     return;
   }
   st.pendingAsks.delete(id);
+  const followUp = st.askFollowUps.get(id);
+  st.askFollowUps.delete(id);
+  st.paused = st.pendingAsks.size > 0;
   const action = result?.action;
   const answer = result?.content?.answer;
   console.log(`[hub] RUN ${name}: ${id} ${action}${answer !== undefined ? `: ${JSON.stringify(answer)}` : ""}`);
-  const idx = Number(id.split("-")[1]) - 1;
+  runUpdate(st, { sessionUpdate: "tool_call_update", toolCallId: id, status: "completed", content: [{ type: "content", content: { type: "text", text: action === "accept" ? `The human answered: ${answer ?? ""}` : "No answer given" } }] });
   if (action === "accept") {
     runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Thanks — you answered "${answer ?? ""}". Continuing with that. ` } });
+    if (/^stop/i.test(String(answer ?? ""))) endRunTurn(name, "stopped by human answer");
   } else {
     runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Understood — no answer given; I'll proceed with my best judgement. " } });
   }
-  if (idx === 0) st.askTimer = setTimeout(() => askHuman(name, 1), ASK_SECOND_MS);
+  followUp?.();
 };
 const attachRunStream = (name, notify) => {
   const st = runState(name);
@@ -701,7 +723,10 @@ const attachRunStream = (name, notify) => {
   // Pending questions go after the status frames, as the tee replays them.
   for (const frame of st.pendingAsks.values()) notify.raw?.(frame);
   if (STEER_RUNS[name].ask && st.askSeq === 0 && !st.askTimer && st.active) {
-    st.askTimer = setTimeout(() => askHuman(name, 0), ASK_FIRST_MS);
+    st.askTimer = setTimeout(
+      () => askHuman(name, ASKS[0], { followUp: () => { st.askTimer = setTimeout(() => askHuman(name, ASKS[1]), ASK_SECOND_MS); } }),
+      ASK_FIRST_MS
+    );
   }
   if (STEER_RUNS[name].variant === "early" && st.active) {
     // goose announced the active run when the turn started (the viewer saw it).
@@ -716,7 +741,7 @@ const attachRunStream = (name, notify) => {
   // A slow agent stream so the transcript looks alive.
   if (!st.ticker && st.active) {
     st.ticker = setInterval(() => {
-      if (!st.active || st.viewers.size === 0) return;
+      if (!st.active || st.paused || st.viewers.size === 0) return;
       st.tick += 1;
       const n = st.tick;
       runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Step ${n}: inspecting the next module… ` } });
@@ -736,6 +761,8 @@ const endRunTurn = (name, reason) => {
   st.ticker = undefined;
   clearTimeout(st.askTimer);
   st.pendingAsks.clear();
+  st.askFollowUps.clear();
+  st.paused = false;
   runUpdate(st, { sessionUpdate: "session_info_update", _meta: { goose: { activeRunId: null } } });
   runUpdate(st, PLAN("completed"));
   console.log(`[hub] RUN ${name}: turn ended (${reason})`);
@@ -785,6 +812,14 @@ const interceptRunFrame = (name, msg, { reply, fail, notify }) => {
           messageId,
           _meta: { goose: { messageId, steer: true, created: Math.floor(Date.now() / 1000) } },
         });
+        if (PAUSE_RE.test(text)) {
+          // The guideline's contract: a pause/check-in redirect becomes a
+          // blocking ask_user call; nothing else happens until it's answered.
+          const ask = pauseAsk(text);
+          ask.message = ask.message.replace("${N}", String(st.tick));
+          askHuman(name, ask, { lead: `Pausing as you asked — ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}. ` });
+          return;
+        }
         runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Understood — redirecting: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}. ` } });
       }, STEER_PICKUP_MS);
       return true;
