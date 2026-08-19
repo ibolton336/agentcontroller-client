@@ -241,6 +241,23 @@ hub and any drift shows up as a concrete page/wire failure.
   filters, sorting, pagination, and URL-param persistence so
   per-application views deep-link, e.g.
   `/agent-runs?agr:filters={"application":["coolstore"]}`)
+- **Agent images (`:demo` tag repaired 2026-08-19 17:46Z, CI run 32282717630,
+  built from the fork's `main` = upstream `ef5a7e1`):**
+  `ghcr.io/ibolton336/agent-java:demo` @
+  `sha256:edfc357a56bb8cf925bfa8813f89e6986abff19fe81e98dea99ce513d06f60d5`
+  (amd64 child `sha256:08122c18…`) on
+  `ghcr.io/ibolton336/agent-base:demo` @
+  `sha256:67df962a1f56cc4979868015101571d6002fec529b1c48c8cd0bd22c93a7d4f8`.
+  Proven tee-capable with a throwaway `Always`-pull pod on ROKS (harness
+  binary references `HARNESS_HITL_STEER` and `internal/tee`; goose 1.45.0).
+  Before this, every default `build-images.yml` dispatch since 08-07 had
+  re-pushed `:demo` from the fork's `demo/dylan-workload` (07-31, NO tee);
+  ROKS runs kept a live view only via a node-cached older image
+  (`sha256:97c31431…`, pull policy IfNotPresent). The Agent CR
+  `coolstore-quarkus-migrator` pulls `agent-java:demo` by tag, so new nodes
+  now get this build. (The same run also re-tagged `tackle2-ui:demo` as
+  `sha256:64fdfc72…` from the same `2082e16c0` source — ROKS stays pinned to
+  `sha256:47717573…`.)
 - **Hub (live on ROKS since 2026-08-18):** `quay.io/jortel/tackle2-hub@sha256:d849875b3dcdb14929516e1b64ad354c42d46bc25c3fdc4b87cb0db279f02224`
   (Jeff's rolling `:agent`, pushed 08-18 15:17Z from his post-review
   branch — SA seed rename, role grants, PM acp fix, close-frame relay;
