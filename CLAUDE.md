@@ -8,9 +8,10 @@ isolated-module coverage.
 
 Invest instead in:
 
-- Repeatable integration/E2E harnesses (kind or minikube + CRDs + simulator +
-  mock harness). See `agentic-controller/test/e2e`, `agentic-controller/hack/run-e2e.sh`,
-  and `harness-mock/`.
+- Repeatable integration/E2E harnesses: upstream konveyor/agentic-controller
+  `test/e2e` + `hack/run-e2e.sh`; this repo's `hack/hub-auth-probe.sh` (auth
+  matrix against a real hub) and `hack/mock-inventory-stack.mjs` (contract
+  fixture the console is verified against).
 - Failure-path coverage inside those harnesses, not just the happy path.
 - Contract canaries against pinned external binaries (e.g. goose releases).
 

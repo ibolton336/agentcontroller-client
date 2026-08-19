@@ -11,70 +11,15 @@
       "port": 9002
     },
     {
-      "name": "agent-ui",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "agentic-controller/clients/ui", "--", "--port", "5175", "--strictPort"],
-      "port": 5175
-    },
-    {
-      "name": "agent-ui-alt",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "agentic-controller/clients/ui", "--", "--port", "5176", "--strictPort"],
-      "port": 5176
-    },
-    {
       "name": "tackle2-ui-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "start:dev", "--prefix", "/Users/ibolton/Development/tackle2-ui"],
+      "runtimeArgs": [
+        "run",
+        "start:dev",
+        "--prefix",
+        "/Users/ibolton/Development/tackle2-ui"
+      ],
       "port": 9000
-    },
-    {
-      "name": "hub-shim",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "start", "--prefix", "agentic-controller/clients/packages/hub-shim"],
-      "port": 7080,
-      "env": {
-        "HUB_URL": "http://127.0.0.1:18090",
-        "RUN_HUB_BASE_URL": "http://tackle-hub.konveyor-tackle.svc:8080"
-      }
-    },
-    {
-      "name": "demo-ui",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "ui", "--", "--port", "5178", "--strictPort"],
-      "port": 5178,
-      "env": {
-        "VITE_SHIM_URL": "http://127.0.0.1:7081"
-      }
-    },
-    {
-      "name": "demo-ui-worktree",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "ui", "--", "--port", "5179", "--strictPort"],
-      "port": 5179,
-      "env": {
-        "VITE_SHIM_URL": "http://127.0.0.1:7091"
-      }
-    },
-    {
-      "name": "demo-shim",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "start", "--prefix", "packages/hub-shim"],
-      "port": 7081,
-      "env": {
-        "PORT": "7081"
-      }
-    },
-    {
-      "name": "tackle2-ui-prod-mock",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
-      "port": 9100,
-      "env": {
-        "NODE_ENV": "production",
-        "PORT": "9100",
-        "AGENTIC_SHIM_URL": "http://localhost:17080"
-      }
     },
     {
       "name": "tackle2-ui-webpack-dev",
@@ -90,20 +35,11 @@
       "port": 9001
     },
     {
-      "name": "tackle2-ui-dev-mock",
-      "runtimeExecutable": "node",
-      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
-      "port": 9100,
-      "env": {
-        "NODE_ENV": "development",
-        "PORT": "9100",
-        "AGENTIC_SHIM_URL": "http://localhost:17080"
-      }
-    },
-    {
       "name": "tackle2-ui-prod-agentic-on",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
+      "runtimeArgs": [
+        "/Users/ibolton/Development/tackle2-ui/server/src/index.js"
+      ],
       "port": 9102,
       "env": {
         "NODE_ENV": "production",
@@ -115,7 +51,9 @@
     {
       "name": "tackle2-ui-prod-no-agentic",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
+      "runtimeArgs": [
+        "/Users/ibolton/Development/tackle2-ui/server/src/index.js"
+      ],
       "port": 9101,
       "env": {
         "NODE_ENV": "production",
@@ -125,13 +63,17 @@
     {
       "name": "mockstack",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["hack/mock-inventory-stack.mjs"],
+      "runtimeArgs": [
+        "hack/mock-inventory-stack.mjs"
+      ],
       "port": 18090
     },
     {
       "name": "mockstack-b",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["hack/mock-inventory-stack.mjs"],
+      "runtimeArgs": [
+        "hack/mock-inventory-stack.mjs"
+      ],
       "port": 18091,
       "env": {
         "PORT": "18091"
@@ -140,7 +82,9 @@
     {
       "name": "tackle2-ui-prod-mock-b",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
+      "runtimeArgs": [
+        "/Users/ibolton/Development/tackle2-ui/server/src/index.js"
+      ],
       "port": 9112,
       "env": {
         "NODE_ENV": "production",
@@ -152,7 +96,9 @@
     {
       "name": "tackle2-ui-prod-mock-b-steer",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
+      "runtimeArgs": [
+        "/Users/ibolton/Development/tackle2-ui/server/src/index.js"
+      ],
       "port": 9113,
       "env": {
         "NODE_ENV": "production",

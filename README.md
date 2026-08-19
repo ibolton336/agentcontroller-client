@@ -1,57 +1,49 @@
 # agentcontroller-client
 
-Client-side implementation of the konveyor/agentic-controller AgentRun
-flow, built VSCode-extension-first per ADR 0002/0003: create AgentRun CRs
-directly against the apiserver, then attach to the run's ACP endpoint
-(`goose serve`, `:4000/acp`, `X-Secret-Key` auth) over WebSocket.
+Client-side reference stack for the Konveyor agentic platform
+([konveyor/agentic-controller](https://github.com/konveyor/agentic-controller)
++ the hub's `/agentic/*` endpoints + the tackle2-ui agent-runs console).
+This repo holds the rigs, manifests, deployment recipes and design docs that
+sit *around* those three upstream pieces: things to prove a contract, stand
+a real stack up on a laptop or a cluster, and hand it to someone else.
 
-The upstream controller has CRD types but no reconcilers yet, so this
-repo includes a **controller simulator** that performs the same
-externally observable steps the real reconciler will. When the real
-controller lands, delete the simulator — the client code is unchanged.
+## Running the real hub + console locally (no shim)
+
+Two scripts stand the real pair up on a disposable minikube profile —
+[docs/local-stack.md](docs/local-stack.md):
+
+```sh
+hack/hub-auth-up.sh     # real hub, agentic endpoints, auth on   → http://localhost:18080
+hack/ui-up.sh           # tackle2-ui console against it          → http://localhost:18081  (admin / admin)
+hack/hub-auth-probe.sh  # 21-leg 401 / 403 / past-auth matrix per role
+```
+
+The hub-only auth rig behind it, with the probe matrix used to review
+tackle2-hub#1119, is [docs/hub-auth-rig.md](docs/hub-auth-rig.md).
 
 ## Layout
 
 | Path | What |
 |------|------|
-| `packages/agentrun-client/src/` | The reusable module (shaped for konveyor/editor-extensions). `types.ts` mirrors the CRDs, `kube.ts` creates/watches AgentRuns and resolves the ACP endpoint, `portforward.ts` tunnels to the pod, `acp.ts` connects via `@agentclientprotocol/sdk`'s WebSocket transport. |
-| `packages/agentrun-client/dev/` | `simulate-controller.ts` (stand-in reconciler), `demo.ts` (end-to-end flow), `local-smoke.ts` (no-cluster protocol test). |
-| `harness-mock/` | Mock of the sandbox harness ACP surface — real ACP via the SDK's server side, deterministic fake agent. Honors `GOOSE_SERVER__SECRET_KEY`, `GOOSE_MODE`, `KONVEYOR_PARAM_*`, `AGENT_PROMPT`. |
-| `manifests/` | Sample Gateway + Agent CRs (`samples.yaml` = mock, `goose-bedrock.yaml` = real goose on AWS Bedrock). |
-| `harness-goose/` | Real agent-base image: goose v1.39.0 `serve` on :4000 (plain HTTP at this tag; the self-signed-TLS default landed later — keep it pinned) behind `entrypoint.sh`, which adapts the real controller's KONVEYOR_* env contract — clones the run's `repository` param into `/workspace`, maps `KONVEYOR_LLM_*` (Gateway injection; legacy `KONVEYOR_MODEL_PRIMARY_*` fallback) onto `GOOSE_PROVIDER`/`GOOSE_MODEL`, and writes the prompt/instructions to `.goosehints`. SigV4 creds arrive via the Gateway's keyless credentialRef, mounted whole by the controller. |
-| `agentic-controller/` | Upstream clone (with two local CEL-rule fixes in the Agent CRD, PR pending). |
+| `hack/` | `hub-auth-*.sh` + `hub-auth-rig.yaml` (real hub, auth on, probe), `ui-up.sh` + `ui-rig.yaml` (console in front of it), `mock-inventory-stack.mjs` (cluster-free mock hub — the console's *contract fixture*, incl. the ACP nonce two-step and a scripted pod-boot race), `upstream-patches/`. |
+| `deploy/roks/` | The ROKS demo-cluster recipe: hub RBAC/NAMESPACE swap, `web-ui` IdpClient, console Deployment/Route, controller install render, agent-sandbox, Bedrock gateways, coolstore demo, image catalog. [deploy/roks/README.md](deploy/roks/README.md) + [docs/tackle2-ui-real-hub-handoff.md](docs/tackle2-ui-real-hub-handoff.md) (live digests, what works, traps). |
+| `manifests/` | `crd/` = agentic CRDs mirroring upstream `main`; sample CRs, `goose-bedrock.yaml` (Bedrock Gateways), `coolstore-quarkus-demo.yaml`, image catalog. |
+| `packages/agentic-client/` | Browser-safe contract types + `AcpSession` — the reference for [ADR 0009](docs/adr/0009-client-contract-and-transports.md). |
+| `harness-goose/` | The original goose-serve harness image (`goose-harness:dev`), pre-upstream-harness; kept because `docs/bedrock-wiring.md` traces the Secret → Gateway → env → goose chain against it. |
+| `skills/` | Skill sources baked into `agent-java` by CI (`patternfly-migration`). |
+| `docs/` | Design docs, issue trees, call decisions, ADRs (`docs/adr/`), handoffs. Start with `local-stack.md`, `hub-auth-rig.md`, `tackle2-ui-real-hub-handoff.md`, `v0.11.0-issue-tree.md`. |
+| `.github/workflows/` | `build-images.yml` — agent-base, agent-java, agentic-controller, tackle2-ui, multi-arch, to ghcr; `build-hub.yml` — any tackle2-hub fork/ref → `ghcr.io/ibolton336/tackle2-hub:<tag>`. |
+| `slides/` | Decks. |
 
-> **Full local dev-mode guide** (cluster + simulator + extension dev
-> host + smokes + troubleshooting): [docs/DEV_MODE.md](docs/DEV_MODE.md)
+Conventions for working here are in [CLAUDE.md](CLAUDE.md) (E2E over unit
+tests; never touch a cluster that wasn't named).
 
-## Quickstart (minikube)
+## Bedrock credentials
 
-```sh
-# one-time setup
-kubectl apply -f manifests/crd/  # vendored CRDs, incl. Agent CEL fixes (upstream PR 2)
-kubectl create namespace konveyor-agents
-kubectl apply -f manifests/samples.yaml
-(cd harness-mock && minikube image build -t acp-mock-harness:dev .)
-
-cd packages/agentrun-client && npm install
-
-# terminal 1: the stand-in reconciler
-npm run simulator
-
-# terminal 2: full flow — create CR, wait, port-forward, ACP prompt + replay
-npm run demo
-```
-
-`npx tsx dev/local-smoke.ts` (with `node ../../harness-mock/server.mjs`
-running) exercises the ACP layer with no cluster at all.
-
-Cleanup: `kubectl delete agentruns --all -n konveyor-agents` — the
-secret/pod/service are owner-referenced and garbage-collect.
-
-## Real goose + Bedrock
+The Gateways in `manifests/goose-bedrock.yaml` expect a Secret that no
+manifest ever contains:
 
 ```sh
-(cd harness-goose && minikube image build -t goose-harness:dev .)
 kubectl create secret generic aws-bedrock-creds -n konveyor-agents \
   --from-literal=AWS_ACCESS_KEY_ID="$(aws configure get aws_access_key_id)" \
   --from-literal=AWS_SECRET_ACCESS_KEY="$(aws configure get aws_secret_access_key)" \
@@ -59,82 +51,17 @@ kubectl create secret generic aws-bedrock-creds -n konveyor-agents \
 kubectl apply -f manifests/goose-bedrock.yaml
 ```
 
-Then create runs with `agentRef: migration-analyzer-goose` — no model
-selection needed: the agent declares exactly one Gateway
-(`bedrock-sonnet`) and the controller defaults to it (set `spec.gateway`
-to pick another declared Gateway). The simulator resolves the Gateway CR
-to `KONVEYOR_LLM_*` + `GOOSE_PROVIDER`/`GOOSE_MODEL` plus the credential
-Secret (keyless = whole-Secret envFrom), and clones the `repository`
-param into /workspace via initContainer — the same mapping the real
-harness owns.
+The chain from that Secret to goose's SigV4 calls is traced in
+[docs/bedrock-wiring.md](docs/bedrock-wiring.md).
 
-The full Secret → Gateway → env → goose → SigV4 chain, including how
-the #53 image differs from this POC one and which naming conventions are
-load-bearing, is traced in [docs/bedrock-wiring.md](docs/bedrock-wiring.md).
+## History (retired 2026-08-18)
 
-## editor-extensions integration (implemented)
-
-The VSCode integration lives in the `feature/cluster-agent-transport`
-branch of the git worktree at `~/Development/editor-extensions-cluster-agent`
-(based on konveyor/editor-extensions PR #1368, which unifies backends on
-ACP). What it adds:
-
-- `vscode/core/src/client/acpTransport.ts` — transport seam for the PR's
-  `GooseClient` (stdio subprocess remains the default; ~40-line change).
-- `vscode/core/src/client/clusterAgent/` — `ClusterAgentTransport`
-  (create AgentRun → wait → read key Secret → port-forward → WebSocket
-  with X-Secret-Key), AgentRun kube client, tunnel helper, CRD types.
-- Backend setting `konveyor-core.experimentalChat.agentBackend: "cluster"`
-  plus `clusterAgent.{namespace,agentRef,kubeconfig}` settings; the
-  workspace's git remote/branch are auto-detected and passed as run params.
-- `vscode/core/cluster-smoke.ts` — headless E2E: verified against both the
-  mock harness and real goose v1.39.0 on Bedrock.
-
-## Extension integration notes
-
-- `AgentRunClient` + `withRunConnection` are the seam: the extension
-  builds `AgentRunSpec` from the open workspace (git remote, branch),
-  renders `onSessionUpdate` into its chat webview, and maps
-  `onPermissionRequest` onto its diff-preview UX.
-- Swap direct CR creation for Hub `POST /hub/agentruns` and the
-  port-forward for Hub's `/stream` proxy when those land (ADR 0003) —
-  interface-compatible by design.
-- The ACP secret data key is assumed `ACP_SECRET_KEY`; the client
-  tolerates a single-entry secret under any key. Confirm with the real
-  harness when it exists.
-
-## Running the real hub + console locally (no shim)
-
-The hub serves the agentic endpoints itself now and the console is
-tackle2-ui `feature/agent-runs`. Two scripts stand that pair up on a
-disposable minikube profile — [docs/local-stack.md](docs/local-stack.md):
-
-```sh
-hack/hub-auth-up.sh     # real hub, auth on            → http://localhost:18080
-hack/ui-up.sh           # tackle2-ui console against it → http://localhost:18081  (admin / admin)
-```
-
-The hub-only auth rig behind it, with the 401/403 probe matrix used to
-review tackle2-hub#1119, is [docs/hub-auth-rig.md](docs/hub-auth-rig.md).
-
-## Where this repo is heading
-
-The real agentic-controller reconciler (upstream PR #4) is live on the
-cluster, so the **controller simulator is retired** — everything above that
-mentions it is historical. The verified client contract and the transport
-layering are captured in
-[ADR 0009](docs/adr/0009-client-contract-and-transports.md). The
-**hub-shim and the `ui/` prototype are retired too** (see above). The repo
-now hosts:
-
-- `harness-mock/`, `harness-goose/` — the agent-base images the sandboxes run.
-- `packages/agentic-client/` — browser-safe client core: contract types +
-  helpers, `AcpSession`, and the `ShimClient` transport.
-- `packages/hub-shim/` — localhost HTTP/WS proxy (SHIM HTTP API v1), the
-  reference shape for the future Konveyor Hub passthrough proxy.
-- `ui/` — browser UI prototype (Vite + PatternFly) driving runs through the shim.
-- `deploy/` — in-cluster deployment of the UI + gateway (images, RBAC,
-  kustomize manifests): the whole stack cluster-hosted, zero laptop
-  processes; the gateway direct-dials sandbox pods via service DNS.
-- `hack/upstream-patches/` — prepared (not submitted) upstream patches.
-- `packages/agentrun-client/` — the original node POC client, kept for reference.
+The repo started as a POC before the upstream reconciler, the hub endpoints
+and the console existed, and grew stand-ins for each: a **controller
+simulator**, the **`hub-shim`** localhost proxy (SHIM HTTP API v1, later
+the in-cluster "gateway"), a **Vite UI prototype**, the **`agentrun-client`**
+node POC, a **mock harness**, and `hack/demo-*.sh` around them. All of that
+was removed once the real pieces landed — recover any of it from git
+history before this commit. `docs/DEMO.md` and `docs/DEV_MODE.md` are kept
+as historical narrative (banners say so); the design record lives on in
+`docs/adr/`.

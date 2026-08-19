@@ -188,11 +188,18 @@ hub and any drift shows up as a concrete page/wire failure.
   filters, sorting, pagination, and URL-param persistence so
   per-application views deep-link, e.g.
   `/agent-runs?agr:filters={"application":["coolstore"]}`)
-- `ghcr.io/ibolton336/tackle2-hub:agentic` @
+- **Hub (live on ROKS since 2026-08-18):** `quay.io/jortel/tackle2-hub@sha256:d849875b3dcdb14929516e1b64ad354c42d46bc25c3fdc4b87cb0db279f02224`
+  (Jeff's rolling `:agent`, pushed 08-18 15:17Z from his post-review
+  branch — SA seed rename, role grants, PM acp fix, close-frame relay;
+  linux/amd64). Rollback refs, newest first:
+  `quay.io/jortel/tackle2-hub@sha256:d91360774eac150a466a81b802bfe505b195c46ba4725d4b42bf99cb2b1c0634`
+  (nonce-era ≥ `a3af8307`, live 08-11 → 08-18; needs the hand-made
+  `agentic.harness` SA row — the seed on d849875b adopted it by name), then
+  `ghcr.io/ibolton336/tackle2-hub:agentic` @
   `sha256:8a3fe0a09fb929acdd9c99006cff3d481e7e26a8c73d4e9119c1c1ab255f9752`
-  (multi-arch index, CI run 31515352680, built from
-  `jortel:tackle2-hub@agentic` @ `0969d735` — serves `/agentic/agentruns`;
-  run lists unfiltered, managed filter on the Agents list)
+  (multi-arch, CI run 31515352680, `jortel:tackle2-hub@agentic` @
+  `0969d735` — pre-nonce; the DB schema has since been migrated forward by
+  Jeff's builds, so rolling back this far is unverified).
 
 Deploy as a pair — mixed pairs break the agentic pages, and four
 contract eras now exist (`/agent/*`, `/agentic/runs`,
