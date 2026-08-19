@@ -118,3 +118,39 @@ that isn't there.
   UIs were built against): `packages/hub-shim`
 - Working agent base showing the KONVEYOR_* env contract end-to-end:
   `harness-goose/entrypoint.sh`
+
+---
+
+# Upstream feedback for konveyor/agentic-controller PR #36 (AgentPlaybookRun — since renamed AgentWorkflowRun)
+
+Findings from running the merged PR #36 controller (commit `fff23af`) on
+minikube, verified empirically 2026-07-21. Same format and standing rule
+as above: nothing here gets posted upstream by tooling — delivery is a
+human decision.
+
+## 7. Exit-code stage failures hang the playbook run instead of failing it
+
+**Where:** the AgentPlaybookRun controller's stage execution — sandbox
+pods are created with `restartPolicy: OnFailure`.
+
+**What:** a playbook stage whose container exits non-zero crashloops
+indefinitely: kubelet keeps restarting it, so the pod phase stays
+`Running`, Agent Sandbox v0.5.0 never reports a terminal failure reason,
+the stage's AgentRun never leaves `Running`, and the AgentPlaybookRun
+hangs with all subsequent stages `Pending` forever instead of failing the
+run. The PR's "stage failure fails the entire playbook run" semantics are
+therefore unreachable for exit-code failures — the only failure mode a
+run-to-completion container actually has. Repro: a two-stage playbook
+where stage 1's image runs `sh -c 'sleep 3; exit 1'` — observed 4+
+restarts and the run stuck `Running` >2.5 minutes with stage 2 `Pending`;
+the success-path control (same playbook, `exit 0`) completed in ~20s.
+
+**Asks:** (a) run-to-completion stage pods should use
+`restartPolicy: Never` or a bounded retry (`backoffLimit`-style) so a
+failing stage reaches a terminal pod state; (b) the AgentRun controller
+could treat sustained `CrashLoopBackOff` as failure — same surfacing gap
+as item 4's ask (c), where container-level failure never maps into
+AgentRun conditions; (c) until then, document the constraint so playbook
+authors know exit-code failures hang rather than fail.
+
+_(Item 7 recovered 2026-08-18 from a July worktree draft; the gap is tracked on the personal board as "fail-path gap" and is adjacent to AC #129 / A5. Not filed upstream yet.)_
