@@ -21,6 +21,15 @@
 > namespace and the hub cannot restart (`Tenant.Load` forbidden). The
 > `agentic-gateway` was NOT restored (retired).**
 >
+> **2026-08-18 (evening): UI rolled forward to `sha256:2dfae209…` @
+> `ae6835dbe`** — the chat panel dials on the page's run status (one dial
+> loop, no attempt counter, no second poll; the retry stays only because
+> the controller still flips Running before :4000 listens — upstream fix
+> in flight as konveyor/agentic-controller#130). Rolled via `kubectl set
+> image` on `deploy/tackle2-ui` (container `ui`, konveyor-agents);
+> route-verified: `/locales/en/translation.json` serves the new
+> `startingAcp`/`waitingForSandbox` strings.
+>
 > **2026-08-12: UI rolled forward again to `sha256:19a151a0…` @
 > `7787852`** — runs tables gain the application filter
 > (column + Name/Application/Phase filters + pagination + deep-linkable
@@ -178,7 +187,13 @@ hub and any drift shows up as a concrete page/wire failure.
 
 ## Image digests (this build — the `/agentic` pair, deploy together)
 
-- `ghcr.io/ibolton336/tackle2-ui:demo` @
+- **UI (live on ROKS since 2026-08-18):** `ghcr.io/ibolton336/tackle2-ui:demo` @
+  `sha256:2dfae209daaeca7ffe3efd4398a5076cdf09ebe9480c6059d4df8b3ac5564066`
+  (multi-arch index, amd64+arm64, CI run 32206879330, built from
+  `feature/agent-runs` @ `ae6835dbe` — everything in `7787852` plus the
+  chat panel driven by the page's run status: no second poll, one dial
+  loop with a single budget, "finished" derived from the run phase).
+  Rollback ref: `ghcr.io/ibolton336/tackle2-ui:demo` @
   `sha256:19a151a0a640f9be4c9bc4a64b9e7cb31d7b50fe682c3c99de1c084a6a3a40d0`
   (multi-arch index, amd64+arm64, CI run 31607291646, built from
   `feature/agent-runs` @ `7787852` — everything in `20162dc92` (agentruns
