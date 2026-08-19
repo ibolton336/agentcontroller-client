@@ -223,7 +223,7 @@ const store = {
     // STEER_RUNS): the run's own session streams to every viewer and
     // `_goose/unstable/session/steer` / `session/cancel` naming it are
     // relayed (or refused) the way the harness does.
-    ...["steer-run", "steer-late-run", "steer-off-run"].map((name, i) => ({
+    ...["steer-run", "steer-late-run", "steer-off-run", "ask-run"].map((name, i) => ({
       metadata: {
         name,
         creationTimestamp: ago(3),
@@ -600,11 +600,39 @@ const wsParse = (buf) => {
 // before the viewer attached — the tee replays only harness frames, so the
 // id must be discovered); "off" mirrors HARNESS_HITL_STEER=off (steer
 // -32601, cancel dropped).
+//   - `elicitation/create` (ask-run only): the "agent" asks the human a
+//       question the way the harness's ask_user tool does — forwarded to
+//       every viewer under a harness-style `kask-<n>` id (first an enum
+//       question, then a free-text one after the first is answered); the
+//       viewer's {action, content} answer is echoed into the stream; a
+//       viewer attaching mid-question is shown the pending ask, as the tee
+//       does.
 const STEER_RUNS = {
   "steer-run": { variant: "early" },
   "steer-late-run": { variant: "late" },
   "steer-off-run": { variant: "off" },
+  "ask-run": { variant: "early", ask: true },
 };
+const ASK_FIRST_MS = 6_000; // ask-run: first question after attach
+const ASK_SECOND_MS = 8_000; // ask-run: free-text follow-up after the first answer
+const ASKS = [
+  {
+    message: "Which database should the migrated service target? The repo's persistence.xml names an EAP datasource; I can wire Quarkus to either.",
+    requestedSchema: {
+      type: "object",
+      properties: { answer: { type: "string", title: "Answer", description: "Target database", enum: ["postgres", "mysql"] } },
+      required: ["answer"],
+    },
+  },
+  {
+    message: "Anything I should know before I touch the persistence layer (naming conventions, tables to leave alone)?",
+    requestedSchema: {
+      type: "object",
+      properties: { answer: { type: "string", title: "Answer", description: "Free text; leave empty for no preference" } },
+      required: ["answer"],
+    },
+  },
+];
 const STEER_PICKUP_MS = 3_000;
 const runStates = new Map(); // run name -> { sessionId, runId, active, viewers:Set<notify>, tick }
 const runState = (name) => {
@@ -615,6 +643,9 @@ const runState = (name) => {
       active: true,
       viewers: new Set(),
       tick: 0,
+      askSeq: 0,
+      pendingAsks: new Map(), // kask id -> frame (replayed to late viewers)
+      askTimer: undefined,
     });
   }
   return runStates.get(name);
@@ -632,11 +663,46 @@ const PLAN = (agentStatus) => ({
     { content: "Push results to the target branch", status: "pending", priority: "high" },
   ],
 });
+// The agent asks the human: forward under kask-<n> to every viewer (and
+// to anyone attaching while it waits), like the tee's ForwardElicitation.
+const askHuman = (name, idx) => {
+  const st = runState(name);
+  if (!st.active || idx >= ASKS.length) return;
+  const id = `kask-${++st.askSeq}`;
+  const frame = { jsonrpc: "2.0", id, method: "elicitation/create", params: { sessionId: st.sessionId, mode: "form", ...ASKS[idx] } };
+  st.pendingAsks.set(id, frame);
+  console.log(`[hub] RUN ${name}: asking viewers ${id}: ${JSON.stringify(ASKS[idx].message.slice(0, 60))}…`);
+  runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "I need a decision from you before I continue. " } });
+  for (const notify of st.viewers) notify.raw?.(frame);
+};
+const resolveAsk = (name, id, result) => {
+  const st = runStates.get(name);
+  if (!st || !st.pendingAsks.has(id)) {
+    console.log(`[hub] RUN ${name}: late/duplicate answer for ${id} — ignoring`);
+    return;
+  }
+  st.pendingAsks.delete(id);
+  const action = result?.action;
+  const answer = result?.content?.answer;
+  console.log(`[hub] RUN ${name}: ${id} ${action}${answer !== undefined ? `: ${JSON.stringify(answer)}` : ""}`);
+  const idx = Number(id.split("-")[1]) - 1;
+  if (action === "accept") {
+    runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Thanks — you answered "${answer ?? ""}". Continuing with that. ` } });
+  } else {
+    runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Understood — no answer given; I'll proceed with my best judgement. " } });
+  }
+  if (idx === 0) st.askTimer = setTimeout(() => askHuman(name, 1), ASK_SECOND_MS);
+};
 const attachRunStream = (name, notify) => {
   const st = runState(name);
   st.viewers.add(notify);
   // Harness replay ring: where the run stands, before anything live.
   notify("session/update", { sessionId: st.sessionId, update: PLAN(st.active ? "in_progress" : "completed") });
+  // Pending questions go after the status frames, as the tee replays them.
+  for (const frame of st.pendingAsks.values()) notify.raw?.(frame);
+  if (STEER_RUNS[name].ask && st.askSeq === 0 && !st.askTimer && st.active) {
+    st.askTimer = setTimeout(() => askHuman(name, 0), ASK_FIRST_MS);
+  }
   if (STEER_RUNS[name].variant === "early" && st.active) {
     // goose announced the active run when the turn started (the viewer saw it).
     setTimeout(() => {
@@ -668,6 +734,8 @@ const endRunTurn = (name, reason) => {
   st.active = false;
   clearInterval(st.ticker);
   st.ticker = undefined;
+  clearTimeout(st.askTimer);
+  st.pendingAsks.clear();
   runUpdate(st, { sessionUpdate: "session_info_update", _meta: { goose: { activeRunId: null } } });
   runUpdate(st, PLAN("completed"));
   console.log(`[hub] RUN ${name}: turn ended (${reason})`);
@@ -749,10 +817,16 @@ const speakAcp = (socket, name, behavior) => {
   const fail = (id, code, message, data) =>
     socket.write(wsText({ jsonrpc: "2.0", id, error: data === undefined ? { code, message } : { code, message, data } }));
   const notify = (method, params) => socket.write(wsText({ jsonrpc: "2.0", method, params }));
+  notify.raw = (frame) => socket.write(wsText(frame)); // a harness-allocated ask (has its own id)
   if (STEER_RUNS[name]) detachRun = attachRunStream(name, notify);
   const handle = (msg) => {
     const { id, method, params } = msg;
-    console.log(`[hub] ACP ${name} <- ${method}${id === undefined ? " (notification)" : ""}`);
+    console.log(`[hub] ACP ${name} <- ${method ?? `response to ${id}`}${id === undefined ? " (notification)" : ""}`);
+    // A viewer's answer to a harness-style ask never reaches goose's pipe.
+    if (method === undefined && typeof id === "string" && id.startsWith("kask-")) {
+      if (STEER_RUNS[name]) resolveAsk(name, id, msg.result);
+      return;
+    }
     if (STEER_RUNS[name] && interceptRunFrame(name, msg, { reply, fail, notify })) return;
     switch (method) {
       case "initialize":
