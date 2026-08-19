@@ -21,6 +21,23 @@
 > namespace and the hub cannot restart (`Tenant.Load` forbidden). The
 > `agentic-gateway` was NOT restored (retired).**
 >
+> **2026-08-19: controller + UI rolled to the ACPReady contract.**
+> `deploy/agentic-controller-controller-manager` (agentic-controller-system)
+> → `ghcr.io/ibolton336/agentic-controller@sha256:6986585c19ca7e8af8879643e64ef51154c986184766a05699e2fdeaa482ede5`
+> (tag `pr160`, built by `build-controller.yml` from
+> konveyor/agentic-controller#160 @ `f30937c`: `ACPReady` condition +
+> `tcpSocket:4000` readiness probe, `phase=Running` = pod running; the
+> ClusterRole `agentic-controller-manager-role` was patched to add
+> `pods get/list/watch` which the pod watch needs; rollback =
+> `quay.io/konveyor/agentic-controller:latest`, the extra rule is harmless
+> to leave). `deploy/tackle2-ui` → `sha256:4e1cc1fa…` @ `d6d50ba50`: the
+> chat panel dials ONCE on `ACPReady=True` (fallback loop only for
+> controllers without the condition). Live-proven with a throwaway
+> whoami-on-:4000 Agent: `phase=Running`, `ACPReady=True (Listening)`,
+> single in-cluster dial of `<run>.konveyor-agents.svc:4000` → 200; then
+> deleted. A real harness run through the console is the remaining
+> end-to-end check (needs a logged-in session).
+>
 > **2026-08-18 (evening): UI rolled forward to `sha256:2dfae209…` @
 > `ae6835dbe`** — the chat panel dials on the page's run status (one dial
 > loop, no attempt counter, no second poll; the retry stays only because
@@ -187,13 +204,15 @@ hub and any drift shows up as a concrete page/wire failure.
 
 ## Image digests (this build — the `/agentic` pair, deploy together)
 
-- **UI (live on ROKS since 2026-08-18):** `ghcr.io/ibolton336/tackle2-ui:demo` @
+- **UI (live on ROKS since 2026-08-19):** `ghcr.io/ibolton336/tackle2-ui:demo` @
+  `sha256:4e1cc1fa9847b49238839098a470f108ca1301fb74b696d74f1c1ec600ec8959`
+  (multi-arch index, CI run 32267694980, built from `feature/agent-runs` @
+  `d6d50ba50` — chat panel dials once on the AgentRun `ACPReady`
+  condition; fallback dial loop for controllers without it). Pairs with
+  the `pr160` controller above. Rollback refs, newest first:
   `sha256:2dfae209daaeca7ffe3efd4398a5076cdf09ebe9480c6059d4df8b3ac5564066`
-  (multi-arch index, amd64+arm64, CI run 32206879330, built from
-  `feature/agent-runs` @ `ae6835dbe` — everything in `7787852` plus the
-  chat panel driven by the page's run status: no second poll, one dial
-  loop with a single budget, "finished" derived from the run phase).
-  Rollback ref: `ghcr.io/ibolton336/tackle2-ui:demo` @
+  (CI run 32206879330, `ae6835dbe` — chat panel driven by the page's run
+  status, dial loop on phase=Running), then
   `sha256:19a151a0a640f9be4c9bc4a64b9e7cb31d7b50fe682c3c99de1c084a6a3a40d0`
   (multi-arch index, amd64+arm64, CI run 31607291646, built from
   `feature/agent-runs` @ `7787852` — everything in `20162dc92` (agentruns
