@@ -241,14 +241,19 @@ hub and any drift shows up as a concrete page/wire failure.
 
 ## Image digests (this build — the `/agentic` pair, deploy together)
 
-- **UI (live on ROKS since 2026-08-19 evening):** `ghcr.io/ibolton336/tackle2-ui:demo` @
+- **UI (live on ROKS since 2026-08-19 late):** `ghcr.io/ibolton336/tackle2-ui:demo` @
+  `sha256:4ed1c8db91099f3828e071430a1837becd796c7975649327d36c7a2151fe6c19`
+  (multi-arch index, CI run 32292497850, built from `feature/agent-runs` @
+  `ed0bd35d8` — transcript auto-scroll fixed (reader intent from input,
+  survives the full-screen toggle), on top of the ask cards, expand toggle
+  and steer box). Pairs with the `pr160` controller and the agent image
+  pinned on the Agent CR — now
+  `ghcr.io/ibolton336/agent-java@sha256:c4f75ac4c2234e2c7a44e4827206fa973ece464081fb75289307de4a30dcc993`
+  (same CI run, harness `feat/harness-ask-user` @ `56d45ed`: a pause /
+  check-in redirect routes through `ask_user`; previous pin `caf6edaa…`).
+  Rollback refs, newest first:
   `sha256:96c9f1c24a01fb83a23b598e3e923e8d8243ef2c7f0748a2e8b5bfe13474b1e6`
-  (multi-arch index, CI run 32289704197, built from `feature/agent-runs` @
-  `9785ef32b` — the agent's questions render as answerable cards
-  (elicitation/create), plus the expand-to-full-screen toggle and the
-  steer send box behind `AGENTIC_STEER_ENABLED`). Pairs with the `pr160`
-  controller and the ask-capable agent image pinned on the Agent CR (see
-  above). Rollback refs, newest first:
+  (CI run 32289704197, `9785ef32b` — ask cards), then
   `sha256:0e81fe79e2594557b2833fa013bcb597651f49fcddfbea19a1c799f5eceddc5f`
   (CI run 32284995333, `ad3b7fdf3` — expand toggle + steer), then
   `sha256:4771757311629fb8e67c2ff80843be84fd9fc9adb687b360d5b19eb483423bd2`
