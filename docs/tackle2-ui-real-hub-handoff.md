@@ -21,6 +21,26 @@
 > namespace and the hub cannot restart (`Tenant.Load` forbidden). The
 > `agentic-gateway` was NOT restored (retired).**
 >
+> **2026-08-19 (evening): "ask the human" on ROKS (option A, Ian's call).**
+> The agent can now stop and ask: the harness mounts an `ask_user` MCP tool
+> (the harness binary itself, `migration-harness ask-user-mcp`) whose
+> questions reach viewers through the tee as `elicitation/create` asks
+> (`kask-*` ids, pending asks replayed to late viewers) and block the turn
+> until a human answers; the UI renders each as a form card (Answer /
+> Decline). Harness branch `ibolton336/agentic-controller`
+> `feat/harness-ask-user` @ `94da2df` (not yet a PR); live-proven locally
+> against real goose 1.45 + Bedrock (the turn blocked until the viewer
+> answered "postgres" and the final sentence named it). Images: CI run
+> 32288862173 (`controller_ref=feat/harness-ask-user`) →
+> `ghcr.io/ibolton336/agent-java@sha256:caf6edaa5197c858d90616e9f2b8f454ef5fe228938faa1c0566c2ff6fc37525`
+> (on agent-base `sha256:fb5c1c56…`), proven to carry the tool with an
+> Always-pull throwaway pod; **the Agent CR `coolstore-quarkus-migrator`
+> is pinned to that digest** (was the `:demo` tag — IfNotPresent would have
+> kept a node-cached older image; rollback = set `spec.image` back to
+> `ghcr.io/ibolton336/agent-java:demo`). UI: `feature/agent-runs`
+> `9785ef32b` (ask cards) — see the digest block below for the roll.
+> `HARNESS_HITL_ASK=off` on a run/Agent env disables the tool.
+>
 > **2026-08-19 (later): UI rolled to the steer build — `deploy/tackle2-ui` →
 > `sha256:4771757311629fb8e67c2ff80843be84fd9fc9adb687b360d5b19eb483423bd2` @ `2082e16c0`
 > (CI run 32280563070). The run chat's send box is now REAL goose steer on the
