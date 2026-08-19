@@ -1,5 +1,10 @@
 # Dev mode: running the agentic platform locally
 
+> **Historical (2026-06/07).** The simulator, the shim and the Vite UI are
+> retired. To run the real hub + console locally see
+> [local-stack.md](local-stack.md); the auth surface alone is
+> [hub-auth-rig.md](hub-auth-rig.md).
+
 Everything needed to run the full loop on one laptop: minikube stands in
 for the cluster, the **simulator** stands in for the not-yet-written
 AgentRun controller, a **mock harness** (or real goose + Bedrock) stands

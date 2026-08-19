@@ -103,14 +103,29 @@ ACP). What it adds:
   tolerates a single-entry secret under any key. Confirm with the real
   harness when it exists.
 
+## Running the real hub + console locally (no shim)
+
+The hub serves the agentic endpoints itself now and the console is
+tackle2-ui `feature/agent-runs`. Two scripts stand that pair up on a
+disposable minikube profile — [docs/local-stack.md](docs/local-stack.md):
+
+```sh
+hack/hub-auth-up.sh     # real hub, auth on            → http://localhost:18080
+hack/ui-up.sh           # tackle2-ui console against it → http://localhost:18081  (admin / admin)
+```
+
+The hub-only auth rig behind it, with the 401/403 probe matrix used to
+review tackle2-hub#1119, is [docs/hub-auth-rig.md](docs/hub-auth-rig.md).
+
 ## Where this repo is heading
 
 The real agentic-controller reconciler (upstream PR #4) is live on the
 cluster, so the **controller simulator is retired** — everything above that
 mentions it is historical. The verified client contract and the transport
 layering are captured in
-[ADR 0009](docs/adr/0009-client-contract-and-transports.md). The repo now
-hosts:
+[ADR 0009](docs/adr/0009-client-contract-and-transports.md). The
+**hub-shim and the `ui/` prototype are retired too** (see above). The repo
+now hosts:
 
 - `harness-mock/`, `harness-goose/` — the agent-base images the sandboxes run.
 - `packages/agentic-client/` — browser-safe client core: contract types +

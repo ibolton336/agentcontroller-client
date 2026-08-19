@@ -1,0 +1,209 @@
+# Auth-ON hub rig: everything the agentic surface needs to answer
+# "what happens with AUTH_REQUIRED=true", with no operator and no keycloak.
+#
+# Applied by hack/hub-auth-up.sh, which substitutes the placeholders:
+#   HUB_IMAGE_PLACEHOLDER     -> $HUB_IMAGE
+#   PULL_POLICY_PLACEHOLDER   -> Never for a local build, IfNotPresent otherwise
+#   AUTH_REQUIRED_PLACEHOLDER -> $AUTH_REQUIRED (default true)
+#   UI_ORIGIN_PLACEHOLDER     -> http://localhost:$UI_LOCAL_PORT (hack/ui-up.sh)
+#   UI_DEV_ORIGIN_PLACEHOLDER -> http://localhost:$UI_DEV_PORT (tackle2-ui `npm run start:dev`)
+#
+# Deliberately NOT here: the tackle operator, keycloak, a Postgres, a PVC.
+# Modern konveyor hubs carry a builtin OIDC provider, so auth needs nothing
+# external. The DB is an emptyDir on purpose — replacing the pod reseeds it,
+# which is what makes seed changes (roles, service accounts) testable in one
+# rollout instead of a fresh cluster.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: konveyor-agents
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tackle-hub
+  namespace: konveyor-agents
+---
+# The hub creates AgentRuns and their token Secrets in its own namespace.
+# Namespace-local on purpose: the rig should not need cluster-admin to run.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tackle-hub-agentic
+  namespace: konveyor-agents
+rules:
+  - apiGroups: ["konveyor.io"]
+    resources:
+      - agents
+      - agentruns
+      - agentworkflows
+      - agentworkflowruns
+      - gateways
+      - skillcards
+      - skillcollections
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["konveyor.io"]
+    resources:
+      - agentruns/status
+      - agentworkflowruns/status
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # The hub's own CRs. auth.Tenant.Load() lists identityproviders,
+  # ldapproviders and idpclients at boot and exits if it can't; the jsd
+  # migrator lists schemas; the task/addon managers watch the rest. Without
+  # this rule the hub logs one RBAC "forbidden" and exits 0 — a crash loop
+  # that looks like a slow start.
+  - apiGroups: ["tackle.konveyor.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+# The builtin OIDC provider's browser client — the operator's `web-ui`
+# IdpClient (id 1) plus literal redirect entries for the local origins.
+#
+# Why literals: the hub expands the ${issuer.*} pattern per request and
+# writes the FIRST matching redirect_uri back over the pattern
+# (internal/auth/storage.go Client.Inject, same on upstream main), so after
+# the first login only that one origin is accepted until the hub restarts.
+# One UI behind one route never notices; a laptop with a login script AND
+# a UI on another port does. Literals are never rewritten and match
+# exactly, so every known local origin keeps working regardless of which
+# logged in first.
+apiVersion: tackle.konveyor.io/v1alpha1
+kind: IdpClient
+metadata:
+  name: web-ui
+  namespace: konveyor-agents
+spec:
+  id: 1
+  clientId: web-ui
+  applicationType: web
+  grants:
+    - urn:ietf:params:oauth:grant-type:jwt-bearer
+    - authorization_code
+    - refresh_token
+  redirectURIs:
+    - "${issuer.proto}://${issuer.host}{,*}/**"
+    - "http://localhost:8080/"      # hack/hub-auth-login.sh (nothing listens; the code is read from the redirect)
+    - "UI_ORIGIN_PLACEHOLDER"       # the console image from hack/ui-up.sh (redirect_uri = window.location.origin)
+    - "UI_DEV_ORIGIN_PLACEHOLDER"   # a tackle2-ui dev server (`npm run start:dev`)
+  scopes:
+    - offline_access
+    - openid
+    - profile
+    - email
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tackle-hub-agentic
+  namespace: konveyor-agents
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tackle-hub-agentic
+subjects:
+  - kind: ServiceAccount
+    name: tackle-hub
+    namespace: konveyor-agents
+---
+# Rig-only values. Real deployments take these from the operator.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tackle-hub-rig
+  namespace: konveyor-agents
+stringData:
+  ENCRYPTION_PASSPHRASE: rig-passphrase-not-a-secret
+  ADDON_TOKEN: rig-addon-token-not-a-secret
+  APIKEY_SECRET: rig-apikey-secret-not-a-secret
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tackle-hub
+  namespace: konveyor-agents
+  labels:
+    app: tackle-hub
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # emptyDir DB: never run two pods against a half-seeded DB
+  selector:
+    matchLabels:
+      app: tackle-hub
+  template:
+    metadata:
+      labels:
+        app: tackle-hub
+    spec:
+      serviceAccountName: tackle-hub
+      containers:
+        - name: hub
+          image: HUB_IMAGE_PLACEHOLDER
+          imagePullPolicy: PULL_POLICY_PLACEHOLDER
+          env:
+            # The whole point of the rig. AUTH_REQUIRED=false is a knob for
+            # people who only want the console, not the auth surface.
+            - name: AUTH_REQUIRED
+              value: "AUTH_REQUIRED_PLACEHOLDER"
+            # Access tokens default to 5 minutes and the UI cannot renew
+            # them (see docs/local-stack.md) — a laptop session would die
+            # every few minutes. Seconds; 8 hours here.
+            - name: OIDC_TOKEN_LIFESPAN
+              value: "28800"
+            # Where the hub creates AgentRuns + their token Secrets.
+            - name: NAMESPACE
+              value: konveyor-agents
+            - name: DB_PATH
+              value: /var/lib/tackle/hub.db
+            - name: BUCKET_PATH
+              value: /var/lib/tackle/bucket
+            - name: ENCRYPTION_PASSPHRASE
+              valueFrom:
+                secretKeyRef: { name: tackle-hub-rig, key: ENCRYPTION_PASSPHRASE }
+            - name: ADDON_TOKEN
+              valueFrom:
+                secretKeyRef: { name: tackle-hub-rig, key: ADDON_TOKEN }
+            - name: APIKEY_SECRET
+              valueFrom:
+                secretKeyRef: { name: tackle-hub-rig, key: APIKEY_SECRET }
+          ports:
+            - containerPort: 8080
+              name: http
+          # The hub only listens after seeding + domain load, so a TCP open
+          # means "actually serving". Without this, `rollout status` returns
+          # while the hub is still seeding and the first port-forward dies
+          # on connection refused. TCP rather than HTTP because with
+          # AUTH_REQUIRED every HTTP path answers 401, which a probe reads
+          # as failure.
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 2
+            failureThreshold: 90
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/tackle
+      volumes:
+        # Reseeds on every pod replace — that is the feature, not a shortcut.
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tackle-hub
+  namespace: konveyor-agents
+spec:
+  selector:
+    app: tackle-hub
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

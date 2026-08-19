@@ -1,5 +1,10 @@
 # Demo: the agentic platform, end to end (~10 minutes)
 
+> **Shim era (2026-07).** This demo drives the `ui/` prototype through
+> `packages/hub-shim`. The hub now serves the agentic endpoints itself and
+> the console lives in tackle2-ui — for the real pair on a laptop, no shim,
+> use [local-stack.md](local-stack.md). Kept for the goose+Bedrock/handoff beats.
+
 What this shows: **konveyor/agentic-controller PR #4 doing real work.** A
 browser UI and the VSCode extension drive the same AgentRun/ACP contract,
 a real goose+Bedrock agent reads a real repository, and a run started in

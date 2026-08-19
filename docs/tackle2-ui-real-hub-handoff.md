@@ -6,6 +6,21 @@
 > later the same day for the sidebar-unmount fix; verified live — run
 > history, stage runs now visible, Agents page through the managed
 > filter, sidebar + hamburger toggle survive the agentic routes).
+> **2026-08-17: the cluster was RESET (Ian) — `konveyor-agents` deleted
+> outright (console, IdpClient, gateway, every CR incl. the run history, the
+> Bedrock secret) and David's getting-started stack installed in its own
+> namespaces (`agentic-controller-system` on `quay.io/konveyor/agentic-controller:latest`,
+> `agent-sandbox-system` v0.5.5). 2026-08-18: rebuilt minimal — namespace,
+> hub RBAC (`hub-agentic-swap.yaml`), IdpClient (`idpclient-webui.yaml` plus
+> the console route origin as a literal redirect), the console (this doc's
+> UI digest, from `agentic-stack.yaml`), Bedrock gateways, coolstore demo
+> agent — and the hub rolled to Jeff's `quay.io/jortel/tackle2-hub@sha256:d849875b3dcdb14929516e1b64ad354c42d46bc25c3fdc4b87cb0db279f02224`
+> (`:agent` pushed 08-18 15:17Z; rollback ref `d9136077…`): SA seed rename +
+> role grants live, run-create needs no workaround; three console runs green.
+> Trap: the hub's Role/RoleBinding live in `konveyor-agents` — delete that
+> namespace and the hub cannot restart (`Tenant.Load` forbidden). The
+> `agentic-gateway` was NOT restored (retired).**
+>
 > **2026-08-12: UI rolled forward again to `sha256:19a151a0…` @
 > `7787852`** — runs tables gain the application filter
 > (column + Name/Application/Phase filters + pagination + deep-linkable

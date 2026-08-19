@@ -2,6 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "tackle2-ui-webpack-dev-9002",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/ibolton/Development/tackle2-ui && npm run start:dev -w client -- --port 9002"
+      ],
+      "port": 9002
+    },
+    {
       "name": "agent-ui",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "agentic-controller/clients/ui", "--", "--port", "5175", "--strictPort"],
@@ -118,6 +127,40 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["hack/mock-inventory-stack.mjs"],
       "port": 18090
+    },
+    {
+      "name": "mockstack-b",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["hack/mock-inventory-stack.mjs"],
+      "port": 18091,
+      "env": {
+        "PORT": "18091"
+      }
+    },
+    {
+      "name": "tackle2-ui-prod-mock-b",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
+      "port": 9112,
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "9112",
+        "TACKLE_HUB_URL": "http://localhost:18091",
+        "AGENTIC_ENABLED": "true"
+      }
+    },
+    {
+      "name": "tackle2-ui-prod-mock-b-steer",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/ibolton/Development/tackle2-ui/server/src/index.js"],
+      "port": 9113,
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "9113",
+        "TACKLE_HUB_URL": "http://localhost:18091",
+        "AGENTIC_ENABLED": "true",
+        "AGENTIC_STEER_ENABLED": "true"
+      }
     },
     {
       "name": "tackle2-ui-dev-mockhub",

@@ -118,6 +118,14 @@ const store = {
       metadata: { name: "patternfly-migration", creationTimestamp: ago(180), labels: { [MANAGED]: "true" } },
       spec: { stages: [{ name: "migrate", agentRef: "freeform-agent" }] },
     },
+    {
+      // Ready per its status, but the stage references an agent that does
+      // not exist — name refs fail at run, so the launch preflight must
+      // name the dangling agent instead of fanning out doomed runs.
+      metadata: { name: "dangling-stage-workflow", creationTimestamp: ago(60), labels: { [MANAGED]: "true" } },
+      spec: { stages: [{ name: "migrate", agentRef: "ghost-agent" }] },
+      status: { conditions: [{ type: "Ready", status: "True" }] },
+    },
   ],
   agentruns: [
     {
@@ -242,6 +250,8 @@ const applications = [
     name: "coolstore",
     description: "Java EE monolith storefront",
     repository: { kind: "git", url: "https://github.com/ibolton336/coolstore.git", branch: "main" },
+    // Source-role credential assigned — the push-preflight happy case.
+    identities: [{ id: 900, name: "coolstore-github-pat", role: "source" }],
     tags: [],
   },
   { id: 2, name: "binary-only-app", description: "No repository — the bulk-run exclusion case", tags: [] },
@@ -249,6 +259,8 @@ const applications = [
     id: 3,
     name: "tackle-testapp",
     description: "Test app on a develop branch",
+    // No identities — eligible to launch, but the modal must warn the push
+    // will be denied (the fleet-smoke 3-of-4 failure mode).
     repository: { kind: "git", url: "https://github.com/konveyor/tackle-testapp.git", branch: "develop" },
     tags: [],
   },

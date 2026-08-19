@@ -1,0 +1,82 @@
+# The tackle2-ui agent-runs console (feature/agent-runs) in front of the
+# rig's hub — no shim: every agentic call rides the UI's own /hub proxy to
+# the hub's /agentic/* surface, and ACP chat rides the same proxy's
+# WebSocket upgrade to the hub relay.
+#
+# Applied by hack/ui-up.sh, which substitutes:
+#   UI_IMAGE_PLACEHOLDER      -> $UI_IMAGE (digest-pinned by default)
+#   AUTH_REQUIRED_PLACEHOLDER -> what the hub Deployment on the profile runs with
+#   UI_ORIGIN_PLACEHOLDER     -> http://localhost:$UI_LOCAL_PORT
+#
+# Same shape as the ROKS deployment (deploy/roks/agentic-stack.yaml) minus
+# the cluster-specific CA. Note the OIDC pair: the image's entrypoint exits
+# unless BOTH OIDC_ISSUER and OIDC_CLIENT_ID are set whenever AUTH_REQUIRED
+# is not "false"; on this branch only the entrypoint reads OIDC_ISSUER — the
+# browser authority is same-origin /oidc, proxied to the hub.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tackle2-ui
+  namespace: konveyor-agents
+  labels:
+    app: tackle2-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tackle2-ui
+  template:
+    metadata:
+      labels:
+        app: tackle2-ui
+    spec:
+      containers:
+        - name: ui
+          image: UI_IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PORT
+              value: "8080"
+            # In-cluster hub service; ALL agentic traffic rides it too.
+            - name: TACKLE_HUB_URL
+              value: http://tackle-hub.konveyor-agents.svc:8080
+            # Without this the agentic nav and routes do not render.
+            - name: AGENTIC_ENABLED
+              value: "true"
+            - name: AUTH_REQUIRED
+              value: "AUTH_REQUIRED_PLACEHOLDER"
+            - name: OIDC_ISSUER
+              value: UI_ORIGIN_PLACEHOLDER/oidc
+            - name: OIDC_CLIENT_ID
+              value: web-ui
+            - name: RWX_SUPPORTED
+              value: "false"
+            # The entrypoint does `cp <sa ca.crt> ${NODE_EXTRA_CA_CERTS}`
+            # unconditionally on Kubernetes — unset, that cp fails and the
+            # pod crash-loops with "missing destination file operand". Same
+            # value the operator (and ROKS) uses; harmless for plain http.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /opt/app-root/src/ca.crt
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 2
+            failureThreshold: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tackle2-ui
+  namespace: konveyor-agents
+spec:
+  selector:
+    app: tackle2-ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
