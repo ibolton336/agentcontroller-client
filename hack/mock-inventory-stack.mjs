@@ -15,7 +15,9 @@
 //     30s TTL), required by the WS upgrade in BOTH auth modes like the hub
 //   - /agentic/agentruns/:name/acp?nonce=... answers a real WebSocket
 //     upgrade (101) and speaks just enough ACP for the chat panel to reach
-//     Connected (initialize, session/new, canned session/prompt); a
+//     Connected (initialize, session/new, canned session/prompt) — and, for
+//     the steer-* runs, the harness tee's side of a live run: the RUN's
+//     session teed to every viewer plus goose's steer/cancel relay; a
 //     missing/stale/reused nonce is refused with 401 like the real hub
 //     (mint 201, fresh dial 101, reused/bare dial 401).
 //   - Scripted runs replay the pod-boot race the panel has to ride out
@@ -217,6 +219,25 @@ const store = {
         conditions: [acpCond(true)],
       },
     },
+    // The three steer-* runs speak the tee's side of a LIVE run (see
+    // STEER_RUNS): the run's own session streams to every viewer and
+    // `_goose/unstable/session/steer` / `session/cancel` naming it are
+    // relayed (or refused) the way the harness does.
+    ...["steer-run", "steer-late-run", "steer-off-run"].map((name, i) => ({
+      metadata: {
+        name,
+        creationTimestamp: ago(3),
+        labels: { [MANAGED]: "true", [APPLICATION]: "1" },
+      },
+      spec: { agentRef: "migration-analyzer", gateway: "default-gateway" },
+      status: {
+        phase: "Running",
+        startTime: ago(3),
+        sandboxName: `sandbox-steer-x${i + 1}`,
+        secretKeyRef: { name: `sandbox-steer-x${i + 1}-key` },
+        conditions: [acpCond(true)],
+      },
+    })),
     {
       // Belongs to app 3 — must NOT appear in app 1's drawer tab.
       metadata: {
@@ -395,11 +416,15 @@ const scriptClock = (name, start = false) => {
   }
   return scriptStart.has(name) ? Date.now() - scriptStart.get(name) : 0;
 };
+// Status overrides set by ACP events (a viewer's cancel fails the run).
+const runOverrides = new Map(); // run name -> status
 // The run as the hub would serve it right now (scripted status applied).
 const runView = (run, start = false) => {
   const ms = scriptClock(run.metadata.name, start);
   const status = ms === undefined ? undefined : SCRIPTED[run.metadata.name].status?.(ms);
-  return status ? { ...run, status } : run;
+  const view = status ? { ...run, status } : run;
+  const override = runOverrides.get(run.metadata.name);
+  return override ? { ...view, status: { ...view.status, ...override } } : view;
 };
 const acpBehavior = (name) => {
   const ms = scriptClock(name);
@@ -555,17 +580,180 @@ const wsParse = (buf) => {
 // session/new, session/prompt (canned reply), session/cancel. session/load
 // is refused so a reconnect falls back to session/new (what a fresh goose
 // would do). "flaky" drops the socket FLAKY_DROP_MS after session/new.
+// ---- the tee's side of a live run (agentic-controller#96), for steer-* runs
+//
+// Every viewer attached to one of these runs gets the RUN session's frames
+// (harness plan ladder replayed on attach, then a slow agent stream) on top
+// of its own private session. Frames naming the run session are handled
+// the way the tee relays them to goose (v1.45.0 shapes, source-verified):
+//   - `_goose/unstable/session/steer` {sessionId, expectedRunId, prompt}
+//       -> {runId, messageId}; a session_info_update with
+//          _meta.goose.queuedSteer; STEER_PICKUP_MS later the pickup
+//          streams as user_message_chunk flagged _meta.goose.steer and an
+//          agent acknowledgement. Empty/stale expectedRunId -> -32602 with
+//          goose's data (the stale case names the actual run id, which is
+//          how a late viewer learns it); no active run -> -32602 too.
+//   - `session/cancel` naming the run session ends the turn: activeRunId
+//       null, the run's status flips to Failed (human abort != success).
+// Variants: "early" announces activeRunId right after attach (the viewer
+// was there when the turn started); "late" never does (the turn started
+// before the viewer attached — the tee replays only harness frames, so the
+// id must be discovered); "off" mirrors HARNESS_HITL_STEER=off (steer
+// -32601, cancel dropped).
+const STEER_RUNS = {
+  "steer-run": { variant: "early" },
+  "steer-late-run": { variant: "late" },
+  "steer-off-run": { variant: "off" },
+};
+const STEER_PICKUP_MS = 3_000;
+const runStates = new Map(); // run name -> { sessionId, runId, active, viewers:Set<notify>, tick }
+const runState = (name) => {
+  if (!runStates.has(name)) {
+    runStates.set(name, {
+      sessionId: `run-session-${name}`,
+      runId: `run_${crypto.randomUUID().slice(0, 8)}`,
+      active: true,
+      viewers: new Set(),
+      tick: 0,
+    });
+  }
+  return runStates.get(name);
+};
+const runUpdate = (st, update) => {
+  for (const notify of st.viewers) {
+    notify("session/update", { sessionId: st.sessionId, update });
+  }
+};
+const PLAN = (agentStatus) => ({
+  sessionUpdate: "plan",
+  entries: [
+    { content: "Prepare workspace: clone, branch, grounding data", status: "completed", priority: "high" },
+    { content: "Agent works the stage", status: agentStatus, priority: "high" },
+    { content: "Push results to the target branch", status: "pending", priority: "high" },
+  ],
+});
+const attachRunStream = (name, notify) => {
+  const st = runState(name);
+  st.viewers.add(notify);
+  // Harness replay ring: where the run stands, before anything live.
+  notify("session/update", { sessionId: st.sessionId, update: PLAN(st.active ? "in_progress" : "completed") });
+  if (STEER_RUNS[name].variant === "early" && st.active) {
+    // goose announced the active run when the turn started (the viewer saw it).
+    setTimeout(() => {
+      if (!st.viewers.has(notify)) return;
+      notify("session/update", {
+        sessionId: st.sessionId,
+        update: { sessionUpdate: "session_info_update", _meta: { goose: { activeRunId: st.runId } } },
+      });
+    }, 800);
+  }
+  // A slow agent stream so the transcript looks alive.
+  if (!st.ticker && st.active) {
+    st.ticker = setInterval(() => {
+      if (!st.active || st.viewers.size === 0) return;
+      st.tick += 1;
+      const n = st.tick;
+      runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Step ${n}: inspecting the next module… ` } });
+      runUpdate(st, { sessionUpdate: "tool_call", toolCallId: `tc-${n}`, title: `shell: rg -n "javax\." src/ (batch ${n})`, status: "in_progress", kind: "execute" });
+      setTimeout(() => runUpdate(st, { sessionUpdate: "tool_call_update", toolCallId: `tc-${n}`, status: "completed", content: [{ type: "content", content: { type: "text", text: `${3 + n} matches` } }] }), 1200);
+    }, 6_000);
+  }
+  return () => {
+    st.viewers.delete(notify);
+  };
+};
+const endRunTurn = (name, reason) => {
+  const st = runState(name);
+  if (!st.active) return;
+  st.active = false;
+  clearInterval(st.ticker);
+  st.ticker = undefined;
+  runUpdate(st, { sessionUpdate: "session_info_update", _meta: { goose: { activeRunId: null } } });
+  runUpdate(st, PLAN("completed"));
+  console.log(`[hub] RUN ${name}: turn ended (${reason})`);
+  if (reason === "cancelled") {
+    runOverrides.set(name, {
+      phase: "Failed",
+      completionTime: new Date().toISOString(),
+      conditions: [{ type: "ACPReady", status: "False", reason: "Finished", message: "The run has finished; its ACP endpoint is gone" }],
+    });
+  }
+};
+// Handles a viewer frame that names the run session (returns true if consumed).
+const interceptRunFrame = (name, msg, { reply, fail, notify }) => {
+  const st = runStates.get(name);
+  const { id, method, params } = msg;
+  if (!st || params?.sessionId !== st.sessionId) return false;
+  const { variant } = STEER_RUNS[name];
+  switch (method) {
+    case "_goose/unstable/session/steer": {
+      if (variant === "off") {
+        fail(id, -32601, "viewer steering is disabled by harness policy (HARNESS_HITL_STEER=off)");
+        return true;
+      }
+      const expected = params.expectedRunId;
+      const text = (params.prompt ?? []).map((b) => b?.text ?? "").join("");
+      if (!expected) return fail(id, -32602, "Invalid params", "expectedRunId must not be empty"), true;
+      if (!st.active) return fail(id, -32602, "Invalid params", "no active run to steer"), true;
+      if (expected !== st.runId) {
+        fail(id, -32602, "Invalid params", {
+          message: `expected active run id \`${expected}\` but found \`${st.runId}\``,
+          expectedRunId: expected,
+          actualRunId: st.runId,
+        });
+        return true;
+      }
+      if (!text) return fail(id, -32602, "Invalid params", "prompt must not be empty"), true;
+      const messageId = `steer_${crypto.randomUUID()}`;
+      console.log(`[hub] RUN ${name}: steer queued ${messageId}: ${JSON.stringify(text)}`);
+      reply(id, { runId: st.runId, messageId });
+      runUpdate(st, { sessionUpdate: "session_info_update", _meta: { goose: { queuedSteer: { messageId, runId: st.runId } } } });
+      setTimeout(() => {
+        if (!st.active) return; // goose discards steers the turn never reached
+        console.log(`[hub] RUN ${name}: steer picked up ${messageId}`);
+        runUpdate(st, {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text },
+          messageId,
+          _meta: { goose: { messageId, steer: true, created: Math.floor(Date.now() / 1000) } },
+        });
+        runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Understood — redirecting: ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}. ` } });
+      }, STEER_PICKUP_MS);
+      return true;
+    }
+    case "session/cancel":
+      if (variant === "off") {
+        console.log(`[hub] RUN ${name}: viewer cancel dropped — steering disabled`);
+        return true;
+      }
+      console.log(`[hub] RUN ${name}: viewer cancelled the run session`);
+      setTimeout(() => endRunTurn(name, "cancelled"), 500);
+      return true;
+    case "session/prompt":
+      if (st.active) {
+        fail(id, -32602, "session already has an active run; use _goose/unstable/session/steer");
+        return true;
+      }
+      return false;
+    default:
+      return false;
+  }
+};
+
 let sessionCounter = 0;
 const speakAcp = (socket, name, behavior) => {
   let buf = Buffer.alloc(0);
   let dropTimer;
+  let detachRun;
   const reply = (id, result) => socket.write(wsText({ jsonrpc: "2.0", id, result }));
-  const fail = (id, code, message) =>
-    socket.write(wsText({ jsonrpc: "2.0", id, error: { code, message } }));
+  const fail = (id, code, message, data) =>
+    socket.write(wsText({ jsonrpc: "2.0", id, error: data === undefined ? { code, message } : { code, message, data } }));
   const notify = (method, params) => socket.write(wsText({ jsonrpc: "2.0", method, params }));
+  if (STEER_RUNS[name]) detachRun = attachRunStream(name, notify);
   const handle = (msg) => {
     const { id, method, params } = msg;
     console.log(`[hub] ACP ${name} <- ${method}${id === undefined ? " (notification)" : ""}`);
+    if (STEER_RUNS[name] && interceptRunFrame(name, msg, { reply, fail, notify })) return;
     switch (method) {
       case "initialize":
         return reply(id, { protocolVersion: 1, agentCapabilities: { loadSession: false } });
@@ -596,6 +784,9 @@ const speakAcp = (socket, name, behavior) => {
       }
       case "session/cancel":
         return; // notification; the prompt still ends on its own
+      case "_goose/unstable/session/steer":
+        // A private session with nothing running: goose's own answer.
+        return fail(id, -32602, "Invalid params", "no active run to steer");
       default:
         if (id !== undefined) fail(id, -32601, `unknown method ${method}`);
     }
@@ -621,7 +812,10 @@ const speakAcp = (socket, name, behavior) => {
       }
     }
   });
-  socket.on("close", () => clearTimeout(dropTimer));
+  socket.on("close", () => {
+    clearTimeout(dropTimer);
+    detachRun?.();
+  });
 };
 
 // WS upgrade for /agentic/agentruns/:name/acp?nonce=... — nonce is redeemed
