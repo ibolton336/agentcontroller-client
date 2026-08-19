@@ -47,6 +47,19 @@ const redeemNonce = (n) => {
 
 // ---------------------------------------------------------------- fixtures
 
+// agentic-controller#160: the controller reports ACPReady (True once the
+// sandbox pod passes its tcpSocket:4000 readiness probe), and the UI dials
+// exactly once on it. Older controllers have no such condition — the
+// `legacy-*`/unscripted fixtures keep that shape so the fallback loop is
+// still exercised.
+const acpCond = (listening, msg) => ({
+  type: "ACPReady",
+  status: listening ? "True" : "False",
+  reason: listening ? "Listening" : "NotListening",
+  message: msg ?? (listening ? "ACP endpoint accepts connections" : "Pod is Running but not Ready"),
+});
+
+
 const store = {
   agents: [
     {
@@ -144,12 +157,13 @@ const store = {
         startTime: ago(120),
         sandboxName: "sandbox-coolstore-x1",
         secretKeyRef: { name: "sandbox-coolstore-x1-key" },
+        conditions: [acpCond(true)],
       },
     },
     {
-      // Scripted (SCRIPTED below): Pending -> Running-but-not-listening ->
-      // listening. The chat panel must wait, then ride out refused dials
-      // without ever showing a failure, then connect.
+      // Scripted (SCRIPTED below): Pending -> Running with ACPReady=False
+      // -> ACPReady=True. The chat panel must wait on the condition, then
+      // connect on its first dial.
       metadata: {
         name: "boot-race-run",
         creationTimestamp: ago(1),
@@ -159,7 +173,19 @@ const store = {
       status: { phase: "Pending" },
     },
     {
-      // Scripted: Running-but-not-listening, then finishes before it ever
+      // Scripted: like boot-race-run but from a pre-#160 controller (no
+      // ACPReady): the panel's fallback loop must ride out refused dials
+      // without ever showing a failure, then connect.
+      metadata: {
+        name: "legacy-boot-race-run",
+        creationTimestamp: ago(1),
+        labels: { [MANAGED]: "true", [APPLICATION]: "1" },
+      },
+      spec: { agentRef: "migration-analyzer", gateway: "default-gateway" },
+      status: { phase: "Pending" },
+    },
+    {
+      // Scripted: Running with ACPReady=False, then finishes before it ever
       // listens. The panel must land on "finished", not "failed".
       metadata: {
         name: "boot-race-finishes",
@@ -188,6 +214,7 @@ const store = {
         startTime: ago(5),
         sandboxName: "sandbox-flaky-x3",
         secretKeyRef: { name: "sandbox-flaky-x3-key" },
+        conditions: [acpCond(true)],
       },
     },
     {
@@ -307,6 +334,8 @@ const FLAKY_DROP_MS = 8_000;
 
 const SCRIPTED = {
   "boot-race-run": {
+    // #160 controller: Pending (pod not running) -> Running with
+    // ACPReady=False while the agent boots -> ACPReady=True.
     status: (ms) =>
       ms < RACE_RUNNING_MS
         ? { phase: "Pending" }
@@ -315,21 +344,45 @@ const SCRIPTED = {
             startTime: new Date(Date.now() - (ms - RACE_RUNNING_MS)).toISOString(),
             sandboxName: "sandbox-race-x1",
             secretKeyRef: { name: "sandbox-race-x1-key" },
+            conditions: [acpCond(ms >= RACE_LISTENING_MS)],
           },
     acp: (ms) => (ms < RACE_LISTENING_MS ? "refused" : "listening"),
   },
   "boot-race-finishes": {
+    // #160 controller: Running + ACPReady=False, then Succeeded before it
+    // ever listened (ACPReady=False/Finished).
     status: (ms) =>
       ms < FINISHES_AT_MS
-        ? undefined // fixture status (Running, populated)
+        ? {
+            phase: "Running",
+            startTime: new Date(Date.now() - ms).toISOString(),
+            sandboxName: "sandbox-race-x2",
+            secretKeyRef: { name: "sandbox-race-x2-key" },
+            conditions: [acpCond(false)],
+          }
         : {
             phase: "Succeeded",
             startTime: new Date(Date.now() - ms).toISOString(),
             completionTime: new Date(Date.now() - (ms - FINISHES_AT_MS)).toISOString(),
             sandboxName: "sandbox-race-x2",
             secretKeyRef: { name: "sandbox-race-x2-key" },
+            conditions: [{ type: "ACPReady", status: "False", reason: "Finished", message: "The run has finished; its ACP endpoint is gone" }],
           },
     acp: () => "refused",
+  },
+  "legacy-boot-race-run": {
+    // Pre-#160 controller: Running the moment the Sandbox exists, no
+    // ACPReady at all — the UI's fallback dial loop has to ride this out.
+    status: (ms) =>
+      ms < RACE_RUNNING_MS
+        ? { phase: "Pending" }
+        : {
+            phase: "Running",
+            startTime: new Date(Date.now() - (ms - RACE_RUNNING_MS)).toISOString(),
+            sandboxName: "sandbox-race-x4",
+            secretKeyRef: { name: "sandbox-race-x4-key" },
+          },
+    acp: (ms) => (ms < RACE_LISTENING_MS ? "refused" : "listening"),
   },
   "flaky-run": { acp: () => "flaky" },
 };
