@@ -241,11 +241,18 @@ hub and any drift shows up as a concrete page/wire failure.
 
 ## Image digests (this build — the `/agentic` pair, deploy together)
 
-- **UI (live on ROKS since 2026-08-19, later roll):** `ghcr.io/ibolton336/tackle2-ui:demo` @
+- **UI (live on ROKS since 2026-08-19 evening):** `ghcr.io/ibolton336/tackle2-ui:demo` @
+  `sha256:96c9f1c24a01fb83a23b598e3e923e8d8243ef2c7f0748a2e8b5bfe13474b1e6`
+  (multi-arch index, CI run 32289704197, built from `feature/agent-runs` @
+  `9785ef32b` — the agent's questions render as answerable cards
+  (elicitation/create), plus the expand-to-full-screen toggle and the
+  steer send box behind `AGENTIC_STEER_ENABLED`). Pairs with the `pr160`
+  controller and the ask-capable agent image pinned on the Agent CR (see
+  above). Rollback refs, newest first:
+  `sha256:0e81fe79e2594557b2833fa013bcb597651f49fcddfbea19a1c799f5eceddc5f`
+  (CI run 32284995333, `ad3b7fdf3` — expand toggle + steer), then
   `sha256:4771757311629fb8e67c2ff80843be84fd9fc9adb687b360d5b19eb483423bd2`
-  (multi-arch index, CI run 32280563070, built from `feature/agent-runs` @
-  `2082e16c0` — send box = real steer behind `AGENTIC_STEER_ENABLED`, see
-  above). Pairs with the `pr160` controller. Rollback refs, newest first:
+  (CI run 32280563070, `2082e16c0` — real steer behind the flag), then
   `sha256:4e1cc1fa9847b49238839098a470f108ca1301fb74b696d74f1c1ec600ec8959`
   (CI run 32267694980, `d6d50ba50` — chat panel dials once on the AgentRun
   `ACPReady` condition; fallback dial loop for controllers without it), then
