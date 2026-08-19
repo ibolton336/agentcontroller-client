@@ -21,6 +21,17 @@
 > namespace and the hub cannot restart (`Tenant.Load` forbidden). The
 > `agentic-gateway` was NOT restored (retired).**
 >
+> **2026-08-19 (later): UI rolled to the steer build — `deploy/tackle2-ui` →
+> `sha256:4771757311629fb8e67c2ff80843be84fd9fc9adb687b360d5b19eb483423bd2` @ `2082e16c0`
+> (CI run 32280563070). The run chat's send box is now REAL goose steer on the
+> run's session (relayed by the harness tee; late viewers discover the run
+> id from goose's mismatch error) plus a confirmed "Stop the agent's turn",
+> both behind the new UI env flag `AGENTIC_STEER_ENABLED` — **set to `true`
+> on ROKS for Ian's live test; the dev-preview posture is `false`/unset (no
+> send box at all).** Flip with
+> `oc set env deploy/tackle2-ui AGENTIC_STEER_ENABLED=false -n konveyor-agents`.
+> Rollback ref `sha256:4e1cc1fa…` (below).**
+>
 > **2026-08-19: controller + UI rolled to the ACPReady contract.**
 > `deploy/agentic-controller-controller-manager` (agentic-controller-system)
 > → `ghcr.io/ibolton336/agentic-controller@sha256:6986585c19ca7e8af8879643e64ef51154c986184766a05699e2fdeaa482ede5`
@@ -121,6 +132,12 @@ deployment.
   - `AGENTIC_ENABLED=true` — plain flag now; without it the agentic nav and
     routes do not render. (`AGENTIC_SHIM_URL` is gone; setting it does
     nothing.)
+  - `AGENTIC_STEER_ENABLED=true|false` (default false) — shows the run
+    chat's send box, which steers the LIVE run (goose
+    `_goose/unstable/session/steer` + `session/cancel` on the run session,
+    relayed by the harness tee; the harness's own kill switch is
+    `HARNESS_HITL_STEER=off`). Leave unset for the read-only dev-preview
+    posture.
   - `TACKLE_HUB_URL=<in-cluster hub service URL>` — same value the stock
     image already uses; ALL agentic traffic rides it too.
 - Deploy the image however the env manages the UI (operator image override
@@ -204,12 +221,14 @@ hub and any drift shows up as a concrete page/wire failure.
 
 ## Image digests (this build — the `/agentic` pair, deploy together)
 
-- **UI (live on ROKS since 2026-08-19):** `ghcr.io/ibolton336/tackle2-ui:demo` @
+- **UI (live on ROKS since 2026-08-19, later roll):** `ghcr.io/ibolton336/tackle2-ui:demo` @
+  `sha256:4771757311629fb8e67c2ff80843be84fd9fc9adb687b360d5b19eb483423bd2`
+  (multi-arch index, CI run 32280563070, built from `feature/agent-runs` @
+  `2082e16c0` — send box = real steer behind `AGENTIC_STEER_ENABLED`, see
+  above). Pairs with the `pr160` controller. Rollback refs, newest first:
   `sha256:4e1cc1fa9847b49238839098a470f108ca1301fb74b696d74f1c1ec600ec8959`
-  (multi-arch index, CI run 32267694980, built from `feature/agent-runs` @
-  `d6d50ba50` — chat panel dials once on the AgentRun `ACPReady`
-  condition; fallback dial loop for controllers without it). Pairs with
-  the `pr160` controller above. Rollback refs, newest first:
+  (CI run 32267694980, `d6d50ba50` — chat panel dials once on the AgentRun
+  `ACPReady` condition; fallback dial loop for controllers without it), then
   `sha256:2dfae209daaeca7ffe3efd4398a5076cdf09ebe9480c6059d4df8b3ac5564066`
   (CI run 32206879330, `ae6835dbe` — chat panel driven by the page's run
   status, dial loop on phase=Running), then

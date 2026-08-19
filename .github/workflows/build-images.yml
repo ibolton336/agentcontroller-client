@@ -24,8 +24,12 @@ on:
   workflow_dispatch:
     inputs:
       controller_ref:
-        description: agentic-controller ref to build from
-        default: demo/dylan-workload
+        description: >-
+          agentic-controller ref to build from (the fork's main, kept in sync
+          with upstream via `gh repo sync ibolton336/agentic-controller`). The
+          old demo/dylan-workload default predates the harness ACP tee (#96)
+          and silently shipped tee-less agent images behind the :demo tag.
+        default: main
       tackle2_ui_ref:
         description: tackle2-ui ref to build from
         default: feature/agent-runs
@@ -56,7 +60,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/agentic-controller
-          ref: ${{ inputs.controller_ref || 'demo/dylan-workload' }}
+          ref: ${{ inputs.controller_ref || 'main' }}
           path: controller
 
       - uses: actions/checkout@v4
