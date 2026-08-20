@@ -325,7 +325,10 @@ spec:
               conditions:
                 description: |-
                   Conditions represent the latest available observations of the
-                  AgentRun's state.
+                  AgentRun's state. Ready tracks the run's overall outcome (False
+                  while in progress with the current step as its reason, True on
+                  success); ACPReady tracks whether the agent's ACP endpoint accepts
+                  connections (see AgentRunConditionACPReady).
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -395,7 +398,12 @@ spec:
                 type: integer
               phase:
                 default: Pending
-                description: Phase is the current phase of the AgentRun.
+                description: |-
+                  Phase is the current phase of the AgentRun. Running means the sandbox
+                  pod is running (the agent process is executing); it says nothing about
+                  whether the agent's ACP endpoint accepts connections yet — that is the
+                  ACPReady condition. A run whose pod finishes before the controller
+                  observes it running may go straight from Pending to a terminal phase.
                 enum:
                 - Pending
                 - Running
@@ -424,7 +432,9 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               startTime:
-                description: StartTime is the time the Sandbox started running.
+                description: |-
+                  StartTime is the time the sandbox pod started running (the Sandbox
+                  creation time if the pod finished before the controller saw it run).
                 format: date-time
                 type: string
             type: object

@@ -160,6 +160,14 @@ spec:
             # Where the hub creates AgentRuns + their token Secrets.
             - name: NAMESPACE
               value: konveyor-agents
+            # The hub stamps its own HUB_BASE_URL into every AgentRun it
+            # creates (Settings.Addon.Hub.URL, default http://localhost:8080
+            # — internal/api/agentic.go on the #1119 branch). localhost
+            # inside the sandbox pod is the pod itself, so without this
+            # every harness loops forever on "Hub Resolution". Must be the
+            # in-cluster service URL, not the port-forward.
+            - name: HUB_BASE_URL
+              value: http://tackle-hub.konveyor-agents.svc:8080
             - name: DB_PATH
               value: /var/lib/tackle/hub.db
             - name: BUCKET_PATH

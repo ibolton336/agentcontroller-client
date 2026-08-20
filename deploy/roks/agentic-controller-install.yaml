@@ -1,9 +1,10 @@
-# Generated from konveyor/agentic-controller UPSTREAM main @ 059b6f60
-# (post-#100 Gateway rename, post-#80 Workflow rename) via "kubectl kustomize"
-# on config/default, image repointed to ghcr.io/ibolton336/agentic-controller:demo
-# and imagePullPolicy Always (moving tag). CRDs and RBAC come from the SAME
-# tree as the binary — rebuild + push the :demo image from the same commit
-# before applying (see build-images.sh header).
+# Generated from konveyor/agentic-controller UPSTREAM main @ 0f2d883
+# (post-#149 2xx-only Gateway verify, post-#160 ACPReady + pods RBAC) via
+# "kubectl kustomize" on config/default, image repointed to
+# ghcr.io/ibolton336/agentic-controller:demo and imagePullPolicy Always
+# (moving tag). CRDs and RBAC come from the SAME tree as the binary —
+# rebuild + push the :demo image from the same commit before applying
+# (see build-images.sh header).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -339,7 +340,10 @@ spec:
               conditions:
                 description: |-
                   Conditions represent the latest available observations of the
-                  AgentRun's state.
+                  AgentRun's state. Ready tracks the run's overall outcome (False
+                  while in progress with the current step as its reason, True on
+                  success); ACPReady tracks whether the agent's ACP endpoint accepts
+                  connections (see AgentRunConditionACPReady).
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -409,7 +413,12 @@ spec:
                 type: integer
               phase:
                 default: Pending
-                description: Phase is the current phase of the AgentRun.
+                description: |-
+                  Phase is the current phase of the AgentRun. Running means the sandbox
+                  pod is running (the agent process is executing); it says nothing about
+                  whether the agent's ACP endpoint accepts connections yet — that is the
+                  ACPReady condition. A run whose pod finishes before the controller
+                  observes it running may go straight from Pending to a terminal phase.
                 enum:
                 - Pending
                 - Running
@@ -438,7 +447,9 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               startTime:
-                description: StartTime is the time the Sandbox started running.
+                description: |-
+                  StartTime is the time the sandbox pod started running (the Sandbox
+                  creation time if the pod finished before the controller saw it run).
                 format: date-time
                 type: string
             type: object
@@ -1942,6 +1953,14 @@ rules:
   verbs:
   - create
   - patch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - ""
   resources:
