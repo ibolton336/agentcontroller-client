@@ -26,7 +26,13 @@
 //   - skills-run-coolstore speaks that same tee for an agent that carries
 //     skills (ADR 0014): goose's load_skill tool calls stream with their
 //     rawInput (the skill, then skill/relative/file), then the turn ends
-//     and the run flips to Succeeded.
+//     and the run flips to Succeeded. It also carries goose's custom
+//     `_goose/unstable/session/update` channel the harness enables with
+//     the customNotifications capability: usage_update (context occupancy
+//     + accumulated tokens/cost), message_usage (one per model response)
+//     and status_message (progress lines, and the harness's own closing
+//     stage-outcome notice), plus the harness's final `git push` as a
+//     harness-push-N tool_call — the read-only view's completeness case.
 //   - Scripted runs replay the pod-boot race the panel has to ride out
 //     (see SCRIPTED below): the clock starts on the first GET of the run's
 //     detail, so restart the mock to replay.
@@ -861,11 +867,32 @@ const ASKS = [
 const TRANSCRIPT_TICK_MS = 250;
 const SKILL_DIR = "/home/harness/.agents/skills/javaee-to-quarkus";
 const says = (text) => ({ sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
+// goose's custom channel (wire shape per goose-sdk-types custom_notifications.rs).
+const CONTEXT_LIMIT = 200_000;
+const usage = (used, inTok, outTok, cost) => ({
+  sessionUpdate: "usage_update",
+  used,
+  contextLimit: CONTEXT_LIMIT,
+  accumulatedInputTokens: inTok,
+  accumulatedOutputTokens: outTok,
+  ...(cost === undefined ? {} : { accumulatedCost: cost }),
+});
+const messageUsage = (messageId, inputTokens, outputTokens, cost) => ({
+  sessionUpdate: "message_usage",
+  messageId,
+  usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, cost, costSource: "estimated" },
+});
+const notice = (message) => ({ sessionUpdate: "status_message", status: { type: "notice", message } });
+const progress = (message) => ({ sessionUpdate: "status_message", status: { type: "progress", message } });
+const GOOSE = "_goose/unstable/session/update"; // cue channel marker
 const calls = (toolCallId, title, kind, rawInput) => ({ sessionUpdate: "tool_call", toolCallId, title, kind, status: "in_progress", ...(rawInput ? { rawInput } : {}) });
 const returns = (toolCallId, text) => ({ sessionUpdate: "tool_call_update", toolCallId, status: "completed", content: [{ type: "content", content: { type: "text", text } }] });
 const TRANSCRIPTS = {
   skills: [
+    [300, progress("Thinking…"), GOOSE],
     [500, says("Coolstore is a Java EE monolith and the stage asks for Quarkus. The javaee-to-quarkus skill covers exactly that — loading it before I touch anything. ")],
+    [1_200, messageUsage("msg-1", 9_800, 120, 0.031), GOOSE],
+    [1_200, usage(9_920, 9_800, 120, 0.031), GOOSE],
     [1_500, calls("ls-1", "load_skill", "other", { name: "javaee-to-quarkus" })],
     [
       2_500,
@@ -886,6 +913,8 @@ const TRANSCRIPTS = {
         ].join("\n")
       ),
     ],
+    [3_200, messageUsage("msg-2", 11_400, 90, 0.036), GOOSE],
+    [3_200, usage(21_410, 21_200, 210, 0.067), GOOSE],
     [3_500, says("The skill keeps its annotation table in a supporting file — loading that too. ")],
     [4_000, calls("ls-2", "load_skill", "other", { name: "javaee-to-quarkus/references/annotation-map.md" })],
     [
@@ -906,10 +935,19 @@ const TRANSCRIPTS = {
         ].join("\n")
       ),
     ],
+    [5_800, messageUsage("msg-3", 12_600, 70, 0.039), GOOSE],
+    [5_800, usage(34_080, 33_800, 280, 0.106), GOOSE],
     [6_000, says("Inventorying javax.* usages before changing anything. ")],
     [6_500, calls("tc-1", `shell: rg -n "javax\." src/`, "execute")],
     [7_700, returns("tc-1", "23 matches in 6 files")],
     [9_000, says("23 usages in 6 files, all covered by the annotation map. Applying the mapping module by module, then pushing the branch. ")],
+    [9_300, messageUsage("msg-4", 13_900, 260, 0.045), GOOSE],
+    [9_300, usage(48_240, 47_700, 540, 0.151), GOOSE],
+    // The harness's own tail: the final push as a harness tool call on the
+    // run session, then its closing outcome notice (tee.EmitRunNotice).
+    [9_800, calls("harness-push-1", "git push (final)", "execute")],
+    [10_300, { sessionUpdate: "tool_call_update", toolCallId: "harness-push-1", status: "completed" }],
+    [10_400, notice("stage succeeded — results pushed to branch konveyor/migration-1755770000"), GOOSE],
     [10_500, null],
   ],
 };
@@ -937,6 +975,12 @@ const runState = (name) => {
 const runUpdate = (st, update) => {
   for (const notify of st.viewers) {
     notify("session/update", { sessionId: st.sessionId, update });
+  }
+};
+// goose's custom channel, teed to viewers unchanged (same params shape).
+const gooseUpdate = (st, update) => {
+  for (const notify of st.viewers) {
+    notify(GOOSE, { sessionId: st.sessionId, update });
   }
 };
 const PLAN = (agentStatus) => ({
@@ -1024,8 +1068,9 @@ const attachRunStream = (name, notify) => {
       if (!st.active || st.paused || st.viewers.size === 0) return;
       st.played += TRANSCRIPT_TICK_MS;
       while (st.active && st.cue < cues.length && cues[st.cue][0] <= st.played) {
-        const [, update] = cues[st.cue++];
+        const [, update, channel] = cues[st.cue++];
         if (update === null) endRunTurn(name, "finished");
+        else if (channel === GOOSE) gooseUpdate(st, update);
         else runUpdate(st, update);
       }
     }, TRANSCRIPT_TICK_MS);
@@ -1037,6 +1082,9 @@ const attachRunStream = (name, notify) => {
       st.tick += 1;
       const n = st.tick;
       runUpdate(st, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `Step ${n}: inspecting the next module… ` } });
+      gooseUpdate(st, messageUsage(`msg-${n}`, 8_000 + n * 600, 90, 0.02 + n * 0.004));
+      gooseUpdate(st, usage(8_000 + n * 1_200, 8_000 + n * 1_100, n * 90, 0.02 + n * 0.012));
+      if (n % 3 === 0) gooseUpdate(st, progress(`Compacting context (${n} steps in)…`));
       runUpdate(st, { sessionUpdate: "tool_call", toolCallId: `tc-${n}`, title: `shell: rg -n "javax\." src/ (batch ${n})`, status: "in_progress", kind: "execute" });
       setTimeout(() => runUpdate(st, { sessionUpdate: "tool_call_update", toolCallId: `tc-${n}`, status: "completed", content: [{ type: "content", content: { type: "text", text: `${3 + n} matches` } }] }), 1200);
     }, 6_000);
