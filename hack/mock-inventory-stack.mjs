@@ -64,9 +64,9 @@ const redeemNonce = (n) => {
 
 // agentic-controller#160: the controller reports ACPReady (True once the
 // sandbox pod passes its tcpSocket:4000 readiness probe), and the UI dials
-// exactly once on it. Older controllers have no such condition — the
-// `legacy-*`/unscripted fixtures keep that shape so the fallback loop is
-// still exercised.
+// exactly once on it and on nothing else. `legacy-boot-race-run` keeps the
+// pre-#160 shape (no condition) to show the console waiting rather than
+// dialing.
 const acpCond = (listening, msg) => ({
   type: "ACPReady",
   status: listening ? "True" : "False",
@@ -277,6 +277,36 @@ const store = {
       },
       status: { conditions: [{ type: "Ready", status: "True" }] },
     },
+    {
+      // agentic-controller#167: a native gcp-vertex-ai endpoint serves no
+      // GET /v1/models, so the verification Job fails for good and the
+      // Gateway parks at Ready=False/ConnectionFailed — the console names
+      // the hold instead of a bare Not Ready.
+      metadata: { name: "vertex-gateway", creationTimestamp: ago(400) },
+      spec: {
+        provider: "gcp-vertex-ai",
+        endpoint: "https://us-central1-aiplatform.googleapis.com",
+        credentialRef: { secretName: "vertex-creds", key: "service-account.json" },
+        model: { name: "gemini-2.5-pro", contextWindow: 1048576, tier: "premium" },
+      },
+      status: {
+        connectionVerified: false,
+        conditions: [{ type: "Ready", status: "False", reason: "ConnectionFailed", message: 'Verification Job "vertex-gateway-verify-k2m9x" failed' }],
+      },
+    },
+    {
+      // Verification in flight: Ready=False/Verifying is a plain wait.
+      metadata: { name: "openai-proxy", creationTimestamp: ago(1) },
+      spec: {
+        provider: "openai",
+        endpoint: "https://llm-proxy.konveyor.svc:8321/v1",
+        credentialRef: { secretName: "llm-proxy-key", key: "api-key" },
+        model: { name: "gpt-4.1", contextWindow: 1000000 },
+      },
+      status: {
+        conditions: [{ type: "Ready", status: "False", reason: "Verifying", message: "Verification Job created" }],
+      },
+    },
   ],
   workflows: [
     {
@@ -340,8 +370,9 @@ const store = {
     },
     {
       // Scripted: like boot-race-run but from a pre-#160 controller (no
-      // ACPReady): the panel's fallback loop must ride out refused dials
-      // without ever showing a failure, then connect.
+      // ACPReady ever). The console dials on that condition and nothing
+      // else now, so this run stays on its "no ACPReady condition"
+      // notice — never dialed, never failed — until it finishes.
       metadata: {
         name: "legacy-boot-race-run",
         creationTimestamp: ago(1),
@@ -439,7 +470,26 @@ const store = {
         labels: { [MANAGED]: "true" },
       },
       spec: { agentRef: "freeform-agent" },
-      status: { phase: "Failed", startTime: ago(300), completionTime: ago(295) },
+      status: {
+        phase: "Failed",
+        startTime: ago(300),
+        completionTime: ago(295),
+        conditions: [{ type: "Ready", status: "False", reason: "Failed", message: "Sandbox finished with reason: Error", lastTransitionTime: ago(295) }],
+      },
+    },
+    {
+      // Never started: the controller parks a run whose Agent is not Ready
+      // on Ready=False/AgentNotReady, phase stays Pending (no sandbox).
+      metadata: {
+        name: "run-blocked-agent-not-ready",
+        creationTimestamp: ago(30),
+        labels: { [MANAGED]: "true", [APPLICATION]: "3" },
+      },
+      spec: { agentRef: "ghost-agent" },
+      status: {
+        phase: "Pending",
+        conditions: [{ type: "Ready", status: "False", reason: "AgentNotReady", message: 'Agent "ghost-agent" is not Ready', lastTransitionTime: ago(30) }],
+      },
     },
   ],
   workflowruns: [
@@ -466,6 +516,25 @@ const store = {
         startTime: ago(90),
         completionTime: ago(70),
         stages: [{ name: "migrate", phase: "Succeeded" }],
+      },
+    },
+    {
+      // A stage failed: the workflow run fails with StageFailed naming it.
+      metadata: {
+        name: "upgrade-run-failed",
+        creationTimestamp: ago(200),
+        labels: { [MANAGED]: "true", [APPLICATION]: "1" },
+      },
+      spec: { workflowRef: "java-ee-to-quarkus" },
+      status: {
+        phase: "Failed",
+        startTime: ago(200),
+        completionTime: ago(190),
+        stages: [
+          { name: "assess", phase: "Succeeded", agentRunName: "run-testapp-done" },
+          { name: "migrate", phase: "Failed", agentRunName: "legacy-run-nolabel" },
+        ],
+        conditions: [{ type: "Ready", status: "False", reason: "StageFailed", message: 'Stage "migrate" failed: AgentRun "legacy-run-nolabel" Failed', lastTransitionTime: ago(190) }],
       },
     },
   ],
@@ -598,7 +667,8 @@ const SCRIPTED = {
   },
   "legacy-boot-race-run": {
     // Pre-#160 controller: Running the moment the Sandbox exists, no
-    // ACPReady at all — the UI's fallback dial loop has to ride this out.
+    // ACPReady at all — the console must NOT dial (the acp() script is
+    // kept so a regression that dials again is visible in the log).
     status: (ms) =>
       ms < RACE_RUNNING_MS
         ? { phase: "Pending" }
