@@ -141,13 +141,15 @@ Grounded in the API that exists (main) or is approved (#157). Ordered cheapest-f
 
 ---
 
-## Appendix — upstream issue drafts (not posted; Ian posts)
+## Appendix — upstream issue drafts (POSTED 2026-08-21 as AC#171 / AC#172)
 
 Both are deliberately short per the house style: state the gap, ask the question, offer a design. Target repo: konveyor/agentic-controller.
 
 **Retargeted 2026-08-21 evening.** djzager's [#169](https://github.com/konveyor/agentic-controller/pull/169) (opened 08-20 21:54Z, "Closes #119", ADR 0018) implements the `Succeeded` condition and `terminationData` — but `agentContainerTermination` scans `containerStatuses` for the agent container only, and a pre-Running pod collapses to `Succeeded{Unknown, PodNotRunning, "… (Pending)"}`. So Draft 1 is no longer a #119 comment: #119 is about to close, and the ask is a follow-up to #169's mechanism. Both drafts go as their own issues; Ian's review of #169 carries a one-line pointer. Verified against #157 @ `efc511f5`, #169 @ `f62bfc65`, main @ `a7dfc73`. Corrections folded in since the first cut: #157 already bounds git clones (`CloneTimeout` = 3 min) and already sets `FallbackToLogsOnError` on the loader (both asked for in the 08-19 review, both accepted); pod read RBAC exists since #160; a never-starting pod reads `Pending`, not `Running`.
 
-### Draft 1 — new issue: skill-loader failures and never-starting pods never reach `AgentRun.status`
+**Posted 2026-08-21 19:44Z on Ian's "do it":** Draft 1 → [#171](https://github.com/konveyor/agentic-controller/issues/171), Draft 2 → [#172](https://github.com/konveyor/agentic-controller/issues/172) — bodies exactly as below with the placeholders resolved, no labels (left to triage). The one-line pointer for the #169 review is still Ian's to drop in.
+
+### Draft 1 — filed as [#171](https://github.com/konveyor/agentic-controller/issues/171): skill-loader failures and never-starting pods never reach `AgentRun.status`
 
 Title: `Skill-loader failures and never-starting pods never reach AgentRun.status`
 
@@ -163,7 +165,7 @@ Title: `Skill-loader failures and never-starting pods never reach AgentRun.statu
 >
 > Would you rather a reason per init container (`SkillLoadFailed`) than a generic `InitFailed` with the container named in the message? Happy to take the tackle2-ui side once the reasons exist — run detail renders `message` next to the phase.
 
-### Draft 2 — new issue: expose the skills a run actually assembled on `AgentRun.status`
+### Draft 2 — filed as [#172](https://github.com/konveyor/agentic-controller/issues/172): expose the skills a run actually assembled on `AgentRun.status`
 
 Title: `Expose the skills a run actually assembled on AgentRun.status`
 
@@ -174,8 +176,8 @@ Title: `Expose the skills a run actually assembled on AgentRun.status`
 > 1. **Declared, at sandbox creation** — the controller already builds `KONVEYOR_SKILL_SOURCES` (`api/skill.Source`); mirror that list as `status.skillSources`. No new RBAC, available from `Pending`.
 > 2. **Assembled, after init** — the loader already writes `/opt/skills/.konveyor-skills.json` (`api/skill.Manifest`: skills `{name, description, type, source}` + `rules`). Have it also write a compact form (`{name, type, source}` + rule names; 4 KiB termination-message budget) to `/dev/termination-log` on success — `FallbackToLogsOnError` only covers the failure path — and have #169's termination read copy it from the init container into `status.skills` / `status.rules`. That is the ground truth for the run detail page, and what the `load_skill` tool calls in the ACP stream can be matched against ("did the model actually use skill X").
 >
-> Is (1) acceptable on its own as a first step? It is a status-only change on the existing code path. (2) rides the same init-container read as ‹Draft 1 issue›.
+> Is (1) acceptable on its own as a first step? It is a status-only change on the existing code path. (2) rides the same init-container read as #171.
 
 ### Pointer for Ian's #169 review (one line)
 
-> `agentContainerTermination` only looks at `containerStatuses`; once #157 lands, the skill-loader's failure message sits in `initContainerStatuses` and the run ends as a bare `PodFailed` — filed as ‹Draft 1 issue› rather than widening this PR.
+> `agentContainerTermination` only looks at `containerStatuses`; once #157 lands, the skill-loader's failure message sits in `initContainerStatuses` and the run ends as a bare `PodFailed` — filed as #171 rather than widening this PR.
