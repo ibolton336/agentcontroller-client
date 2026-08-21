@@ -147,7 +147,7 @@ Both are deliberately short per the house style: state the gap, ask the question
 
 **Retargeted 2026-08-21 evening.** djzager's [#169](https://github.com/konveyor/agentic-controller/pull/169) (opened 08-20 21:54Z, "Closes #119", ADR 0018) implements the `Succeeded` condition and `terminationData` — but `agentContainerTermination` scans `containerStatuses` for the agent container only, and a pre-Running pod collapses to `Succeeded{Unknown, PodNotRunning, "… (Pending)"}`. So Draft 1 is no longer a #119 comment: #119 is about to close, and the ask is a follow-up to #169's mechanism. Both drafts go as their own issues; Ian's review of #169 carries a one-line pointer. Verified against #157 @ `efc511f5`, #169 @ `f62bfc65`, main @ `a7dfc73`. Corrections folded in since the first cut: #157 already bounds git clones (`CloneTimeout` = 3 min) and already sets `FallbackToLogsOnError` on the loader (both asked for in the 08-19 review, both accepted); pod read RBAC exists since #160; a never-starting pod reads `Pending`, not `Running`.
 
-**Posted 2026-08-21 19:44Z on Ian's "do it":** Draft 1 → [#171](https://github.com/konveyor/agentic-controller/issues/171), Draft 2 → [#172](https://github.com/konveyor/agentic-controller/issues/172) — bodies exactly as below with the placeholders resolved, no labels (left to triage). The one-line pointer for the #169 review is still Ian's to drop in.
+**Posted 2026-08-21 19:44Z on Ian's "do it":** Draft 1 → [#171](https://github.com/konveyor/agentic-controller/issues/171), Draft 2 → [#172](https://github.com/konveyor/agentic-controller/issues/172) — bodies exactly as below with the placeholders resolved, no labels (left to triage). The one-line pointer was posted 2026-08-21 19:47Z as an inline review comment on #169 (`agentrun_controller.go:894` @ `f62bfc65`, event COMMENT): https://github.com/konveyor/agentic-controller/pull/169#pullrequestreview-4996869327
 
 ### Draft 1 — filed as [#171](https://github.com/konveyor/agentic-controller/issues/171): skill-loader failures and never-starting pods never reach `AgentRun.status`
 
@@ -178,6 +178,6 @@ Title: `Expose the skills a run actually assembled on AgentRun.status`
 >
 > Is (1) acceptable on its own as a first step? It is a status-only change on the existing code path. (2) rides the same init-container read as #171.
 
-### Pointer for Ian's #169 review (one line)
+### Pointer posted on #169 (2026-08-21 19:47Z, inline review comment)
 
 > `agentContainerTermination` only looks at `containerStatuses`; once #157 lands, the skill-loader's failure message sits in `initContainerStatuses` and the run ends as a bare `PodFailed` — filed as #171 rather than widening this PR.
