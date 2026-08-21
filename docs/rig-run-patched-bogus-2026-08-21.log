@@ -1,0 +1,32 @@
+== 19:01:14 pod log
+2026-08-21T19:01:14.923Z	INFO	[header] Hub Resolution
+time=2026-08-21T19:01:14Z level=info msg=[binding] |200|  GET /applications/1
+2026-08-21T19:01:14.929Z	INFO	[ok] app: kit-verify-app (id=1), repo: https://github.com/ibolton336/coolstore
+time=2026-08-21T19:01:14Z level=info msg=[binding] |200|  GET /applications/1/identities
+time=2026-08-21T19:01:14Z level=info msg=[binding] |200|  GET /identities
+2026-08-21T19:01:14.930Z	INFO	[header] Git Setup
+2026-08-21T19:01:14.930Z	INFO	cloning https://github.com/ibolton336/coolstore...
+2026-08-21T19:01:16.942Z	INFO	[ok] cloned to /workspace/repo, branch konveyor/migration-1787338874
+2026-08-21T19:01:16.942Z	INFO	no skills found at /opt/skills/*/SKILL.md — proceeding without skills
+2026-08-21T19:01:16.942Z	INFO	[header] Goose Setup
+2026-08-21T19:01:16.943Z	INFO	goose serve started on port 4001 (pid 30)
+2026-08-21T19:01:17.448Z	INFO	[ok] ACP initialized (protocol version 0)
+2026-08-21T19:01:17.533Z	INFO	[ok] ACP session created: 20260821...
+2026-08-21T19:01:17.535Z	INFO	[ok] ACP tee on :4000 (goose loopback :4001, viewer steering on)
+2026-08-21T19:01:17.538Z	INFO	filesystem watcher started (quiet period: 30s)
+2026-08-21T19:01:17.538Z	INFO	[header] Running Stage
+2026-08-21T19:01:17.538Z	INFO	max turns: 200
+2026-08-21T19:03:24.932Z	WARN	goose reported a provider error as an assistant message (the model call failed; the turn ended normally):
+Ran into this error: Server error: Failed to call Bedrock: ValidationException(ValidationException { message: Some("The provided model identifier is invalid."), meta: ErrorMetadata { code: Some("ValidationException"), message: Some("The provided model identifier is invalid."), extras: Some({"aws_request_id": "4fd7118c-c39b-42cc-8c2b-4194135c61c3"}) } }).
+
+Please retry if you think this is a transient or recoverable error.
+2026-08-21T19:03:24.980Z	INFO	[header] Final Push
+2026-08-21T19:03:24.980Z	INFO	no commits produced; skipping push of konveyor/migration-1787338874
+2026-08-21T19:03:24.981Z	INFO	[ok] stage succeeded
+2026-08-21T19:03:24.981Z	WARN	websocket read: read tcp 127.0.0.1:55070->127.0.0.1:4001: use of closed network connection
+2026-08-21T19:03:24.984Z	INFO	[ok] goose serve stopped cleanly
+time=2026-08-21T19:03:24Z level=info msg=[binding] |403|  POST /auth/tokens/15/revoke
+2026-08-21T19:03:24.986Z	WARN	hub token revocation (id=15): POST /auth/tokens/15/revoke failed: 403(Forbidden) body: {"error":"Required scope not granted: tokens:POST"}
+== 19:03:27 run status
+Succeeded  Ready=True/PodSucceeded 
+== goose in-pod log:    12851 bytes

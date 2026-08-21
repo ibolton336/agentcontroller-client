@@ -1,0 +1,32 @@
+== 17:51:23 pod log
+2026-08-21T17:51:24.036Z	INFO	[header] Hub Resolution
+time=2026-08-21T17:51:24Z level=info msg=[binding] |200|  GET /applications/1
+2026-08-21T17:51:24.045Z	INFO	[ok] app: kit-verify-app (id=1), repo: https://github.com/ibolton336/coolstore
+time=2026-08-21T17:51:24Z level=info msg=[binding] |200|  GET /applications/1/identities
+time=2026-08-21T17:51:24Z level=info msg=[binding] |200|  GET /identities
+2026-08-21T17:51:24.048Z	INFO	[header] Git Setup
+2026-08-21T17:51:24.048Z	INFO	cloning https://github.com/ibolton336/coolstore...
+2026-08-21T17:51:26.160Z	INFO	[ok] cloned to /workspace/repo, branch konveyor/migration-1787334683
+2026-08-21T17:51:26.161Z	INFO	no skills found at /opt/skills/*/SKILL.md — proceeding without skills
+2026-08-21T17:51:26.161Z	INFO	[header] Goose Setup
+2026-08-21T17:51:26.162Z	INFO	goose serve started on port 4001 (pid 29)
+2026-08-21T17:51:26.689Z	INFO	[ok] ACP initialized (protocol version 0)
+2026-08-21T17:51:26.849Z	INFO	[ok] ACP session created: 20260821...
+2026-08-21T17:51:26.849Z	INFO	[ok] ask_user tool mounted (questions reach attached viewers; HARNESS_HITL_ASK=off to disable)
+2026-08-21T17:51:26.854Z	INFO	[ok] ACP tee on :4000 (goose loopback :4001, viewer steering on)
+2026-08-21T17:51:26.858Z	INFO	filesystem watcher started (quiet period: 30s)
+2026-08-21T17:51:26.858Z	INFO	[header] Running Stage
+2026-08-21T17:51:26.858Z	INFO	max turns: 200
+2026-08-21T17:51:30.407Z	INFO	  tool: ask user: ask user ()
+2026-08-21T17:51:30.410Z	WARN	agent asked "Iteration 1 of 10: Tell me something." — headless harness cancels it (no human to answer)
+2026-08-21T17:51:30.413Z	INFO	  tool: completed
+2026-08-21T17:51:34.944Z	INFO	[header] Final Push
+2026-08-21T17:51:34.944Z	INFO	no commits produced; skipping push of konveyor/migration-1787334683
+2026-08-21T17:51:34.944Z	INFO	[ok] stage succeeded
+2026-08-21T17:51:34.944Z	WARN	websocket read: read tcp 127.0.0.1:51042->127.0.0.1:4001: use of closed network connection
+2026-08-21T17:51:34.947Z	INFO	[ok] goose serve stopped cleanly
+time=2026-08-21T17:51:34Z level=info msg=[binding] |403|  POST /auth/tokens/7/revoke
+2026-08-21T17:51:34.949Z	WARN	hub token revocation (id=7): POST /auth/tokens/7/revoke failed: 403(Forbidden) body: {"error":"Required scope not granted: tokens:POST"}
+== 17:51:36 run status
+Succeeded  Ready=True/PodSucceeded 
+== goose in-pod log:    25437 bytes

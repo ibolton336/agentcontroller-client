@@ -1,0 +1,30 @@
+== 17:51:52 pod log
+2026-08-21T17:51:53.171Z	INFO	[header] Hub Resolution
+time=2026-08-21T17:51:53Z level=info msg=[binding] |200|  GET /applications/1
+2026-08-21T17:51:53.177Z	INFO	[ok] app: kit-verify-app (id=1), repo: https://github.com/ibolton336/coolstore
+time=2026-08-21T17:51:53Z level=info msg=[binding] |200|  GET /applications/1/identities
+time=2026-08-21T17:51:53Z level=info msg=[binding] |200|  GET /identities
+2026-08-21T17:51:53.178Z	INFO	[header] Git Setup
+2026-08-21T17:51:53.178Z	INFO	cloning https://github.com/ibolton336/coolstore...
+2026-08-21T17:51:54.707Z	INFO	[ok] cloned to /workspace/repo, branch konveyor/migration-1787334712
+2026-08-21T17:51:54.707Z	INFO	no skills found at /opt/skills/*/SKILL.md — proceeding without skills
+2026-08-21T17:51:54.707Z	INFO	[header] Goose Setup
+2026-08-21T17:51:54.708Z	INFO	goose serve started on port 4001 (pid 22)
+2026-08-21T17:51:55.212Z	INFO	[ok] ACP initialized (protocol version 0)
+2026-08-21T17:51:55.297Z	INFO	[ok] ACP session created: 20260821...
+2026-08-21T17:51:55.299Z	INFO	[ok] ACP tee on :4000 (goose loopback :4001, viewer steering on)
+2026-08-21T17:51:55.302Z	INFO	filesystem watcher started (quiet period: 30s)
+2026-08-21T17:51:55.302Z	INFO	[header] Running Stage
+2026-08-21T17:51:55.302Z	INFO	max turns: 200
+2026-08-21T17:51:58.788Z	INFO	  tool: todo: todo write ()
+2026-08-21T17:51:58.792Z	INFO	  tool: completed
+2026-08-21T17:52:01.490Z	INFO	[header] Final Push
+2026-08-21T17:52:01.490Z	INFO	no commits produced; skipping push of konveyor/migration-1787334712
+2026-08-21T17:52:01.490Z	INFO	[ok] stage succeeded
+2026-08-21T17:52:01.490Z	WARN	websocket read: read tcp 127.0.0.1:49376->127.0.0.1:4001: use of closed network connection
+2026-08-21T17:52:01.494Z	INFO	[ok] goose serve stopped cleanly
+time=2026-08-21T17:52:01Z level=info msg=[binding] |403|  POST /auth/tokens/9/revoke
+2026-08-21T17:52:01.494Z	WARN	hub token revocation (id=9): POST /auth/tokens/9/revoke failed: 403(Forbidden) body: {"error":"Required scope not granted: tokens:POST"}
+== 17:52:03 run status
+Succeeded  Ready=True/PodSucceeded 
+== goose in-pod log:    49898 bytes

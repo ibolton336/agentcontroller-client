@@ -1,6 +1,6 @@
 # Skills — UX gap analysis (author → attach → run)
 
-**Status:** recon complete, pre-implementation · **Date:** 2026-08-21 · **Scope:** creating a skill and using it in an AgentRun, as a user of the console sees it
+**Status:** recon complete; phase 1 + the UI half of phase 2 shipped (see *Implementation status*); upstream drafts retargeted to #169 (appendix) · **Date:** 2026-08-21 · **Scope:** creating a skill and using it in an AgentRun, as a user of the console sees it
 
 **Evidence base:** tackle2-ui `feature/agent-runs` @ 7ce9cf137 ([ui#3546](https://github.com/konveyor/tackle2-ui/pull/3546)) — `pages/skills/*`, `AgentDesignerModal`, `CreateRunModal`, `ChatPanel`, `api/agentic/contract.ts`; tackle2-hub [#1119](https://github.com/konveyor/tackle2-hub/pull/1119) @ 26ec8a0 (`/agentic/skills`, `/agentic/skillcollections`); agentic-controller `main` @ a7dfc73 (SkillCard/SkillCollection CRDs, `skillcard_controller.go`, `agentrun_controller.go`, harness `main.go`/`prompt.go`, ADR 0010/0014/0015) and [PR #157](https://github.com/konveyor/agentic-controller/pull/157) @ efc511f5 (skill packaging + loader, djzager-approved 08-20, unmerged); `hack/mock-inventory-stack.mjs`; `docs/UPSTREAM-FEEDBACK.md` items 4–5; the 2026-08-11 UX prototype call notes. No cluster was touched.
 
@@ -8,7 +8,7 @@
 
 ## Implementation status — 2026-08-21 (same day)
 
-Phase 1 and the UI-only half of phase 2 are **built and browser-verified** on tackle2-ui `feature/agent-runs` (uncommitted on top of 7ce9cf137) plus the mock rig in this repo (`hack/mock-inventory-stack.mjs`, uncommitted). `tsc`, `eslint`, `prettier` clean; the change went through a three-lens review with adversarial verification (12 findings → 9 confirmed → all fixed, incl. a keyboard trap on clickable rows and a YAML `key: value` plain-scalar case the client validator accepted but `yaml.v3` would not).
+Phase 1 and the UI-only half of phase 2 are **built and browser-verified** on tackle2-ui `feature/agent-runs` (pushed 2026-08-21 evening as `3341a606d` + i18n prune `d00a525d9` on `fork/feature/agent-runs` = ui#3546 head) plus the mock rig in this repo (`hack/mock-inventory-stack.mjs`, committed `800eb2d`). `tsc`, `eslint`, `prettier` clean; the change went through a three-lens review with adversarial verification (12 findings → 9 confirmed → all fixed, incl. a keyboard trap on clickable rows and a YAML `key: value` plain-scalar case the client validator accepted but `yaml.v3` would not).
 
 | Gap | Status | Where |
 | --- | --- | --- |
@@ -47,13 +47,13 @@ What a console user has to do to get a skill of their own in front of a model, a
 | Step | Where it happens | What the console offers | What actually happens / breaks |
 | --- | --- | --- | --- |
 | 1. Write `SKILL.md` with AgentSkills.io frontmatter (`name`, `description`) | Editor, outside the product | Nothing — no template, no validator, no hint that frontmatter is load-bearing (ADR 0014: a skill without it is invisible to goose) | Frontmatter `description` is the model's entire selection surface; nothing in the product says to write it for retrieval |
-| 2. Package it | Shell: `skillctl build/push` (main) or `podman build` from a `Containerfile` (#157); push to a registry the cluster can pull | Nothing; empty state says "No SkillCard resources found. Create one to get started." | Needs registry creds + an ImageVolume-capable runtime (containerd ≥ 2.0 / CRI-O + gate). On docker-runtime clusters the pod sticks in `CreateContainerError` while the run reads `Running` forever (UPSTREAM-FEEDBACK §4) |
+| 2. Package it | Shell: `skillctl build/push` (main) or `podman build` from a `Containerfile` (#157); push to a registry the cluster can pull | Nothing; empty state says "No SkillCard resources found. Create one to get started." | Needs registry creds + an ImageVolume-capable runtime (containerd ≥ 2.0 / CRI-O + gate). On docker-runtime clusters the pod sticks in `CreateContainerError` while the run reads `Pending` forever — `Running` before #160 (UPSTREAM-FEEDBACK §4) |
 | 3. Create the SkillCard | Skills page → *Create skill card* | Name, display name, description, Type (Skill/Rule), **Image (required)**, version, tags | No inline, no git, no `subPath`/`ref`. `Ready` flips True immediately (ref copied, not pulled). Under #157 a card on the bundle image without `subPath` fails at pod init ("resolves to more than one skill") — the form cannot express the fix |
 | 4. (Optional) group into a SkillCollection | Skills page → *Create skill collection* | Rows of free-text *name* + kind (SkillCard / Direct image) + free-text value, reorder arrows | SkillCard names typed by hand, no picker, no existence check. No `source`/`ref`/`subPath`/`type` per entry; #157's `spec.image` enumeration (the thing that removes hand-typed `subPath`s) not reachable |
 | 5. Attach to an Agent | Agents page → designer | Checkbox per card (display name + Ready + resolved image), checkbox per collection (name only) | No description, no type, no cost hint (rules are always in context). Zero skills → red `0` in the table and a **danger** alert "An agent without skills has no tools to work with" — false since #83 made skills optional, and wrong in kind (skills are knowledge, not tools) |
 | 6. Launch a run | *Create run* modal / inventory launch | Agent, gateway, params | Skills not shown. No per-run selection — `AgentRunSpec` has no skills field (UPSTREAM-FEEDBACK §5); every run mounts everything its Agent lists |
 | 7. Watch it run | Run detail + chat | Phase label, agentRef, ACP transcript | No "skills in this run" panel. A `load_skill` call is a generic tool row titled whatever goose sends. Rules are injected server-side (post-#157) and never appear. ADR 0014 measured the model **not** calling `load_skill` unless the stage instructions name the skill — the user cannot tell "ignored" from "used" |
-| 8. When it fails | Run detail | `Failed` (or `Running`, indefinitely) | Missing SkillCard → `SandboxCreationFailed` condition message, which run detail does not display (already tracked as "failure reasons on runs"). Bad `subPath` / missing frontmatter / duplicate skill name (#157 loader) → pod `Failed`, reason only in the init container's termination message. Unsupported ImageVolume or a hung git clone → `Running` forever. No AgentRun condition exists for any skill-load outcome |
+| 8. When it fails | Run detail | `Failed` (or `Pending`, indefinitely) | Missing SkillCard → `SandboxCreationFailed` condition message, which run detail does not display (already tracked as "failure reasons on runs"). Bad `subPath` / missing frontmatter / duplicate skill name (#157 loader) → pod `Failed`, reason only in the init container's termination message. Unsupported ImageVolume or an image that cannot be pulled → `Pending` forever (#157 bounds git clones at 3 min, so a dead host is a loader failure, not a hang). No AgentRun condition exists for any skill-load outcome |
 
 ## 3. Gap table
 
@@ -86,7 +86,7 @@ Severity: **P1** blocks the happy path for a console user · **P2** misleads or 
 | C1 | Launch shows no skills; no per-run selection (API has none) | `CreateRunModal.tsx` has no skill reference; `agentrun_types.go` | P2 (UI) / upstream decision (API) |
 | C2 | Run detail has no "skills in this run" (what was mounted, type, delivery mode, source) | `agent-run-detail-page.tsx` shows `agentRef` only | P1 for trust — users cannot see what knowledge the run had |
 | C3 | Skill activations are indistinguishable from other tool calls; injected rules never appear | `ChatPanel.tsx` `tool_call` → generic `Message` | P2 |
-| C4 | Skill-load failures do not reach AgentRun status: no condition, reason only in pod termination message / kubelet events; unsupported runtime or hung clone reads `Running` forever | #157 `agentrun_controller.go` reason list (no skill/loader reason); UPSTREAM-FEEDBACK §4 | P1 |
+| C4 | Skill-load failures do not reach AgentRun status: no condition, reason only in pod termination message / kubelet events; unsupported runtime or a failed image pull reads `Pending` forever (clones are bounded at 3 min since #157 `efc511f5`) | #157 / #169 `agentrun_controller.go`: only the agent container's termination is read; UPSTREAM-FEEDBACK §4 | P1 |
 | C5 | No feedback loop: whether the model read a skill is knowable only by scanning the transcript; nothing aggregates "skills loaded" per run or per skill | ADR 0014 alternatives ("visible in the ACP stream… as it happens") | P2 |
 
 ### Semantics and trust
@@ -122,7 +122,7 @@ Grounded in the API that exists (main) or is approved (#157). Ordered cheapest-f
 
 - **Run detail "Skills" panel.** Cheapest source today: resolve the run's Agent and list its cards/collections with type and delivery mode (client-side join). Correct source: the loader already writes `/opt/skills/.konveyor-skills.json`; ask for it (or its summary) on `AgentRun.status` so the panel shows what was *actually* assembled, not what was declared.
 - **Skill activations in the transcript.** Mark `tool_call`s whose title/name is `load_skill` as "Loaded skill *X*" with the skill name pulled from the arguments; cheap client heuristic, no API change. Rules: show "N rules injected" from the same status.
-- **A skill-load condition on AgentRun.** `SkillsReady` (or fold into the coming `Succeeded` condition work in [#119](https://github.com/konveyor/agentic-controller/issues/119)) carrying the loader's termination message; unsupported ImageVolume / hung clone must stop reading `Running`. This is the same mechanism as the drafted "failure reasons on runs" issue — post them together.
+- **A skill-load condition on AgentRun.** `SkillsReady` (or fold into the `Succeeded` condition that [#169](https://github.com/konveyor/agentic-controller/pull/169) introduces for [#119](https://github.com/konveyor/agentic-controller/issues/119)) carrying the loader's termination message; unsupported ImageVolume / failed image pull must stop reading `Pending`. This is the same mechanism as the drafted "failure reasons on runs" issue — post them together.
 - **Launch modal**: read-only "This agent brings: …" list; per-run selection stays parked until upstream decides whether `AgentRunSpec` grows a skills field.
 
 ### Phase 3 — product decisions
@@ -137,7 +137,7 @@ Grounded in the API that exists (main) or is approved (#157). Ordered cheapest-f
 - [#153](https://github.com/konveyor/agentic-controller/issues/153) — collections as authoring surface; [#158](https://github.com/konveyor/agentic-controller/issues/158) — doc-to-skill; [#154](https://github.com/konveyor/agentic-controller/issues/154) — private git / authenticated images; [#81](https://github.com/konveyor/agentic-controller/issues/81) — authoring docs; [#126](https://github.com/konveyor/agentic-controller/issues/126) — out-of-box image.
 - [#120](https://github.com/konveyor/agentic-controller/issues/120) boundary pass, [#75](https://github.com/konveyor/agentic-controller/issues/75) idempotent stage skills, [#98](https://github.com/konveyor/agentic-controller/pull/98) stage skills (changes requested) — content, not UX, but they decide what the default skills *are*.
 - Hub [#1112](https://github.com/konveyor/tackle2-hub/issues/1112) / [#1119](https://github.com/konveyor/tackle2-hub/pull/1119) — pass-through CRUD, namespace forced, no validation; RBAC: admin/architect write, migrator read-only.
-- Not filed anywhere yet: run-side visibility (C2/C3/C5) and the skill-load condition (C4). UPSTREAM-FEEDBACK §4/§5 cover the runtime and per-run-selection halves.
+- Not filed anywhere yet: run-side visibility (C2/C3/C5) and the skill-load condition (C4) — drafted in the appendix against [#169](https://github.com/konveyor/agentic-controller/pull/169), which closes #119 and reads only the agent container's termination. UPSTREAM-FEEDBACK §4/§5 cover the runtime and per-run-selection halves.
 
 ---
 
@@ -145,28 +145,37 @@ Grounded in the API that exists (main) or is approved (#157). Ordered cheapest-f
 
 Both are deliberately short per the house style: state the gap, ask the question, offer a design. Target repo: konveyor/agentic-controller.
 
-### Draft 1 — comment on [#119](https://github.com/konveyor/agentic-controller/issues/119) (or its own issue if djzager prefers): skill-loader failures and never-starting pods must reach `AgentRun.status`
+**Retargeted 2026-08-21 evening.** djzager's [#169](https://github.com/konveyor/agentic-controller/pull/169) (opened 08-20 21:54Z, "Closes #119", ADR 0018) implements the `Succeeded` condition and `terminationData` — but `agentContainerTermination` scans `containerStatuses` for the agent container only, and a pre-Running pod collapses to `Succeeded{Unknown, PodNotRunning, "… (Pending)"}`. So Draft 1 is no longer a #119 comment: #119 is about to close, and the ask is a follow-up to #169's mechanism. Both drafts go as their own issues; Ian's review of #169 carries a one-line pointer. Verified against #157 @ `efc511f5`, #169 @ `f62bfc65`, main @ `a7dfc73`. Corrections folded in since the first cut: #157 already bounds git clones (`CloneTimeout` = 3 min) and already sets `FallbackToLogsOnError` on the loader (both asked for in the 08-19 review, both accepted); pod read RBAC exists since #160; a never-starting pod reads `Pending`, not `Running`.
 
-> Two more outcomes for the Succeeded condition, both from the skills side, both invisible on the run today:
+### Draft 1 — new issue: skill-loader failures and never-starting pods never reach `AgentRun.status`
+
+Title: `Skill-loader failures and never-starting pods never reach AgentRun.status`
+
+> Two outcomes the `Succeeded` condition from #169 cannot report yet, both decided on the sandbox pod before the agent container runs:
 >
-> 1. **The #157 `skill-loader` init container fails** (bad `subPath`, missing frontmatter, duplicate skill name, unreachable git host). The pod goes `Failed` with the agent container never started, and the only human-readable reason is the init container's termination message (`initContainerStatuses[].state.terminated.message`, thanks to `FallbackToLogsOnError`). The AgentRun gets a generic `Failed` and nothing says "skill `plan`: duplicate name" — a user who typed the wrong sub-path in the console has no way to find out short of `kubectl describe pod`.
-> 2. **The pod never starts at all**: ImageVolume on a runtime without support (cri-dockerd → `CreateContainerError`), `ImagePullBackOff` on a skill image, or a git clone that hangs in the loader. Anything short of Finished maps to `Running`, so these runs read `Running` forever.
+> 1. **The skill-loader init container fails** (#157: bad `subPath`, missing frontmatter, duplicate skill name, a clone timing out after `CloneTimeout`). The pod is `Failed` with the agent container never started. #157 already lifts the loader's last line into the pod via `terminationMessagePolicy: FallbackToLogsOnError`, but `agentContainerTermination` only scans `containerStatuses` for the agent container, so the run ends as `Succeeded{False, Failed, "Sandbox finished with reason: PodFailed"}` and the actual reason (`skill "plan": duplicate name`) stays in `initContainerStatuses[].state.terminated.message`. A console user who typed the wrong sub-path cannot find out short of `kubectl describe pod`.
+> 2. **The pod never starts**: `ImagePullBackOff` / `ErrImagePull` on the agent image, a skill image volume that cannot be pulled (the pod stays `ContainerCreating`), `CreateContainerError` (ImageVolume on cri-dockerd, i.e. default minikube), `CreateContainerConfigError`. Pod phase stays `Pending`, so the run sits at `Succeeded{Unknown, PodNotRunning, "Waiting for sandbox pod … to run (Pending)"}` indefinitely — the waiting reason is never surfaced and nothing turns it terminal.
 >
-> Since this issue already gives the controller pod read RBAC to lift the agent container's termination message, could the same pass cover the init container and the waiting reasons?
+> Proposal, inside the pod read the controller already has (#160):
 >
-> - loader terminated non-zero → `Succeeded{False, reason: SkillLoadFailed, message: <loader's termination message>}`, phase `Failed`.
-> - any container `waiting` with reason in {`CreateContainerError`, `ImagePullBackOff`, `ErrImagePull`, `CreateContainerConfigError`} for longer than a grace period → `Succeeded{False, reason: PodNotStarting, message: <waiting reason + message>}` (phase `Failed`, or at least not `Running`).
-> - an activeDeadline on the loader container so a hung clone terminates with a message instead of hanging the run.
+> - an init container terminated non-zero → `Succeeded{False, reason: InitFailed, message: "<container>: <its termination message>"}`, phase `Failed` — the same read as `terminationData`, one container earlier.
+> - any container `waiting` with reason in {`ImagePullBackOff`, `ErrImagePull`, `CreateContainerError`, `CreateContainerConfigError`} → put `reason: message` into the `PodNotRunning` message right away; and a pod still not `Running` after a grace period goes terminal: `Succeeded{False, reason: PodNotStarting}`, phase `Failed`.
 >
-> Happy to take the tackle2-ui side once the reasons exist — the run detail page will render `message` next to the phase.
+> Would you rather a reason per init container (`SkillLoadFailed`) than a generic `InitFailed` with the container named in the message? Happy to take the tackle2-ui side once the reasons exist — run detail renders `message` next to the phase.
 
 ### Draft 2 — new issue: expose the skills a run actually assembled on `AgentRun.status`
 
-> After #157 a run's skills come from several sources (image + subPath, inline ConfigMap, git clone) and the loader decides the final directory from each skill's frontmatter name. None of that is visible on the AgentRun: a client can only re-resolve the Agent's refs and guess.
+Title: `Expose the skills a run actually assembled on AgentRun.status`
+
+> After #157 a run's skills come from several sources (image + `subPath`, inline ConfigMap, git clone) and the loader decides the final directory from each skill's frontmatter name. None of that is visible on the AgentRun: a client can only re-resolve the Agent's refs and guess — which is what the console does today (konveyor/tackle2-ui#3546's run detail "Skills" group is a client-side join over the Agent's cards).
 >
 > Two small additions would make the run self-describing:
 >
-> 1. **Declared, at sandbox creation** — the controller already builds `KONVEYOR_SKILL_SOURCES`; mirror it as `status.skillSources: [{name, type, delivery: image|inline|source, image?, subPath?, source?, ref?}]`. No new RBAC, available from `Pending`.
-> 2. **Assembled, after init** — the loader already writes `/opt/skills/.konveyor-skills.json` (name, description, type, source, rules list). Have it also write a compact form to `/dev/termination-log` on success (it is an init container, so it terminates normally; 4 KiB budget). With #119's pod read, the controller copies it to `status.skills: [{name, type, source}]` + `status.rules: [names]`. That is the list the console should show on the run detail page, and it is the ground truth the "did the model load skill X" question (the `load_skill` tool calls in the ACP stream) can be matched against.
+> 1. **Declared, at sandbox creation** — the controller already builds `KONVEYOR_SKILL_SOURCES` (`api/skill.Source`); mirror that list as `status.skillSources`. No new RBAC, available from `Pending`.
+> 2. **Assembled, after init** — the loader already writes `/opt/skills/.konveyor-skills.json` (`api/skill.Manifest`: skills `{name, description, type, source}` + `rules`). Have it also write a compact form (`{name, type, source}` + rule names; 4 KiB termination-message budget) to `/dev/termination-log` on success — `FallbackToLogsOnError` only covers the failure path — and have #169's termination read copy it from the init container into `status.skills` / `status.rules`. That is the ground truth for the run detail page, and what the `load_skill` tool calls in the ACP stream can be matched against ("did the model actually use skill X").
 >
-> Is (1) acceptable as a first step on its own? It is a status-only change on the existing code path. (2) can follow #119.
+> Is (1) acceptable on its own as a first step? It is a status-only change on the existing code path. (2) rides the same init-container read as ‹Draft 1 issue›.
+
+### Pointer for Ian's #169 review (one line)
+
+> `agentContainerTermination` only looks at `containerStatuses`; once #157 lands, the skill-loader's failure message sits in `initContainerStatuses` and the run ends as a bare `PodFailed` — filed as ‹Draft 1 issue› rather than widening this PR.
