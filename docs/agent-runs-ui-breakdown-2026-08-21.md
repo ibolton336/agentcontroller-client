@@ -120,3 +120,34 @@ local HEAD `3341a606d`, clean tree), PR [ui#3546](https://github.com/konveyor/ta
 8. **Ian — send the designer the repo link** (D1) and hand over D2 as the design backlog.
 9. **Watch, don't build**: AC#115 (modes/limits), AC#119 (Succeeded), hub#1119 merge
    (server chips), AC#128 (continue), operator#590 (gate wiring — needs an owner).
+
+## 6. Status — 2026-08-21 evening (B-list worked on `feature/agent-runs`)
+
+Seven commits on the local checkout, on top of `621e32305` (the flags-doc commit), **not yet
+pushed** to the fork / ui#3546. Gates (tsc, eslint ≤20 warnings, prettier, husky) green on
+every commit. Mock fixture changes live in this repo (`e91b5f9`, `4a5b281`).
+
+| # | Status | Commit | Evidence |
+|---|---|---|---|
+| B1 scope gating | **Done** | `fe1c13c9d` | Masquerade presets (dev rig, mirrors of the hub#1119 seed) and **real hub tokens on the `hub-auth` rig**: `rig-pm` sees no create/edit/delete anywhere and "No access" on the run page (nonce never minted); `rig-migrator` sees Create run / Create workflow run and a workflows kebab of just *Run*; `rig-architect` authors skills/workflows but not agents. Token decode confirms the hub expands `*` to `decrypt delete get patch post put`. |
+| B2 usage / outcome / push | **Done** | `6c2dc5444` | `acp.ts` now dispatches `_goose/unstable/session/update`; header badge "48.2K / 200K · 4 turns · $0.151", closing "stage succeeded — results pushed to branch …" notice, harness `git push (final)` as a harness step — on the mock's skills run (fixture `e91b5f9`). Not yet seen against a real goose (needs a live run on the rig). |
+| B3 run again | **Done** | `9244d5b8c` | Failed agent run → modal "Run again: …" with its own agent preselected; failed workflow run → its workflow, application from the label, fresh branch, stage agents fetched. Prefill captured once (polling cannot reset the form). |
+| B4 gateways page | **Done** | `8f5019748` | `/gateways` renders the rig's four gateways for every role; the mock's `gcp-vertex-ai` gateway shows ConnectionFailed + "Unverifiable provider" and the page-level AC#167 alert; a Verifying gateway stays quiet. |
+| B6 failure reasons | **Done** | `0a7ab3ef0` (+ `9244d5b8c` passes the phase) | Real rig run `ui-v9427`: "Failed · Sandbox finished with reason: PodFailed"; mock workflow run: "Failed · StageFailed · Stage "migrate" failed …". Progress reasons stay hidden. Re-touch at C2 (Succeeded condition). |
+| B7 strip dial fallback | **Done** | `f9ddb0ac1` | Mock: `boot-race-run` gets exactly one nonce + WS upgrade once ACPReady flips; `legacy-boot-race-run` is never dialed and shows the #160 notice. Rig controller (`ghcr.io/ibolton336/agentic-controller:demo`) CRD carries ACPReady. |
+| B8 designer polish | **Done** | `341813641` | Spinners until the catalog settles; params editor is a table (headers, "Parameter N <field>" labels, "Remove parameter N", wrapped Required label 92×21 px); catalog checkboxes named. |
+| B9 never-driven E2E | **Done (verification)** | — | On the `hub-auth` rig with real users: skill-collection edit hydrates and PUTs (gen 1→2, members byte-identical; restored afterwards), workflow create → edit hydrates → PUT (gen 2, two stages) → delete via the console. Non-admin rendering as above. |
+| B5 table controls | not started | — | "only if asked". |
+| B10 Cypress | not started | — | "if reviewers ask". |
+
+Rig changes left in place: users `rig-architect` / `rig-migrator` / `rig-pm` (roles 2/3/4, password
+`rig-<login>-pw`, local minikube only) on the `hub-auth` hub for future role checks; the
+`tackle2-ui` port-forward on :18081 was stopped for the local auth-on UI and restored afterwards.
+
+Tooling notes for the next round: the prod bundle tree-shakes the masquerade switcher, so
+persona checks need a `NODE_ENV=development` bundle (express dev server on :9005 fronting
+webpack on :9001, `TACKLE_HUB_URL` = mock); the preview tool's health probe kills a bare
+webpack-dev-server (its `GET /` blocks until the first bundle), so run webpack outside it; the
+Browser pane's accessibility tree only reads the fronted tab with a real viewport
+(`resize_window` first) and the hub login page needs `form.requestSubmit()`; OIDC sessions are
+per tab, so one tab per rig user works.
