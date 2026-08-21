@@ -10,6 +10,9 @@
 //   - create = POST full CR -> 201 CR (generateName honored,
 //     konveyor.io/managed=true injected, like the hub)
 //   - update = PUT full CR -> 204 NO BODY
+//   - SkillCard / SkillCollection specs are checked the way the CRD does
+//     (exactly one source; image xor skills) -> 422 with the apiserver's
+//     message, as the hub passes it through
 //   - run kinds: list/get/create only (no update/delete/cancel)
 //   - POST /agentic/agentruns/:name/acp/nonce -> 201 nonce (single-use,
 //     30s TTL), required by the WS upgrade in BOTH auth modes like the hub
@@ -20,6 +23,10 @@
 //     session teed to every viewer plus goose's steer/cancel relay; a
 //     missing/stale/reused nonce is refused with 401 like the real hub
 //     (mint 201, fresh dial 101, reused/bare dial 401).
+//   - skills-run-coolstore speaks that same tee for an agent that carries
+//     skills (ADR 0014): goose's load_skill tool calls stream with their
+//     rawInput (the skill, then skill/relative/file), then the turn ends
+//     and the run flips to Succeeded.
 //   - Scripted runs replay the pod-boot race the panel has to ride out
 //     (see SCRIPTED below): the clock starts on the first GET of the run's
 //     detail, so restart the mock to replay.
@@ -61,6 +68,15 @@ const acpCond = (listening, msg) => ({
   message: msg ?? (listening ? "ACP endpoint accepts connections" : "Pod is Running but not Ready"),
 });
 
+// agentic-controller#157 controller: an image card's reference is accepted
+// at face value (the image is pulled when a run starts), so Ready=True /
+// ImageResolved the moment it is seen.
+const imageCardStatus = (image) => ({
+  observedGeneration: 1,
+  resolvedImage: image,
+  deliveryMode: "image",
+  conditions: [{ type: "Ready", status: "True", reason: "ImageResolved", message: `OCI image ref accepted: ${image}` }],
+});
 
 const store = {
   agents: [
@@ -81,25 +97,167 @@ const store = {
           { name: "repository", required: true },
           { name: "branch", required: false, default: "main" },
         ],
+        // Both cards are rules (plan from the bundle image, house-rules
+        // inline); the on-demand skills reach the agent through the
+        // collection, which also carries plan again.
+        skillCards: [{ ref: "plan" }, { ref: "house-rules" }],
+        skillCollections: [{ ref: "java-migration" }],
       },
       status: { conditions: [{ type: "Ready", status: "True" }] },
     },
     {
+      // No skills at all — the harness proceeds without any.
       metadata: { name: "freeform-agent", creationTimestamp: ago(300) },
       spec: { image: "ghcr.io/ibolton336/agent-base:demo", gateways: [{ ref: "default-gateway" }] },
       status: { conditions: [{ type: "Ready", status: "True" }] },
     },
   ],
+  // SkillCards in the #157 shape: exactly one source (image + subPath,
+  // inline SKILL.md, or git), status.deliveryMode and a Ready condition the
+  // controller wrote. `legacy-card` keeps the pre-#157 status (no
+  // deliveryMode, no type) and `broken-inline` is a card saved without
+  // frontmatter after the skill loader rejected it.
   skills: [
     {
+      metadata: { name: "plan", creationTimestamp: ago(390), labels: { [MANAGED]: "true" } },
+      spec: {
+        image: "quay.io/konveyor/skills:latest",
+        subPath: "plan",
+        displayName: "Migration Planning",
+        description: "Analyzes a project and produces a structured migration plan.",
+        type: "rule",
+        version: "1.0.0",
+        tags: ["migration", "planning"],
+      },
+      status: imageCardStatus("quay.io/konveyor/skills:latest"),
+    },
+    {
+      metadata: { name: "javaee-to-quarkus", creationTimestamp: ago(390), labels: { [MANAGED]: "true" } },
+      spec: {
+        image: "quay.io/konveyor/skills:latest",
+        subPath: "javaee-to-quarkus",
+        displayName: "Java EE to Quarkus",
+        description: "Migrates Java EE applications to Quarkus: javax to jakarta, EJB to CDI, persistence.xml to application.properties.",
+        type: "skill",
+        version: "1.0.0",
+        tags: ["migration", "quarkus"],
+      },
+      status: imageCardStatus("quay.io/konveyor/skills:latest"),
+    },
+    {
+      // Inline rule: a single SKILL.md with valid frontmatter, delivered as
+      // a ConfigMap and injected into every prompt of the agents that
+      // reference it.
+      metadata: { name: "house-rules", creationTimestamp: ago(250), labels: { [MANAGED]: "true" } },
+      spec: {
+        inline: [
+          "---",
+          "name: house-rules",
+          "description: Conventions every change in this organisation must follow, on every task.",
+          "---",
+          "# House rules",
+          "",
+          "- Never change a public API signature without leaving a deprecated shim behind.",
+          "- Keep every commit buildable: run the module's tests before moving to the next one.",
+          "",
+        ].join("\n"),
+        displayName: "House rules",
+        description: "Organisation-wide conventions, injected into every prompt.",
+        type: "rule",
+        tags: ["conventions"],
+      },
+      status: {
+        observedGeneration: 1,
+        deliveryMode: "inline",
+        conditions: [{ type: "Ready", status: "True", reason: "InlineResolved", message: "SKILL.md delivered as a ConfigMap" }],
+      },
+    },
+    {
+      // Git source with no ref: cloned from the default branch on every run,
+      // so the run is not reproducible — the modal warns about exactly this.
+      metadata: { name: "acme-conventions", creationTimestamp: ago(120), labels: { [MANAGED]: "true" } },
+      spec: {
+        source: "https://github.com/acme/migration-skills.git",
+        subPath: "skills/conventions",
+        displayName: "Acme conventions",
+        description: "Acme's naming and layout conventions for migrated services.",
+        type: "skill",
+        tags: ["conventions", "acme"],
+      },
+      status: {
+        observedGeneration: 1,
+        deliveryMode: "source",
+        conditions: [{ type: "Ready", status: "True", reason: "SourceAccepted", message: "Cloned at pod start; ref unset, default branch" }],
+      },
+    },
+    {
+      // Inline content without the frontmatter block: the skill loader
+      // refuses it, and the console must show why.
+      metadata: { name: "broken-inline", creationTimestamp: ago(30), labels: { [MANAGED]: "true" } },
+      spec: {
+        inline: ["# Broken skill", "", "Saved without the YAML frontmatter the Agent Skills spec requires.", ""].join("\n"),
+        description: "An inline card the skill loader rejected.",
+        type: "skill",
+      },
+      status: {
+        observedGeneration: 1,
+        conditions: [{ type: "Ready", status: "False", reason: "InvalidSkillContent", message: "no YAML frontmatter: file does not start with ---" }],
+      },
+    },
+    {
+      // Pre-#157 card: image only, no type, status without deliveryMode.
+      // Applied with kubectl before the hub fronted the API, so no managed
+      // label either.
+      metadata: { name: "legacy-card", creationTimestamp: ago(800) },
+      spec: { image: "ghcr.io/ibolton336/legacy-skill:v1", description: "A card from before the skill loader." },
+      status: {
+        observedGeneration: 1,
+        resolvedImage: "ghcr.io/ibolton336/legacy-skill:v1",
+        conditions: [{ type: "Ready", status: "True", reason: "ImageResolved", message: "OCI image ref accepted: ghcr.io/ibolton336/legacy-skill:v1" }],
+      },
+    },
+    {
       metadata: { name: "analyze-issues", creationTimestamp: ago(390), labels: { [MANAGED]: "true" } },
-      spec: { description: "Fetch and rank analysis insights." },
+      spec: {
+        image: "ghcr.io/ibolton336/analyze-issues-skill:demo",
+        displayName: "Analyze issues",
+        description: "Fetch and rank analysis insights.",
+        type: "skill",
+        version: "0.3.0",
+        tags: ["analysis"],
+      },
+      status: imageCardStatus("ghcr.io/ibolton336/analyze-issues-skill:demo"),
     },
   ],
   skillcollections: [
     {
+      // Explicit mode: three cards grouped by reference.
       metadata: { name: "java-migration", creationTimestamp: ago(390), labels: { [MANAGED]: "true" } },
-      spec: { skills: ["analyze-issues"] },
+      spec: {
+        version: "2.0.0",
+        skills: [
+          { name: "plan", skillCardRef: "plan" },
+          { name: "javaee-to-quarkus", skillCardRef: "javaee-to-quarkus" },
+          { name: "house-rules", skillCardRef: "house-rules" },
+        ],
+      },
+      status: {
+        observedGeneration: 1,
+        resolvedSkills: ["plan", "javaee-to-quarkus", "house-rules"],
+        conditions: [{ type: "Ready", status: "True", reason: "AllSkillsReady", message: "3 skills resolved" }],
+      },
+    },
+    {
+      // Enumerate mode (#157): the controller listed the bundle image. Two
+      // of the four names (execute, verify) have no SkillCard here, so the
+      // drawer's link-if-the-card-exists path sees both cases.
+      metadata: { name: "konveyor-bundle", creationTimestamp: ago(200), labels: { [MANAGED]: "true" } },
+      spec: { image: "quay.io/konveyor/skills:latest", type: "skill" },
+      status: {
+        observedGeneration: 1,
+        resolvedSkills: ["plan", "execute", "verify", "javaee-to-quarkus"],
+        conditions: [{ type: "Ready", status: "True", reason: "Enumerated", message: "4 skills enumerated from quay.io/konveyor/skills:latest" }],
+      },
     },
   ],
   gateways: [
@@ -239,6 +397,24 @@ const store = {
       },
     })),
     {
+      // Live run of an agent that carries skills (STEER_RUNS below): the
+      // transcript streams goose's load_skill calls and the run then
+      // finishes as Succeeded — restart the mock to replay.
+      metadata: {
+        name: "skills-run-coolstore",
+        creationTimestamp: ago(2),
+        labels: { [MANAGED]: "true", [APPLICATION]: "1" },
+      },
+      spec: { agentRef: "migration-analyzer", gateway: "default-gateway" },
+      status: {
+        phase: "Running",
+        startTime: ago(2),
+        sandboxName: "sandbox-skills-x5",
+        secretKeyRef: { name: "sandbox-skills-x5-key" },
+        conditions: [acpCond(true)],
+      },
+    },
+    {
       // Belongs to app 3 — must NOT appear in app 1's drawer tab.
       metadata: {
         name: "run-testapp-done",
@@ -333,6 +509,29 @@ const send = (res, status, body) => {
   }
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
+};
+
+// CRD rules the apiserver enforces on SkillCard / SkillCollection specs
+// (#157 shape) — the hub passes the 422 through, so the console must meet
+// the same refusal here. Presence counts, not truthiness (CEL has()
+// parity): a leftover `image: ""` beside `inline` is still two sources.
+// SkillCard `tags` is `x-kubernetes-list-type: set`: duplicates are refused.
+const specError = (kind, name, spec) => {
+  const has = (field) => spec?.[field] !== undefined;
+  const rule = (crd, path, detail) => `${crd}.konveyor.io "${name}" is invalid: ${path}: Invalid value: ${detail}`;
+  if (kind === "skills" && ["image", "source", "inline"].filter(has).length !== 1)
+    return rule("SkillCard", "spec", '"object": exactly one of image, source, or inline must be set');
+  if (kind === "skills" && Array.isArray(spec?.tags)) {
+    const dup = spec.tags.findIndex((tag, i) => spec.tags.indexOf(tag) !== i);
+    if (dup >= 0)
+      return `SkillCard.konveyor.io "${name}" is invalid: spec.tags[${dup}]: Duplicate value: ${JSON.stringify(spec.tags[dup])}`;
+  }
+  if (kind === "skillcollections") {
+    if (has("image") === has("skills")) return rule("SkillCollection", "spec", '"object": set either image or skills, not both');
+    if (has("skills") && !(Array.isArray(spec.skills) && spec.skills.length > 0))
+      return rule("SkillCollection", "spec.skills", "0: spec.skills in body should have at least 1 items");
+  }
+  return undefined;
 };
 
 // ------------------------------------------------- scripted run timelines
@@ -486,6 +685,11 @@ const hub = http.createServer(async (req, res) => {
         return send(res, 400, { error: "metadata.name or metadata.generateName required" });
       if (cr.metadata.generateName && !cr.metadata.name)
         cr.metadata.name = `${cr.metadata.generateName}${(++createCounter).toString(36)}${crypto.randomBytes(2).toString("hex")}`;
+      const invalid = specError(kind, cr.metadata.name, cr.spec);
+      if (invalid) {
+        console.log(`[hub] REJECT ${kind}/${cr.metadata.name}: ${invalid}`);
+        return send(res, 422, { error: invalid });
+      }
       cr.metadata.creationTimestamp = now();
       cr.metadata.labels = { ...(cr.metadata.labels ?? {}), [MANAGED]: "true" }; // hub injectLabels parity
       if (list.some((r) => r.metadata.name === cr.metadata.name))
@@ -504,6 +708,11 @@ const hub = http.createServer(async (req, res) => {
         cr = JSON.parse(raw);
       } catch {
         return send(res, 400, { error: "invalid JSON" });
+      }
+      const invalid = specError(kind, name, cr.spec ?? list[idx].spec);
+      if (invalid) {
+        console.log(`[hub] REJECT ${kind}/${name}: ${invalid}`);
+        return send(res, 422, { error: invalid });
       }
       list[idx] = { ...list[idx], spec: cr.spec ?? list[idx].spec };
       return send(res, 204); // hub returns 204 NO BODY on update
@@ -611,11 +820,18 @@ const wsParse = (buf) => {
 //       viewer's {action, content} answer is echoed into the stream; a
 //       viewer attaching mid-question is shown the pending ask, as the tee
 //       does.
+//   - a `transcript` (skills-run-coolstore) replaces the endless ticker
+//       with goose's stream for an Agent that carries skills (ADR 0014):
+//       load_skill is an ordinary tool_call whose rawInput.name is the
+//       skill, or skill/relative/file for a supporting file, and its
+//       tool_call_update carries what goose returned; a plain shell call
+//       follows, then the turn ends and the run flips to Succeeded.
 const STEER_RUNS = {
   "steer-run": { variant: "early" },
   "steer-late-run": { variant: "late" },
   "steer-off-run": { variant: "off" },
   "ask-run": { variant: "early", ask: true },
+  "skills-run-coolstore": { variant: "early", transcript: "skills" },
 };
 const ASK_FIRST_MS = 6_000; // ask-run: first question after attach
 const ASK_SECOND_MS = 8_000; // ask-run: free-text follow-up after the first answer
@@ -637,6 +853,66 @@ const ASKS = [
     },
   },
 ];
+// Transcripts are [ms, update] cues on agent time — the clock only runs
+// while a viewer is attached and no ask is pending, like the ticker — and a
+// null update ends the turn. The skills one is goose's turn with the
+// javaee-to-quarkus skill available: load_skill, the supporting file it
+// names, then ordinary work.
+const TRANSCRIPT_TICK_MS = 250;
+const SKILL_DIR = "/home/harness/.agents/skills/javaee-to-quarkus";
+const says = (text) => ({ sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
+const calls = (toolCallId, title, kind, rawInput) => ({ sessionUpdate: "tool_call", toolCallId, title, kind, status: "in_progress", ...(rawInput ? { rawInput } : {}) });
+const returns = (toolCallId, text) => ({ sessionUpdate: "tool_call_update", toolCallId, status: "completed", content: [{ type: "content", content: { type: "text", text } }] });
+const TRANSCRIPTS = {
+  skills: [
+    [500, says("Coolstore is a Java EE monolith and the stage asks for Quarkus. The javaee-to-quarkus skill covers exactly that — loading it before I touch anything. ")],
+    [1_500, calls("ls-1", "load_skill", "other", { name: "javaee-to-quarkus" })],
+    [
+      2_500,
+      returns(
+        "ls-1",
+        [
+          "Migrates Java EE applications to Quarkus: javax.* to jakarta.*, EJBs to CDI beans, persistence.xml to application.properties.",
+          "",
+          "## Workflow",
+          "",
+          "1. Inventory javax.* imports and Java EE annotations module by module.",
+          "2. Apply references/annotation-map.md; never invent a replacement that is not in the table.",
+          "3. Move the datasource into application.properties and build with ./mvnw verify.",
+          "",
+          `Skill directory: ${SKILL_DIR}`,
+          "Supporting files:",
+          `  ${SKILL_DIR}/references/annotation-map.md`,
+        ].join("\n")
+      ),
+    ],
+    [3_500, says("The skill keeps its annotation table in a supporting file — loading that too. ")],
+    [4_000, calls("ls-2", "load_skill", "other", { name: "javaee-to-quarkus/references/annotation-map.md" })],
+    [
+      5_000,
+      returns(
+        "ls-2",
+        [
+          "# Annotation map",
+          "",
+          "| Java EE | Quarkus |",
+          "| --- | --- |",
+          "| @Stateless | @ApplicationScoped |",
+          "| @Stateful | @SessionScoped, or refactor to request scope |",
+          "| @MessageDriven | @Incoming (SmallRye Reactive Messaging) |",
+          "| @PersistenceContext EntityManager | @Inject EntityManager |",
+          "| @EJB | @Inject |",
+          "| javax.* | jakarta.* |",
+        ].join("\n")
+      ),
+    ],
+    [6_000, says("Inventorying javax.* usages before changing anything. ")],
+    [6_500, calls("tc-1", `shell: rg -n "javax\." src/`, "execute")],
+    [7_700, returns("tc-1", "23 matches in 6 files")],
+    [9_000, says("23 usages in 6 files, all covered by the annotation map. Applying the mapping module by module, then pushing the branch. ")],
+    [10_500, null],
+  ],
+};
 const STEER_PICKUP_MS = 3_000;
 const runStates = new Map(); // run name -> { sessionId, runId, active, viewers:Set<notify>, tick }
 const runState = (name) => {
@@ -652,6 +928,8 @@ const runState = (name) => {
       askFollowUps: new Map(), // kask id -> fn run after its answer
       askTimer: undefined,
       paused: false, // blocked on an ask: the stream ticker idles
+      played: 0, // transcript runs: ms of agent time streamed so far
+      cue: 0, // transcript runs: index of the next cue
     });
   }
   return runStates.get(name);
@@ -738,6 +1016,20 @@ const attachRunStream = (name, notify) => {
       });
     }, 800);
   }
+  // A transcript run plays its cues once, on agent time; the null cue
+  // ends the turn (endRunTurn flips the run to Succeeded).
+  const cues = TRANSCRIPTS[STEER_RUNS[name].transcript];
+  if (cues && !st.ticker && st.active) {
+    st.ticker = setInterval(() => {
+      if (!st.active || st.paused || st.viewers.size === 0) return;
+      st.played += TRANSCRIPT_TICK_MS;
+      while (st.active && st.cue < cues.length && cues[st.cue][0] <= st.played) {
+        const [, update] = cues[st.cue++];
+        if (update === null) endRunTurn(name, "finished");
+        else runUpdate(st, update);
+      }
+    }, TRANSCRIPT_TICK_MS);
+  }
   // A slow agent stream so the transcript looks alive.
   if (!st.ticker && st.active) {
     st.ticker = setInterval(() => {
@@ -766,9 +1058,10 @@ const endRunTurn = (name, reason) => {
   runUpdate(st, { sessionUpdate: "session_info_update", _meta: { goose: { activeRunId: null } } });
   runUpdate(st, PLAN("completed"));
   console.log(`[hub] RUN ${name}: turn ended (${reason})`);
-  if (reason === "cancelled") {
+  // A played-out transcript succeeded; a human abort is not a success.
+  if (reason === "cancelled" || reason === "finished") {
     runOverrides.set(name, {
-      phase: "Failed",
+      phase: reason === "finished" ? "Succeeded" : "Failed",
       completionTime: new Date().toISOString(),
       conditions: [{ type: "ACPReady", status: "False", reason: "Finished", message: "The run has finished; its ACP endpoint is gone" }],
     });
