@@ -1042,6 +1042,10 @@ const ASKS = [
 // null update ends the turn. The skills one is goose's turn with the
 // javaee-to-quarkus skill available: load_skill, the supporting file it
 // names, then ordinary work.
+// The scripted runs' own configuration, as the harness would know it.
+const RUN_BRANCH = "konveyor/migration-1755770000";
+const RUN_MODEL = "us.anthropic.claude-sonnet-4-5";
+const RUN_MAX_TURNS = 40;
 const TRANSCRIPT_TICK_MS = 250;
 const SKILL_DIR = "/home/harness/.agents/skills/javaee-to-quarkus";
 const says = (text) => ({ sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
@@ -1123,7 +1127,7 @@ const TRANSCRIPTS = {
     [9_300, usage(48_240, 47_700, 540, 0.151), GOOSE],
     // The harness's own tail: the final push as a harness tool call on the
     // run session, then its closing outcome notice (tee.EmitRunNotice).
-    [9_800, calls("harness-push-1", "git push (final)", "execute")],
+    [9_800, calls("harness-push-1", `git push to branch ${RUN_BRANCH} (final)`, "execute")],
     [10_300, { sessionUpdate: "tool_call_update", toolCallId: "harness-push-1", status: "completed" }],
     [10_400, notice("stage succeeded — results pushed to branch konveyor/migration-1755770000"), GOOSE],
     [10_500, null],
@@ -1161,14 +1165,31 @@ const gooseUpdate = (st, update) => {
     notify(GOOSE, { sessionId: st.sessionId, update });
   }
 };
-const PLAN = (agentStatus) => ({
+// The harness's plan ladder (agentic-controller#230): every rung is built
+// from the run's own configuration, and the middle one is re-emitted on
+// every tool_call with progress against the turn budget. Each plan frame
+// carries the whole ladder; the console replaces its card in place.
+const PLAN = (agentStatus, turns = 0, pushStatus = "pending") => ({
   sessionUpdate: "plan",
   entries: [
-    { content: "Prepare workspace: clone, branch, grounding data", status: "completed", priority: "high" },
-    { content: "Agent works the stage", status: agentStatus, priority: "high" },
-    { content: "Push results to the target branch", status: "pending", priority: "high" },
+    { content: "Prepare workspace: github.com/konveyor/coolstore on branch " + RUN_BRANCH + ", 49 analysis insights", status: "completed", priority: "medium" },
+    {
+      content:
+        "Agent works the task: \u201cMigrate the coolstore Java EE services to Quarkus, module by module.\u201d (" +
+        RUN_MODEL + ", " + (turns > 0 ? `turn ${turns} of ${RUN_MAX_TURNS}` : `up to ${RUN_MAX_TURNS} turns`) + ")",
+      status: agentStatus,
+      priority: "medium",
+    },
+    { content: "Push results to branch " + RUN_BRANCH, status: pushStatus, priority: "medium" },
   ],
 });
+// One turn per tool_call, as the harness counts them (TurnsUsed), and a
+// fresh ladder each time — the tee keys plan frames so only the latest
+// is replayed to late viewers.
+const turnAdvanced = (st) => {
+  st.turns = (st.turns ?? 0) + 1;
+  runUpdate(st, PLAN("in_progress", st.turns));
+};
 // The agent asks the human: forward under kask-<n> to every viewer (and
 // to anyone attaching while it waits), like the tee's ForwardElicitation.
 const askHuman = (name, ask, { lead = "I need a decision from you before I continue. ", followUp } = {}) => {
@@ -1219,7 +1240,7 @@ const attachRunStream = (name, notify) => {
   const st = runState(name);
   st.viewers.add(notify);
   // Harness replay ring: where the run stands, before anything live.
-  notify("session/update", { sessionId: st.sessionId, update: PLAN(st.active ? "in_progress" : "completed") });
+  notify("session/update", { sessionId: st.sessionId, update: PLAN(st.active ? "in_progress" : "completed", st.turns ?? 0, st.active ? "pending" : "completed") });
   // Pending questions go after the status frames, as the tee replays them.
   for (const frame of st.pendingAsks.values()) notify.raw?.(frame);
   if (STEER_RUNS[name].ask && st.askSeq === 0 && !st.askTimer && st.active) {
@@ -1249,7 +1270,10 @@ const attachRunStream = (name, notify) => {
         const [, update, channel] = cues[st.cue++];
         if (update === null) endRunTurn(name, "finished");
         else if (channel === GOOSE) gooseUpdate(st, update);
-        else runUpdate(st, update);
+        else {
+          runUpdate(st, update);
+          if (update.sessionUpdate === "tool_call" && !String(update.toolCallId).startsWith("harness-")) turnAdvanced(st);
+        }
       }
     }, TRANSCRIPT_TICK_MS);
   }
@@ -1264,6 +1288,7 @@ const attachRunStream = (name, notify) => {
       gooseUpdate(st, usage(8_000 + n * 1_200, 8_000 + n * 1_100, n * 90, 0.02 + n * 0.012));
       if (n % 3 === 0) gooseUpdate(st, progress(`Compacting context (${n} steps in)…`));
       runUpdate(st, { sessionUpdate: "tool_call", toolCallId: `tc-${n}`, title: `shell: rg -n "javax\." src/ (batch ${n})`, status: "in_progress", kind: "execute" });
+      turnAdvanced(st);
       setTimeout(() => runUpdate(st, { sessionUpdate: "tool_call_update", toolCallId: `tc-${n}`, status: "completed", content: [{ type: "content", content: { type: "text", text: `${3 + n} matches` } }] }), 1200);
     }, 6_000);
   }
@@ -1282,7 +1307,13 @@ const endRunTurn = (name, reason) => {
   st.askFollowUps.clear();
   st.paused = false;
   runUpdate(st, { sessionUpdate: "session_info_update", _meta: { goose: { activeRunId: null } } });
-  runUpdate(st, PLAN("completed"));
+  runUpdate(st, PLAN("completed", st.turns ?? 0, "in_progress"));
+  // The harness's final push, then the ladder closes out.
+  runUpdate(st, { sessionUpdate: "tool_call", toolCallId: "harness-push-final", title: `git push to branch ${RUN_BRANCH} (final)`, kind: "execute", status: "in_progress" });
+  setTimeout(() => {
+    runUpdate(st, { sessionUpdate: "tool_call_update", toolCallId: "harness-push-final", status: "completed" });
+    runUpdate(st, PLAN("completed", st.turns ?? 0, "completed"));
+  }, 700);
   console.log(`[hub] RUN ${name}: turn ended (${reason})`);
   // A played-out transcript succeeded; a human abort is not a success.
   if (reason === "cancelled" || reason === "finished") {
