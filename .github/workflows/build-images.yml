@@ -19,10 +19,16 @@ name: build-images
 # starts a build with the default refs.
 on:
   push:
+    branches: [main]
     paths:
       - .github/workflows/build-images.yml
   workflow_dispatch:
     inputs:
+      tag:
+        description: >-
+          Image tag to publish under. `demo` is what the clusters run; use
+          something else (e.g. pr230) to publish a build without touching it.
+        default: demo
       controller_ref:
         description: >-
           agentic-controller ref to build from (the fork's main, kept in sync
@@ -31,12 +37,12 @@ on:
           and silently shipped tee-less agent images behind the :demo tag.
         default: main
       tackle2_ui_ref:
-        description: tackle2-ui ref to build from
-        default: feature/agent-runs
+        description: tackle2-ui ref to build from (feature/agent-runs merged upstream as ui#3546)
+        default: main
 
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
-  TAG: demo
+  TAG: ${{ inputs.tag || 'demo' }}
 
 jobs:
   build:
@@ -66,7 +72,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/tackle2-ui
-          ref: ${{ inputs.tackle2_ui_ref || 'feature/agent-runs' }}
+          ref: ${{ inputs.tackle2_ui_ref || 'main' }}
           path: ui
 
       - uses: docker/setup-buildx-action@v3
