@@ -88,8 +88,14 @@ jobs:
       - name: Stage agent-java context
         run: |
           mkdir -p stage/agent-java/skills
+          # agentic-controller#175 moved the core skills under catalog/;
+          # fall back to the old path for refs that predate it.
           for s in plan execute verify javaee-to-quarkus; do
-            cp -R "controller/skills/$s" stage/agent-java/skills/
+            if [ -d "controller/catalog/skills/$s" ]; then
+              cp -R "controller/catalog/skills/$s" stage/agent-java/skills/
+            else
+              cp -R "controller/skills/$s" stage/agent-java/skills/
+            fi
           done
           cp -R client/skills/patternfly-migration stage/agent-java/skills/
           cp client/deploy/roks/agent-java.Containerfile stage/agent-java/Containerfile
