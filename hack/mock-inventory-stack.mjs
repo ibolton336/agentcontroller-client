@@ -76,12 +76,23 @@ const acpCond = (listening, msg) => ({
 
 // agentic-controller#157 controller: an image card's reference is accepted
 // at face value (the image is pulled when a run starts), so Ready=True /
-// ImageResolved the moment it is seen.
-const imageCardStatus = (image) => ({
+// ImageResolved the moment it is seen. agentic-controller#188 adds a separate
+// best-effort Resolvable condition: whether the referenced artifact actually
+// exists in its registry (Present / Missing / Unverified). `resolvable` lets a
+// fixture override it; the default is Present.
+const imageCardStatus = (image, resolvable) => ({
   observedGeneration: 1,
   resolvedImage: image,
   deliveryMode: "image",
-  conditions: [{ type: "Ready", status: "True", reason: "ImageResolved", message: `OCI image ref accepted: ${image}` }],
+  conditions: [
+    { type: "Ready", status: "True", reason: "ImageResolved", message: `OCI image ref accepted: ${image}` },
+    resolvable ?? {
+      type: "Resolvable",
+      status: "True",
+      reason: "ArtifactPresent",
+      message: `manifest found in registry: ${image}`,
+    },
+  ],
 });
 
 const store = {
@@ -117,6 +128,19 @@ const store = {
       spec: { image: "ghcr.io/ibolton336/agent-base:demo", gateways: [{ ref: "default-gateway" }] },
       status: { conditions: [{ type: "Ready", status: "True" }] },
     },
+    {
+      // Not Ready: its gateway never verified. The controller does not
+      // reject a run against it — it parks the run on AgentNotReady with no
+      // sandbox (see run-blocked-agent-not-ready) — so the create-run modal
+      // must disable it up front.
+      metadata: { name: "coolstore-quarkus-migrator", creationTimestamp: ago(45), labels: { [MANAGED]: "true" } },
+      spec: { image: "ghcr.io/ibolton336/agent-java:demo", gateways: [{ ref: "vertex-gateway" }] },
+      status: {
+        conditions: [
+          { type: "Ready", status: "False", reason: "GatewayNotReady", message: 'Gateway "vertex-gateway" is not Ready', lastTransitionTime: ago(45) },
+        ],
+      },
+    },
   ],
   // SkillCards in the #157 shape: exactly one source (image + subPath,
   // inline SKILL.md, or git), status.deliveryMode and a Ready condition the
@@ -138,17 +162,45 @@ const store = {
       status: imageCardStatus("quay.io/konveyor/skills:latest"),
     },
     {
+      // The issue #187 phantom: a card whose image tag was never pushed. The
+      // controller accepts the ref (Ready=True) but the best-effort Resolvable
+      // check finds no manifest, so a run would ImagePullBackOff. The console
+      // flags "Missing" before anyone starts a run.
       metadata: { name: "javaee-to-quarkus", creationTimestamp: ago(390), labels: { [MANAGED]: "true" } },
       spec: {
-        image: "quay.io/konveyor/skills:latest",
-        subPath: "javaee-to-quarkus",
+        image: "quay.io/konveyor/skills:javaee-to-quarkus",
         displayName: "Java EE to Quarkus",
         description: "Migrates Java EE applications to Quarkus: javax to jakarta, EJB to CDI, persistence.xml to application.properties.",
         type: "skill",
         version: "1.0.0",
         tags: ["migration", "quarkus"],
       },
-      status: imageCardStatus("quay.io/konveyor/skills:latest"),
+      status: imageCardStatus("quay.io/konveyor/skills:javaee-to-quarkus", {
+        type: "Resolvable",
+        status: "False",
+        reason: "ArtifactMissing",
+        message: "quay.io/konveyor/skills:javaee-to-quarkus: manifest unknown",
+      }),
+    },
+    {
+      // Private registry the controller cannot read without pull credentials:
+      // the existence check is inconclusive, so Resolvable=Unknown and the
+      // console shows "Unverified" rather than a false Missing.
+      metadata: { name: "internal-conventions", creationTimestamp: ago(200), labels: { [MANAGED]: "true" } },
+      spec: {
+        image: "registry.acme.internal/skills/conventions:v2",
+        displayName: "Internal conventions",
+        description: "Acme's internal skill card, hosted on a private registry.",
+        type: "rule",
+        version: "2.0.0",
+        tags: ["conventions", "acme"],
+      },
+      status: imageCardStatus("registry.acme.internal/skills/conventions:v2", {
+        type: "Resolvable",
+        status: "Unknown",
+        reason: "ResolveInconclusive",
+        message: "registry.acme.internal/skills/conventions:v2: unexpected status code 401 Unauthorized",
+      }),
     },
     {
       // Inline rule: a single SKILL.md with valid frontmatter, delivered as
@@ -491,6 +543,24 @@ const store = {
         conditions: [{ type: "Ready", status: "False", reason: "AgentNotReady", message: 'Agent "ghost-agent" is not Ready', lastTransitionTime: ago(30) }],
       },
     },
+    {
+      // Finished before its Agent stopped being Ready (the gateway broke
+      // afterwards): "Run again" prefills the modal with an agent it must
+      // refuse to submit, saying why.
+      metadata: {
+        name: "run-earlier-coolstore",
+        creationTimestamp: ago(120),
+        labels: { [MANAGED]: "true", [APPLICATION]: "1" },
+      },
+      spec: { agentRef: "coolstore-quarkus-migrator", gateway: "vertex-gateway" },
+      status: {
+        phase: "Failed",
+        sandboxName: "sandbox-earlier-x7",
+        startTime: ago(119),
+        completionTime: ago(100),
+        conditions: [{ type: "Ready", status: "False", reason: "Failed", message: "Sandbox finished with reason: Error", lastTransitionTime: ago(100) }],
+      },
+    },
   ],
   workflowruns: [
     {
@@ -565,6 +635,36 @@ const applications = [
     // will be denied (the fleet-smoke 3-of-4 failure mode).
     repository: { kind: "git", url: "https://github.com/konveyor/tackle-testapp.git", branch: "develop" },
     tags: [],
+  },
+];
+
+// Archetypes exercise the archetype-row "Run agent workflow" fan-out: launching
+// against JavaEE Monolith opens the bulk modal populated with its three members
+// — coolstore (eligible + credential), tackle-testapp (eligible, push-warning),
+// binary-only-app (excluded, no repository). The empty archetype proves the
+// action is disabled when there are no members.
+const archetypes = [
+  {
+    id: 1,
+    name: "JavaEE Monolith",
+    description: "Java EE apps to migrate to Quarkus",
+    criteria: [{ tag: "Java" }],
+    applications: [
+      { id: 1, name: "coolstore" },
+      { id: 2, name: "binary-only-app" },
+      { id: 3, name: "tackle-testapp" },
+    ],
+    assessed: false,
+    assessments: [],
+  },
+  {
+    id: 2,
+    name: "Empty Archetype",
+    description: "No members — the disabled run-action case",
+    criteria: [],
+    applications: [],
+    assessed: false,
+    assessments: [],
   },
 ];
 
@@ -715,6 +815,14 @@ const hub = http.createServer(async (req, res) => {
 
   // ---- core inventory ----
   if (req.method === "GET" && p === "/applications") return send(res, 200, applications);
+  if (req.method === "GET" && p === "/archetypes") return send(res, 200, archetypes);
+  {
+    const am = /^\/archetypes\/(\d+)$/.exec(p);
+    if (req.method === "GET" && am) {
+      const found = archetypes.find((a) => a.id === Number(am[1]));
+      return found ? send(res, 200, found) : send(res, 404, { error: "not found" });
+    }
+  }
 
   // ---- agentic surface ----
   const m = /^\/agentic\/([a-z]+)(?:\/([^/]+))?(\/acp(?:\/nonce)?)?$/.exec(p);
