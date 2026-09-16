@@ -129,6 +129,18 @@ const store = {
       status: { conditions: [{ type: "Ready", status: "True" }] },
     },
     {
+      // agentic-controller#215: no gateways declared — a Ready template
+      // whose runs must name a gateway themselves (GatewayConfigured=False).
+      metadata: { name: "template-agent", creationTimestamp: ago(20), labels: { [MANAGED]: "true" } },
+      spec: { image: "ghcr.io/ibolton336/agent-base:demo" },
+      status: {
+        conditions: [
+          { type: "Ready", status: "True", reason: "AllDependenciesReady" },
+          { type: "GatewayConfigured", status: "False", reason: "NoGatewaysDeclared", message: "Agent declares no gateways; an AgentRun must name one to run" },
+        ],
+      },
+    },
+    {
       // Not Ready: its gateway never verified. The controller does not
       // reject a run against it — it parks the run on AgentNotReady with no
       // sandbox (see run-blocked-agent-not-ready) — so the create-run modal
@@ -361,6 +373,18 @@ const store = {
     },
   ],
   workflows: [
+    {
+      // Every stage Agent declares no gateways: the run must name one.
+      metadata: { name: "template-flow", creationTimestamp: ago(10), labels: { [MANAGED]: "true" } },
+      spec: {
+        guide: "Two stages on a gateway-less template agent.",
+        stages: [
+          { name: "assess", agentRef: "template-agent", instructions: "Assess." },
+          { name: "remediate", agentRef: "template-agent", instructions: "Remediate." },
+        ],
+      },
+      status: { conditions: [{ type: "Ready", status: "True" }] },
+    },
     {
       metadata: {
         name: "java-ee-to-quarkus",
