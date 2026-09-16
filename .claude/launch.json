@@ -211,6 +211,18 @@
       "env": {
         "PORT": "18092"
       }
+    },
+    {
+      "name": "tackle2-ui-pending-reason-webpack-9001",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "cd /Users/ibolton/Development/tackle2-ui-pending-reason && npm run start:dev -w client"
+      ],
+      "port": 9001,
+      "env": {
+        "AGENTIC_ENABLED": "true"
+      }
     }
   ]
 }
