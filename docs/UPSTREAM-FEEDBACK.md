@@ -154,3 +154,86 @@ AgentRun conditions; (c) until then, document the constraint so playbook
 authors know exit-code failures hang rather than fail.
 
 _(Item 7 recovered 2026-08-18 from a July worktree draft; the gap is tracked on the personal board as "fail-path gap" and is adjacent to AC #129 / A5. Not filed upstream yet.)_
+
+
+---
+
+# Gateway verification on a fresh ROKS bring-up (2026-09-10)
+
+Full-stack bring-up on a new ROKS cluster (OpenShift 4.21, 3×amd64,
+`agentic-demo` / `c116-e.us-south`) following `deploy/roks/README.md`.
+
+**Neither finding below is a new upstream bug.** Both were chased from live
+symptoms before checking upstream state, and both turned out to be already
+known — one already fixed. Recorded here for the cluster-side consequence and
+so the same rabbit hole isn't re-entered.
+
+Standing rule as above: nothing gets posted upstream by tooling.
+
+## 8. Bedrock Gateway can't verify — already filed as AC #167
+
+Live symptom: `bedrock-sonnet` and `bedrock-haiku` park at
+`Ready=False reason=ConnectionFailed`, Agents go `DependenciesNotReady`, and
+runs cannot start. Root cause is the OpenAI-shaped `/v1/models` probe, which
+Bedrock 404s, combined with #149 tightening the accepted code to `^2`.
+
+This is exactly **konveyor/agentic-controller#167** ("Gateway verification
+cannot pass for native aws-bedrock / gcp-vertex-ai providers"), filed
+2026-08-20. Still open, still unlabeled, zero comments, and the closing
+question ("is skip-with-reason acceptable as the interim? Happy to PR it")
+is unanswered three weeks on. Confirmed still present on `origin/main`
+(`cfb101f`): `endpointModelsProbe` and `verificationHTTPCodePattern` are
+unchanged and `aws_bedrock` is still in `knownProviders`.
+
+Two details from this bring-up that were not in #167 and argue for the
+skip-with-reason option:
+
+- The probe returns **404**, not the 403 the issue assumes. Immaterial to the
+  conclusion (both matched the old `^[2-4]`), but the diagnostic on status
+  will read `http code=404`.
+- Because Bedrock uses a **keyless** `credentialRef`, `includeAuth` is false
+  and the verification pod is handed **no credentials at all** — its env is
+  `LLM_ENDPOINT` only. So for these providers the probe cannot be an auth
+  check even in principle, which undercuts the argument for keeping a real
+  probe and favours skipping with an honest reason.
+- Blast radius is a **silent hang, not a failure**: `agentrun_controller.go`
+  sets `Succeeded=Unknown reason=AgentNotReady` and returns, deliberately
+  ("the run is not failed — it waits"). Runs sit with no terminal state,
+  the same UX as item 7.
+
+**Cluster-side workaround** (not a fix): patch the Gateway status to
+`Ready=True reason=ConnectionVerified` with `observedGeneration` equal to
+`metadata.generation`. `isTerminalReadyReason` treats that as settled and the
+reconciler stops re-probing until the spec changes.
+
+**Update 2026-09-10:** the skip-with-reason option the issue proposed is
+written and tested on branch `fix/gateway-verify-native-providers` in the
+agentic-controller checkout (`3fdcf28`, off `cfb101f`). `aws_bedrock` and
+`gcp_vertex_ai` settle as `Ready=True reason=VerificationSkipped` with
+`connectionVerified` left false, so the Gateway is usable and status still
+says nothing was checked. Full `internal/...` suite and golangci-lint pass.
+Not pushed - per the standing rule above, that is a human decision.
+
+## 9. Gateway Secret watch — already fixed upstream; our image is stale
+
+Live symptom: creating `aws-bedrock-creds` after the Gateways left them
+reporting `Secret "aws-bedrock-creds" not found` indefinitely. Secret created
+`18:08:45Z`, last Gateway reconcile `18:05:25Z`, status still stale at
+`18:13Z`. A no-op annotation unstuck it.
+
+**This is fixed upstream.** AC #103 ("Gateway controller should watch
+credential Secrets for re-reconciliation") was closed COMPLETED 2026-09-03 by
+`69c677c` (#208), which adds the `gatewayCredentialSecretIndexField` index and
+a `Watches(&corev1.Secret{}, ...)` — the same pattern the Agent controller
+uses. Nothing to file.
+
+The reason we saw it live is that
+`ghcr.io/ibolton336/agentic-controller:demo` predates #208. That is an
+image-currency problem on our side, and it matches the `:demo` moving-tag trap
+already documented in `deploy/roks/README.md`.
+
+**Ask of ourselves, not upstream:** rebuild the demo images off current main
+before the next demo, and treat "reproduce against `origin/main`, not the
+local checkout" as step zero. This section was originally written up as two
+upstream bugs off a checkout that was 17 commits behind; the fetch is what
+corrected it.
