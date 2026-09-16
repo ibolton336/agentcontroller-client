@@ -3,7 +3,8 @@
  *
  * Source of truth: github.com/konveyor/agentic-controller api/v1alpha1/*.go
  * (the REAL controller, main @ 059b6f60 — post-#100 Gateway rename,
- * post-#80 Workflow rename). Everything here is browser-safe: no
+ * post-#80 Workflow rename; gateway optionality re-verified at 222e209,
+ * post-#215 optional Agent gateways). Everything here is browser-safe: no
  * node builtins, no kube client — transports live elsewhere (see
  * ../transport-shim for the hub-shim HTTP transport).
  *
@@ -69,9 +70,11 @@ export interface AgentRunSpec {
   /** Task-specific instructions, composed with the Agent's standing prompt. */
   instructions?: string;
   /**
-   * Name of a Gateway from the Agent's gateways list. Optional when the
-   * Agent declares exactly one gateway (the controller defaults to it);
-   * required when it declares several (validation fails fast otherwise).
+   * Name of a Gateway. The Agent's gateways list is a presence-gated
+   * constraint (agentic-controller#215): when it names gateways this must
+   * be one of them; when it is empty any Gateway is accepted. Optional only
+   * when the Agent declares exactly one (the controller defaults to it) —
+   * required when it declares none or several (validation fails fast).
    */
   gateway?: string;
   env?: EnvVar[];
@@ -120,6 +123,12 @@ export interface AgentResourceSpec {
   image: string;
   prompt?: string;
   params?: AgentParam[];
+  /**
+   * Presence-gated: a non-empty list restricts runs to these; an empty or
+   * omitted list constrains nothing and the Agent is still Ready, with the
+   * GatewayConfigured condition False/NoGatewaysDeclared so the UI can say
+   * a run must name its own gateway (agentic-controller#215).
+   */
   gateways?: { ref: string }[];
   skillCards?: { ref: string }[];
   skillCollections?: { ref: string }[];
