@@ -1075,9 +1075,13 @@ const SKILL_DIR = "/home/harness/.agents/skills/javaee-to-quarkus";
 const says = (text) => ({ sessionUpdate: "agent_message_chunk", content: { type: "text", text } });
 // goose's custom channel (wire shape per goose-sdk-types custom_notifications.rs).
 const CONTEXT_LIMIT = 200_000;
+// MOCK_UNMETERED_CONTEXT=1: the shape goose's Bedrock provider sends on a real
+// cluster (ROKS 2026-09-17) -- a context limit and cost, but `used` stuck at
+// 0. The console must not show that as a reading ("0 / 200K").
+const UNMETERED = process.env.MOCK_UNMETERED_CONTEXT === "1";
 const usage = (used, inTok, outTok, cost) => ({
   sessionUpdate: "usage_update",
-  used,
+  used: UNMETERED ? 0 : used,
   contextLimit: CONTEXT_LIMIT,
   accumulatedInputTokens: inTok,
   accumulatedOutputTokens: outTok,
