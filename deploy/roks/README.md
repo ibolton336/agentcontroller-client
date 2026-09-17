@@ -164,6 +164,21 @@ Apply [`manifests/goose-bedrock.yaml`](../../manifests/goose-bedrock.yaml)'s
 whole Secret so the harness gets the full SigV4 triple). Wait for the
 gateway to report Ready.
 
+**Rotating the credentials later** — the Gateways hold nothing; replacing
+the Secret *is* the update, and sandbox pods read it at start, so there is
+nothing to restart:
+
+```sh
+./set-bedrock-creds.sh konveyor-tackle      # the namespace your runs execute in
+```
+
+[`set-bedrock-creds.sh`](set-bedrock-creds.sh) takes the keys from your
+exported `AWS_*` vars or the AWS CLI's current profile (never echoed),
+refuses placeholder-shaped values and `ASIA*` keys without a session token,
+proves the triple with one live Bedrock call, then applies the Secret and
+prints byte sizes (expect 20 / 40 / 9). Gateway `Ready=True` is **not**
+evidence the keys work — `aws-bedrock` has no `/v1/models` to probe.
+
 ## 5. Gateway + console
 
 ```sh
@@ -235,6 +250,9 @@ the fork.
 | Tackle operator Ansible crashes on `proxy_cluster.spec.trustedCA` | Empty admission-locked cluster Proxy. Set `openshift_cluster: false`. |
 | Seeding creates agents with quay.io images the cluster can't pull | Gateway Role missing `configmaps get`, or catalog ConfigMap not applied. |
 | Pod runs a stale image after a rebuild | `IfNotPresent` + mutable `:demo` tag. Pin the Deployment/Agent `image` by digest after rebuilding, or the tag pull races the just-pushed image. |
+| Every run fails ~2 min in, turn 1: `UnrecognizedClientException … security token included in the request is invalid`, Gateway still Ready | The keys in `aws-bedrock-creds` are dead (rotated/deactivated), temporary `ASIA*` creds expired or missing `AWS_SESSION_TOKEN`, or a placeholder got pasted. `oc describe secret` should show 20/40/9 bytes. Fix: `./set-bedrock-creds.sh <run-namespace>`, then start a new run. |
+| Run fails mid-way: `stage failed: ask_user question unanswered (HITL gate)` | The agent called `ask_user` and nobody answered the question card within 180 s (`HARNESS_HITL_TIMEOUT_SECONDS`). On harness images before agentic-controller#242 the tool is default-on and the model decides whether to ask — the same Agent+prompt Succeeded, then Failed at turn 38 (2026-09-17). Stay on the run page and answer the card, or build from #242 where asking is opt-in (`spec.execution.askUser`). |
+| A Running run vanishes, pod and all | The runs page's bulk delete takes every selected run, Running ones included, with no extra warning — the controller then sweeps the pod as an orphan. Hub log shows `DELETE /agentic/agentruns/<name>`. Deselect live runs before cleaning up old ones. |
 | Run reaches the end then fails "No anonymous write access" | No `role: source` identity on the Hub application (step 7). |
 | Gateway can't reach a Running sandbox on :4000 | Controller pods have no readiness probe; phase=Running races the ACP server. The gateway retries the dial — transient. |
 | Sandbox ACP unreachable / goose panics on startup | Needs the goose `--host 0.0.0.0` + `ENV HOME=/home/harness` fixes in agent-base — build from a controller tree that has them. |
