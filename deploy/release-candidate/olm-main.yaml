@@ -1,0 +1,45 @@
+# The operator built from main, via OLM. tackle2-operator-index:latest (== :main)
+# is rebuilt on every operator merge, and that operator's related images all
+# default to quay.io/konveyor/*:latest — so this one CatalogSource installs the
+# whole would-be-next-alpha stack the way a user would get it.
+# From konveyor/operator's konveyor-operator-catalog.yaml.
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: konveyor-main
+  namespace: openshift-marketplace
+spec:
+  displayName: Konveyor Operator (main)
+  publisher: Konveyor
+  sourceType: grpc
+  image: quay.io/konveyor/tackle2-operator-index:latest
+  updateStrategy:
+    registryPoll:
+      interval: 10m
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: konveyor-tackle
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: konveyor-tackle
+  namespace: konveyor-tackle
+spec:
+  targetNamespaces: [konveyor-tackle]
+---
+# No `channel:` on purpose — take the index's default channel rather than
+# guess one; check with:
+#   oc get packagemanifest konveyor-operator -o jsonpath='{.status.catalogSource} {.status.defaultChannel}{"\n"}'
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: konveyor-operator
+  namespace: konveyor-tackle
+spec:
+  name: konveyor-operator
+  source: konveyor-main
+  sourceNamespace: openshift-marketplace
+  installPlanApproval: Automatic
